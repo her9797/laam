@@ -748,6 +748,29 @@ body:has(.menu-detail-modal) .content-card {
   border-color: transparent;
 }
 
+.menu-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.menu-detail-summary {
+  min-width: 0;
+  flex: 1;
+}
+
+.menu-detail-image {
+  width: 88px;
+  height: 88px;
+  flex: 0 0 88px;
+  margin: 0;
+  border-radius: 16px;
+  display: block;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .menu-detail-modal h2 {
   margin: 4px 0 0;
   font-size: 1.55rem;

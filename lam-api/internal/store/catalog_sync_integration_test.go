@@ -22,7 +22,7 @@ func TestRepositorySyncTossCatalogPreservesMetadataAndHidesUnavailableItems(t *t
 	}
 
 	result, err := repo.SyncTossCatalog(ctx, []TossCatalogItem{
-		{ID: "pos-earlgrey", Name: "얼그레이하이볼", Description: "토스 설명", ImageURL: "https://cdn.example.com/earlgrey.png", CategoryID: "highball", Price: 10000, IsVisible: true, SortOrder: 3, Options: []TossCatalogOption{{ID: "option-shot", Title: "샷", Enabled: true, Required: false, MinChoices: 1, MaxChoices: 1, Choices: []TossCatalogOptionChoice{{ID: "choice-shot", Title: "샷 추가", PriceValue: 500, Enabled: true, State: "ON_SALE", MinQuantity: 1, MaxQuantity: 1}}}}},
+		{ID: "pos-earlgrey", Name: "얼그레이하이볼", Description: "토스 설명", ImageURL: "https://cdn.example.com/earlgrey.png", Badge: "추천", CategoryID: "highball", Price: 10000, IsVisible: true, SortOrder: 3, Options: []TossCatalogOption{{ID: "option-shot", Title: "샷", Enabled: true, Required: false, MinChoices: 1, MaxChoices: 1, Choices: []TossCatalogOptionChoice{{ID: "choice-shot", Title: "샷 추가", PriceValue: 500, Enabled: true, State: "ON_SALE", MinQuantity: 1, MaxQuantity: 1}}}}},
 		{ID: "pos-whisky", Name: "제임슨", CategoryID: "whisky", Price: 9000, IsVisible: true, SortOrder: 4},
 		{ID: "pos-zero", Name: "신데렐라", CategoryID: "non-alcohol", Price: 0, IsVisible: false, SortOrder: 5},
 	})
@@ -38,7 +38,7 @@ func TestRepositorySyncTossCatalogPreservesMetadataAndHidesUnavailableItems(t *t
 	if err := testPool.QueryRow(ctx, `SELECT description, COALESCE(badge, ''), price, is_visible, toss_catalog_item_id FROM menu_items WHERE id = 'earlgrey'`).Scan(&description, &badge, &price, &visible, &tossID); err != nil {
 		t.Fatalf("read matched item: %v", err)
 	}
-	if description != "기존 설명" || badge != "best" || price != "10,000원" || !visible || tossID != "pos-earlgrey" {
+	if description != "기존 설명" || badge != "추천" || price != "10,000원" || !visible || tossID != "pos-earlgrey" {
 		t.Fatalf("matched item = description:%q badge:%q price:%q visible:%v tossID:%q", description, badge, price, visible, tossID)
 	}
 	var imageURL, optionTitle, choiceTitle string

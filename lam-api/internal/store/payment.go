@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"regexp"
@@ -51,6 +53,23 @@ type PaymentOrderOptionChoice struct {
 	ChoiceTitle    string `json:"choiceTitle"`
 	PriceValue     int64  `json:"priceValue"`
 	Quantity       int64  `json:"quantity"`
+}
+
+type POSPluginOrder struct {
+	OrderID       string                     `json:"orderId"`
+	TableNumber   string                     `json:"tableNumber"`
+	CatalogItemID string                     `json:"catalogItemId"`
+	MenuItemName  string                     `json:"menuItemName"`
+	CategoryName  string                     `json:"categoryName"`
+	RequestNote   string                     `json:"requestNote"`
+	Amount        int64                      `json:"amount"`
+	BaseAmount    int64                      `json:"baseAmount"`
+	OptionChoices []PaymentOrderOptionChoice `json:"optionChoices,omitempty"`
+}
+
+type POSPluginOrderClaim struct {
+	ClaimToken string         `json:"claimToken"`
+	Order      POSPluginOrder `json:"order"`
 }
 
 type availableOrderOption struct {
@@ -749,6 +768,158 @@ func (r *Repository) UpdatePaymentOrderPOSSync(ctx context.Context, orderID stri
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *Repository) MarkPaymentOrderPOSReady(ctx context.Context, orderID string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE payment_orders
+		SET pos_claim_ready = TRUE,
+			pos_sync_status = 'PENDING',
+			pos_sync_error = NULL,
+			updated_at = NOW()
+		WHERE id = $1
+	`, strings.TrimSpace(orderID))
+	if err != nil {
+		return classifyError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *Repository) ClaimPendingPOSPluginOrder(ctx context.Context) (POSPluginOrderClaim, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return POSPluginOrderClaim{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	var orderID string
+	err = tx.QueryRow(ctx, `
+		SELECT id
+		FROM payment_orders
+		WHERE pos_sync_status = 'PENDING'
+			AND pos_claim_ready = TRUE
+			AND toss_catalog_item_id IS NOT NULL
+			AND (pos_claimed_at IS NULL OR pos_claimed_at < NOW() - INTERVAL '2 minutes')
+		ORDER BY created_at, id
+		FOR UPDATE SKIP LOCKED
+		LIMIT 1
+	`).Scan(&orderID)
+	if err != nil {
+		return POSPluginOrderClaim{}, classifyError(err)
+	}
+
+	claimBytes := make([]byte, 24)
+	if _, err := rand.Read(claimBytes); err != nil {
+		return POSPluginOrderClaim{}, err
+	}
+	claimToken := hex.EncodeToString(claimBytes)
+	if _, err := tx.Exec(ctx, `
+		UPDATE payment_orders
+		SET pos_claim_token = $2,
+			pos_claimed_at = NOW(),
+			pos_sync_error = NULL,
+			updated_at = NOW()
+		WHERE id = $1
+	`, orderID, claimToken); err != nil {
+		return POSPluginOrderClaim{}, classifyError(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return POSPluginOrderClaim{}, err
+	}
+
+	order, err := r.GetPaymentOrder(ctx, orderID)
+	if err != nil {
+		return POSPluginOrderClaim{}, err
+	}
+	baseAmount := order.Amount
+	for _, choice := range order.OptionChoices {
+		baseAmount -= choice.PriceValue * choice.Quantity
+	}
+	return POSPluginOrderClaim{
+		ClaimToken: claimToken,
+		Order: POSPluginOrder{
+			OrderID: order.OrderID, TableNumber: order.TableNumber,
+			CatalogItemID: order.TossCatalogItemID, MenuItemName: order.MenuItemName,
+			CategoryName: order.CategoryName, RequestNote: order.RequestNote,
+			Amount: order.Amount, BaseAmount: baseAmount, OptionChoices: order.OptionChoices,
+		},
+	}, nil
+}
+
+func (r *Repository) CompletePOSPluginOrder(ctx context.Context, orderID string, claimToken string, posOrderID string) error {
+	orderID = strings.TrimSpace(orderID)
+	claimToken = strings.TrimSpace(claimToken)
+	posOrderID = strings.TrimSpace(posOrderID)
+	if orderID == "" || claimToken == "" || posOrderID == "" {
+		return ErrInvalidInput
+	}
+
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE payment_orders
+		SET pos_sync_status = 'SUCCEEDED',
+			pos_order_id = $3,
+			pos_sync_error = NULL,
+			pos_claim_token = NULL,
+			pos_claimed_at = NULL,
+			updated_at = NOW()
+		WHERE id = $1
+			AND pos_sync_status = 'PENDING'
+			AND pos_claim_token = $2
+	`, orderID, claimToken, posOrderID)
+	if err != nil {
+		return classifyError(err)
+	}
+	if tag.RowsAffected() > 0 {
+		return nil
+	}
+
+	var status string
+	var storedPOSOrderID string
+	err = r.pool.QueryRow(ctx, `
+		SELECT pos_sync_status, COALESCE(pos_order_id, '')
+		FROM payment_orders
+		WHERE id = $1
+	`, orderID).Scan(&status, &storedPOSOrderID)
+	if err != nil {
+		return classifyError(err)
+	}
+	if status == "SUCCEEDED" && storedPOSOrderID == posOrderID {
+		return nil
+	}
+	return ErrInvalidInput
+}
+
+func (r *Repository) FailPOSPluginOrder(ctx context.Context, orderID string, claimToken string, syncError string) error {
+	orderID = strings.TrimSpace(orderID)
+	claimToken = strings.TrimSpace(claimToken)
+	syncError = strings.TrimSpace(syncError)
+	if orderID == "" || claimToken == "" || syncError == "" {
+		return ErrInvalidInput
+	}
+	if len([]rune(syncError)) > 300 {
+		syncError = string([]rune(syncError)[:300])
+	}
+
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE payment_orders
+		SET pos_sync_error = $3,
+			pos_claim_token = NULL,
+			pos_claimed_at = NOW(),
+			updated_at = NOW()
+		WHERE id = $1
+			AND pos_sync_status = 'PENDING'
+			AND pos_claim_token = $2
+	`, orderID, claimToken, syncError)
+	if err != nil {
+		return classifyError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrInvalidInput
 	}
 	return nil
 }

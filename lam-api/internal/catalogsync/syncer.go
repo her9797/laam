@@ -70,6 +70,7 @@ func (s *Syncer) Sync(ctx context.Context) (store.TossCatalogSyncResult, error) 
 			Name:        item.Title,
 			Description: item.Description,
 			ImageURL:    item.ImageURL,
+			Badge:       firstCatalogLabel(item.Labels),
 			CategoryID:  customerCategoryID(item),
 			Price:       item.Price.Value,
 			IsVisible:   item.Enabled && item.State == "ON_SALE" && item.Price.Type == "FIXED" && item.Price.Value > 0,
@@ -84,6 +85,8 @@ func (s *Syncer) Sync(ctx context.Context) (store.TossCatalogSyncResult, error) 
 func customerCategoryID(item tossplace.CatalogItem) string {
 	category := strings.TrimSpace(item.Category.Title)
 	switch {
+	case strings.Contains(category, "시그니처"), strings.Contains(strings.ToLower(category), "signature"):
+		return "signature"
 	case strings.Contains(category, "위스키"):
 		return "whisky"
 	case strings.Contains(category, "논알콜"):
@@ -93,4 +96,13 @@ func customerCategoryID(item tossplace.CatalogItem) string {
 	default:
 		return "cocktail"
 	}
+}
+
+func firstCatalogLabel(labels []string) string {
+	for _, label := range labels {
+		if trimmed := strings.TrimSpace(label); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }

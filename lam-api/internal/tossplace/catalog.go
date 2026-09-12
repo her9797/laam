@@ -51,6 +51,7 @@ type CatalogItem struct {
 	Title       string          `json:"title"`
 	Description string          `json:"description"`
 	ImageURL    string          `json:"imageUrl"`
+	Labels      []string        `json:"labels"`
 	Category    CatalogCategory `json:"category"`
 	Price       CatalogPrice    `json:"price"`
 	Options     []CatalogOption `json:"options"`

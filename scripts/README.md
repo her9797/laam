@@ -25,7 +25,7 @@
    gcloud auth login
    gcloud config set project lam-production
    ```
-2. 아래 Secret Manager 시크릿이 미리 생성되어 있어야 한다. `lam-youtube-api-key`만 선택 항목이며, 없으면 배포는 계속되지만 신청곡 승인은 비활성화된다.
+2. 아래 Secret Manager 시크릿이 미리 생성되어 있어야 한다. `lam-youtube-api-key`는 선택 항목이며, 없으면 배포는 계속되지만 신청곡 승인은 비활성화된다. `lam-pos-plugin-api-token`은 POS 플러그인 모드를 사용할 때만 필요하다.
 
    | 시크릿 | 사용하는 서비스 |
    | --- | --- |
@@ -39,6 +39,7 @@
    | `lam-toss-place-merchant-id` | lam-api |
    | `lam-toss-place-webhook-secret` | lam-api (TossPlace 개발자센터에서 주문 웹훅 등록 시 발급되는 서명 키. 위 `lam-toss-place-secret-key`와 다른 값) |
    | `lam-youtube-api-key` | lam-api (YouTube Data API v3 서버 키) |
+   | `lam-pos-plugin-api-token` | lam-api, 매장 POS 플러그인 설정 (플러그인 모드에서만 필요) |
    | `lam-web-session-secret` | lam-web |
    | `lam-staff-entry-token` | lam-web |
    | `lam-qr-signing-secret` | lam-web, lam-api (두 곳 값이 동일해야 함) |
@@ -78,6 +79,7 @@
 | `CLOUD_RUN_API_REGION` | `asia-northeast3` | lam-api 리전 |
 | `CLOUD_RUN_WEB_REGION` | `asia-northeast1` | lam-web 리전 |
 | `CLOUD_RUN_ADMIN_WEB_REGION` | `asia-northeast3` | lam-admin-web 리전 |
+| `CLOUD_RUN_POS_ORDER_PROVIDER` | `open-api` | `plugin`으로 지정하면 API의 Open API 주문 생성을 끄고 POS Worker 플러그인 전달 모드를 활성화한다. 이때 `lam-pos-plugin-api-token` 시크릿이 반드시 있어야 한다 |
 | `CLOUD_RUN_WEB_DOMAIN` | `www.barlaam.store` | lam-web 커스텀 도메인. 빈 문자열이면 매핑 확인·생성을 생략하고, lam-api에 넘기는 `CUSTOMER_WEB_BASE_URL`(관리자 테이블 QR이 여는 주소)도 이미 배포된 lam-web의 Cloud Run URL로 대체된다 |
 | `CLOUD_RUN_SERVICE_ACCOUNT` | `lam-cloud-run@<project>.iam.gserviceaccount.com` | 모든 Cloud Run 서비스의 실행 서비스 계정 |
 | `CLOUD_RUN_NEXT_PUBLIC_SUPABASE_URL` | 현재 운영 Supabase 프로젝트 URL | lam-admin-web 빌드 시점에 번들에 박히는 값 |
