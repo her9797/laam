@@ -114,12 +114,23 @@ export async function mockCustomerRequestsList(
 /**
  * Mocks a status-change PATCH (`PATCH /api/admin/customer-requests/{id}/status`),
  * which per `features/requests/api.ts` returns the full refreshed list.
+ *
+ * Pass `state` whenever the screen under test reads the *paged* list
+ * (`mockCustomerRequestsPage`): `useUpdateCustomerRequestStatusMutation`
+ * invalidates `requestsKeys.all` rather than writing this response into the
+ * cache (see `features/requests/queries.ts`), so the list refetches right
+ * after the PATCH — and without advancing the shared state that refetch
+ * would just serve the pre-PATCH rows again.
  */
 export async function mockCustomerRequestStatusUpdate(
   page: Page,
   refreshedRequests: CustomerRequest[],
+  state?: CustomerRequestListState,
 ): Promise<void> {
   await page.route("**/api/admin/customer-requests/*/status", async (route) => {
+    if (state) {
+      state.requests = refreshedRequests;
+    }
     await route.fulfill({ json: refreshedRequests });
   });
 }
@@ -164,9 +175,126 @@ export async function mockSpecialRequestsList(
 export async function mockSpecialRequestDelete(
   page: Page,
   refreshedRequests: SpecialRequest[],
+  state?: SpecialRequestListState,
 ): Promise<void> {
   await page.route("**/api/admin/special-requests/*", async (route) => {
+    if (state) {
+      state.requests = refreshedRequests;
+    }
     await route.fulfill({ json: refreshedRequests });
+  });
+}
+
+/**
+ * Mutable "server state" for the paged list mocks below. The list route
+ * reads `requests` on every call and the mutation mocks
+ * (`mockCustomerRequestStatusUpdate`, `mockSpecialRequestDelete`) replace
+ * it, so a screen that refetches after a mutation observes the change. A
+ * plain array would not: those mutations invalidate their query key instead
+ * of writing the response into the cache, so the list always goes back to
+ * the network before re-rendering.
+ */
+export type CustomerRequestListState = { requests: CustomerRequest[] };
+
+export type SpecialRequestListState = { requests: SpecialRequest[] };
+
+const SONG_REQUEST_PREFIX = "[노래 신청]";
+
+/**
+ * Mocks the paged general/song request route
+ * (`GET /api/admin/customer-requests?...`) that `RequestListPage` uses —
+ * distinct from `mockCustomerRequestsList` above, which answers the bare,
+ * query-less path the notification bell and dashboard still call. Reaching
+ * `lam-api` with any recognized query param switches its response from the
+ * plain array to the `{ items, page, pageSize, total }` envelope (see
+ * `features/requests/api.ts`'s `fetchCustomerRequestsPage`), so the two
+ * shapes need two mocks. The match predicate keys on exactly that — same
+ * path, non-empty query string — rather than a glob, so the split is
+ * explicit and the two routes can never shadow each other.
+ *
+ * `kind` and `status` are applied here the way the server applies them
+ * (`kind` via the same `[노래 신청]` text-prefix convention
+ * `features/dashboard/summary.ts` encodes), so `/requests` and
+ * `/song-requests` really do get different rows. The `from`/`to` bounds are
+ * deliberately ignored: the screen fills them from a default window
+ * relative to today (`RequestListPage`'s mount effect), so honoring them
+ * here would make these tests start failing on a date no one chose.
+ */
+export async function mockCustomerRequestsPage(
+  page: Page,
+  state: CustomerRequestListState,
+): Promise<void> {
+  await page.route(
+    (url) => url.pathname === "/api/admin/customer-requests" && url.search !== "",
+    async (route) => {
+      const params = new URL(route.request().url()).searchParams;
+      const kind = params.get("kind");
+      const status = params.get("status");
+      const items = state.requests.filter((request) => {
+        const isSong = request.text.startsWith(SONG_REQUEST_PREFIX);
+        if (kind === "song" && !isSong) {
+          return false;
+        }
+        if (kind === "general" && isSong) {
+          return false;
+        }
+        return !status || request.status === status;
+      });
+      await route.fulfill({
+        json: {
+          items,
+          page: Number(params.get("page")) || 1,
+          pageSize: Number(params.get("pageSize")) || items.length,
+          total: items.length,
+        },
+      });
+    },
+  );
+}
+
+/**
+ * Mocks the paged special request route
+ * (`GET /api/admin/special-requests?...`) that `SpecialRequestPage` uses —
+ * see `mockCustomerRequestsPage` above for why the paged and query-less
+ * routes are mocked separately and why the date bounds are ignored.
+ */
+export async function mockSpecialRequestsPage(
+  page: Page,
+  state: SpecialRequestListState,
+): Promise<void> {
+  await page.route(
+    (url) => url.pathname === "/api/admin/special-requests" && url.search !== "",
+    async (route) => {
+      const params = new URL(route.request().url()).searchParams;
+      const gender = params.get("gender");
+      const items = state.requests.filter(
+        (request) => !gender || request.gender === gender,
+      );
+      await route.fulfill({
+        json: {
+          items,
+          page: Number(params.get("page")) || 1,
+          pageSize: Number(params.get("pageSize")) || items.length,
+          total: items.length,
+        },
+      });
+    },
+  );
+}
+
+/**
+ * Mocks the paginated order list route (`GET /api/admin/payment-orders`).
+ *
+ * The dashboard's unpaid-order card reads only `total` from this envelope,
+ * and it issues one request per unpaid status (`READY`, `ACKNOWLEDGED` — see
+ * `features/orders/queries.ts`'s `useOrderCountQuery`), so this matches the
+ * path regardless of query string and answers every one of them. `total` is
+ * therefore counted once per status: the card shows `total` × the number of
+ * unpaid statuses.
+ */
+export async function mockPaymentOrdersList(page: Page, total = 0): Promise<void> {
+  await page.route("**/api/admin/payment-orders?**", async (route) => {
+    await route.fulfill({ json: { items: [], page: 1, pageSize: 1, total } });
   });
 }
 
@@ -204,11 +332,17 @@ export async function mockDashboardData(
     appData?: AppData;
     requests?: CustomerRequest[];
     specialRequests?: SpecialRequest[];
+    orderCount?: number;
   } = {},
 ): Promise<void> {
   await mockBootstrap(page, overrides.appData ?? buildAppData());
   await mockCustomerRequestsList(page, overrides.requests ?? buildCustomerRequests());
   await mockSpecialRequestsList(page, overrides.specialRequests ?? buildSpecialRequests());
+  // The dashboard renders an error state if any of its queries fails, so the
+  // unpaid-order card's request must be mocked here too — without it the
+  // whole screen fails to render and every assertion on the dashboard (page
+  // heading included) misses, no matter what the test is actually about.
+  await mockPaymentOrdersList(page, overrides.orderCount ?? 0);
 }
 
 /**

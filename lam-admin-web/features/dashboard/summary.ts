@@ -67,9 +67,10 @@ function countPending(requests: CustomerRequest[]): number {
  * order API calls, models, or mutation flows themselves.
  *
  * `orderCount` is passed in as a plain number rather than an order array:
- * it comes from `OrderPageResult.total` (server-side pagination), counting
- * unpaid (`READY`) orders regardless of `/orders`'s own default filter —
- * see `features/orders/queries.ts`'s `useOrderCountQuery`.
+ * it is a server-side total (from `OrderPageResult.total`) of the orders
+ * still awaiting payment — both `READY` and `ACKNOWLEDGED` — regardless of
+ * `/orders`'s own default filter. See `features/orders/queries.ts`'s
+ * `useOrderCountQuery`.
  */
 export function buildDashboardSummary(
   appData: AppData,

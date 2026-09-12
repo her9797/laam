@@ -59,3 +59,18 @@ export function fetchOrder(orderId: string): Promise<PaymentOrder> {
     method: "GET",
   });
 }
+
+/**
+ * Marks a `READY` order as `ACKNOWLEDGED` — the one manual status
+ * transition an operator can trigger (kitchen/bar acknowledging the
+ * order); `lam-api` rejects any other `status` value with 400, and never
+ * accepts this transition away from a non-`READY` order. `DONE`/`CANCELLED`
+ * are POS-webhook-only and have no admin-web mutation.
+ */
+export function acknowledgeOrder(orderId: string): Promise<PaymentOrder> {
+  return fetchJson<PaymentOrder>(`${PAYMENT_ORDERS_PATH}/${encodeURIComponent(orderId)}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "ACKNOWLEDGED" }),
+  });
+}

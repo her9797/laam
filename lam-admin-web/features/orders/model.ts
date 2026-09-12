@@ -6,7 +6,7 @@
  * no shared model, API path, or query key with `features/requests` or
  * `features/special-requests`.
  */
-export type PaymentOrderStatus = "READY" | "DONE";
+export type PaymentOrderStatus = "READY" | "ACKNOWLEDGED" | "DONE" | "CANCELLED";
 
 export type PaymentOrderPosSyncStatus = "PENDING" | "SUCCEEDED" | "FAILED" | "NOT_CONFIGURED";
 

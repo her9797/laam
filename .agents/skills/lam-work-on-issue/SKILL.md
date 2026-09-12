@@ -55,7 +55,10 @@ CSS, 라우팅, 환경변수, 설정, 타입, 의존성 변경은 단순 변경�
 3. 전체 출력, 종료 코드와 실패 수를 확인한다.
 4. 실패하면 성공으로 표현하지 않고 실제 상태와 원인을 보고한다.
 5. 실행하지 못한 검증과 이유를 명시한다.
-6. `lam-api`를 변경했으면 push 전에 `lam-verify-ci` Skill로 CI 동등 검증을 실행한다. 워킹트리가 CRLF라 `gofmt -l .`을 그대로 실행하면 모든 파일이 오탐으로 출력되므로, 그 Skill의 LF 기준 절차를 사용한다.
+6. CI가 있는 경로를 변경했으면 push 전에 `lam-verify-ci` Skill로 CI 동등 검증을 실행한다.
+   - `lam-api`: 워킹트리가 CRLF라 `gofmt -l .`을 그대로 실행하면 모든 파일이 오탐으로 출력되므로, 그 Skill의 LF 기준 절차를 사용한다.
+   - `lam-admin-web`: 의존성 설치는 `npm install`이 아니라 CI와 같은 `npm ci`로 확인한다. `package.json`이나 `package-lock.json`을 건드렸다면 Windows에서 만든 lockfile이 리눅스 러너에서 `npm ci`를 깨뜨리는 함정이 있으므로 그 Skill의 절차를 따른다. UI 상호작용을 바꿨다면 `npm run test:e2e`까지 확인한다.
+   - `lam-web`에는 CI가 없다. 로컬 검증 결과만이 근거이므로 무엇을 실행했는지 보고에 명시한다.
 
 테스트 통과는 테스트 결과만, 빌드 성공은 빌드 결과만 증명한다. 부분 검증을 전체 성공으로 확대 해석하지 않는다.
 

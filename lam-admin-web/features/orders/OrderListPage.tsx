@@ -46,7 +46,9 @@ const SEARCH_DEBOUNCE_MS = 300;
 // Translation keys in the `orders` namespace, not rendered text.
 const STATUS_LABEL_KEY: Record<PaymentOrderStatus, string> = {
   READY: "statusReady",
+  ACKNOWLEDGED: "statusAcknowledged",
   DONE: "statusDone",
+  CANCELLED: "statusCancelled",
 };
 
 const POS_SYNC_LABEL_KEY: Record<PaymentOrderPosSyncStatus, string> = {
@@ -138,7 +140,9 @@ export function OrderListPage() {
   const STATUS_FILTER_LABELS: Record<string, string> = {
     all: t("common:filterAll"),
     READY: t("statusReady"),
+    ACKNOWLEDGED: t("statusAcknowledged"),
     DONE: t("statusDone"),
+    CANCELLED: t("statusCancelled"),
   };
   const POS_SYNC_FILTER_LABELS: Record<string, string> = {
     all: t("common:filterAll"),
@@ -203,7 +207,9 @@ export function OrderListPage() {
             <SelectContent>
               <SelectItem value="all">{t("common:filterAll")}</SelectItem>
               <SelectItem value="READY">{t("statusReady")}</SelectItem>
+              <SelectItem value="ACKNOWLEDGED">{t("statusAcknowledged")}</SelectItem>
               <SelectItem value="DONE">{t("statusDone")}</SelectItem>
+              <SelectItem value="CANCELLED">{t("statusCancelled")}</SelectItem>
             </SelectContent>
           </Select>
         </div>

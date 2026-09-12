@@ -55,6 +55,20 @@ const ORDERS: PaymentOrder[] = [
     posSyncStatus: "PENDING",
     createdAt: "2026-01-10T13:00:00Z",
   },
+  {
+    orderId: "order-3",
+    menuItemName: "Wine",
+    categoryName: "Drinks",
+    tableNumber: "7",
+    requestNote: "",
+    amount: 12000,
+    vat: 1091,
+    suppliedAmount: 10909,
+    taxFreeAmount: 0,
+    status: "CANCELLED",
+    posSyncStatus: "NOT_CONFIGURED",
+    createdAt: "2026-01-10T14:00:00Z",
+  },
 ];
 
 function pageFixture(items: PaymentOrder[], overrides: Partial<OrderPageResult> = {}): OrderPageResult {
@@ -132,8 +146,8 @@ describe("OrderListPage", () => {
     render(<OrderListPage />);
 
     const heading = screen.getByRole("heading", { name: "주문 내역" });
-    expect(within(heading.parentElement as HTMLElement).queryByText("총 2건")).not.toBeInTheDocument();
-    expect(screen.getByText("총 2건")).toBeInTheDocument();
+    expect(within(heading.parentElement as HTMLElement).queryByText("총 3건")).not.toBeInTheDocument();
+    expect(screen.getByText("총 3건")).toBeInTheDocument();
   });
 
   it("renders order rows with table number, menu item, amount, status, and POS sync state", () => {
@@ -145,12 +159,37 @@ describe("OrderListPage", () => {
     expect(screen.getByText("결제완료")).toBeInTheDocument();
     expect(screen.getByText("6")).toBeInTheDocument();
     expect(screen.getByText("Cider")).toBeInTheDocument();
-    expect(screen.getByText("미결제")).toBeInTheDocument();
+    expect(screen.getByText("주문접수")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+    expect(screen.getByText("Wine")).toBeInTheDocument();
+    expect(screen.getByText("취소됨")).toBeInTheDocument();
   });
 
   it("defaults to requesting no status filter (via the URL query parser's own default)", () => {
     render(<OrderListPage />);
     expect(useOrdersPageQueryMock).toHaveBeenCalledWith(expect.objectContaining({ status: undefined }), true);
+  });
+
+  it("shows the CANCELLED status label when the URL already carries that filter", () => {
+    currentSearchParams = new URLSearchParams("dateFrom=2026-01-01&dateTo=2026-01-10&status=CANCELLED");
+
+    render(<OrderListPage />);
+
+    expect(useOrdersPageQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "CANCELLED" }),
+      true,
+    );
+  });
+
+  it("accepts ACKNOWLEDGED as a status filter from the URL", () => {
+    currentSearchParams = new URLSearchParams("dateFrom=2026-01-01&dateTo=2026-01-10&status=ACKNOWLEDGED");
+
+    render(<OrderListPage />);
+
+    expect(useOrdersPageQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "ACKNOWLEDGED" }),
+      true,
+    );
   });
 
   it("links each row's menu item name to the order-detail route, underlined by default so it reads as clickable", () => {

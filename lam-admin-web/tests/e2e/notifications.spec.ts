@@ -13,6 +13,12 @@ import {
 // Each test builds its own fixtures and registers its own `page.route`
 // mocks, per this suite's existing convention (see `admin-mvp.spec.ts`).
 //
+// The bell is addressed by its accessible name throughout, which is
+// `notifications:bellLabel` ("새 알림 {{count}}건") while anything is unread
+// and `notifications:bellLabelEmpty` ("손님 요청 알림") when nothing is —
+// two different strings, so the name a test uses also asserts which of the
+// two states the bell is in, and with it the unread count.
+//
 // What this file deliberately does NOT assert: that the destination list
 // screen (`/requests`, `/song-requests`) re-renders the updated row after
 // the notification click's mutation invalidates and refetches
@@ -33,7 +39,7 @@ test.describe("관리자 알림", () => {
     await mockDashboardData(page, { requests });
     await loginAsAdmin(page);
 
-    const bell = page.getByRole("button", { name: /손님 요청 알림, 미확인 2건/ });
+    const bell = page.getByRole("button", { name: "새 알림 2건" });
     await expect(bell).toBeVisible();
     await expect(bell.getByText("2", { exact: true })).toBeVisible();
 
@@ -59,7 +65,11 @@ test.describe("관리자 알림", () => {
     ]);
 
     expect(patchRequest.postDataJSON()).toEqual({ status: "checked" });
-    await expect(page).toHaveURL(/\/requests$/);
+    // Pathname only: `RequestListPage`'s mount effect immediately replaces
+    // the URL with its default date window (`?dateFrom=…&dateTo=…`), so
+    // matching the whole URL would be a race against that replace rather
+    // than a check that the click landed on this screen.
+    await expect(page).toHaveURL((url) => url.pathname === "/requests");
   });
 
   test("노래 신청 알림을 클릭하면 노래 신청 목록으로 이동한다", async ({ page }) => {
@@ -72,11 +82,12 @@ test.describe("관리자 알림", () => {
       requests.map((request) => (request.id === "r2" ? { ...request, status: "checked" as const } : request)),
     );
 
-    await page.getByRole("button", { name: /손님 요청 알림/ }).click();
+    await page.getByRole("button", { name: "새 알림 2건" }).click();
     const panel = page.getByText("손님 요청 알림", { exact: true }).locator("..").locator("..");
     await panel.getByText("Dynamite - BTS").click();
 
-    await expect(page).toHaveURL(/\/song-requests$/);
+    // Pathname only — see the first test for why.
+    await expect(page).toHaveURL((url) => url.pathname === "/song-requests");
   });
 
   test("미처리 요청이 없으면 배지가 없고 패널에 빈 상태가 보인다", async ({ page }) => {
@@ -105,12 +116,19 @@ test.describe("관리자 알림", () => {
     const refreshedRequests = requests.map((request) => ({ ...request, status: "checked" as const }));
     await mockCustomerRequestsBulkStatusUpdate(page, refreshedRequests);
 
-    await page.getByRole("button", { name: /손님 요청 알림, 미확인 2건/ }).click();
+    await page.getByRole("button", { name: "새 알림 2건" }).click();
     await page.getByRole("button", { name: "모두 확인" }).click();
 
     const confirmDialog = page.getByRole("alertdialog");
     await expect(confirmDialog).toBeVisible();
-    await expect(confirmDialog.getByText("표시된 미처리 요청 2건을 모두 확인 처리합니다.")).toBeVisible();
+    // "모두 확인" covers only the general requests on show — a song request
+    // stays pending until it is approved — so the count here is 1 (r1), not
+    // the 2 the badge shows.
+    await expect(
+      confirmDialog.getByText(
+        "표시된 일반 요청 1건을 모두 확인 처리합니다. 노래 신청은 승인 전까지 유지됩니다.",
+      ),
+    ).toBeVisible();
 
     const [bulkRequest] = await Promise.all([
       page.waitForRequest(
@@ -119,9 +137,10 @@ test.describe("관리자 알림", () => {
       confirmDialog.getByRole("button", { name: "확인" }).click(),
     ]);
 
-    // Panel order is newest-first (`toNotifications`'s sort), and r2's
-    // `createdAt` (10:05) is later than r1's (10:00) in `buildCustomerRequests()`.
-    expect(bulkRequest.postDataJSON()).toEqual({ ids: ["r2", "r1"], status: "checked" });
+    // Only the general requests are sent: r2 is a song request, which
+    // `handleConfirmMarkAll` filters out (see `NotificationBell`), leaving
+    // r1 alone — the same split the dialog copy asserted above.
+    expect(bulkRequest.postDataJSON()).toEqual({ ids: ["r1"], status: "checked" });
   });
 
   test("'모두 확인' 대화상자를 취소하면 아무 것도 처리되지 않는다", async ({ page }) => {
@@ -139,7 +158,7 @@ test.describe("관리자 알림", () => {
       await route.fulfill({ json: requests });
     });
 
-    await page.getByRole("button", { name: /손님 요청 알림, 미확인 2건/ }).click();
+    await page.getByRole("button", { name: "새 알림 2건" }).click();
     await page.getByRole("button", { name: "모두 확인" }).click();
 
     const confirmDialog = page.getByRole("alertdialog");

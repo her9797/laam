@@ -11,7 +11,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/states/PageSt
 import { formatCurrencyKRW, formatDateTime } from "@/lib/utils";
 
 import type { PaymentOrder, PaymentOrderPosSyncStatus, PaymentOrderStatus } from "./model";
-import { useOrderQuery } from "./queries";
+import { useAcknowledgeOrderMutation, useOrderQuery } from "./queries";
 
 // Translation keys in the `orders` namespace, not rendered text. Mirrors
 // `OrderListPage`'s own copies — kept separate rather than shared, since
@@ -19,7 +19,9 @@ import { useOrderQuery } from "./queries";
 // renders it.
 const STATUS_LABEL_KEY: Record<PaymentOrderStatus, string> = {
   READY: "statusReady",
+  ACKNOWLEDGED: "statusAcknowledged",
   DONE: "statusDone",
+  CANCELLED: "statusCancelled",
 };
 
 const POS_SYNC_LABEL_KEY: Record<PaymentOrderPosSyncStatus, string> = {
@@ -87,6 +89,7 @@ export function OrderDetailPage({ orderId }: { orderId: string }) {
   const { t, i18n } = useTranslation("orders");
   const router = useRouter();
   const orderQuery = useOrderQuery(orderId);
+  const acknowledgeMutation = useAcknowledgeOrderMutation();
 
   if (orderQuery.isLoading) {
     return <LoadingState label={t("loading")} />;
@@ -140,9 +143,21 @@ export function OrderDetailPage({ orderId }: { orderId: string }) {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-foreground">{t("detailTitle")}</h1>
-        <Button type="button" size="sm" variant="outline" onClick={() => router.back()}>
-          {t("detailBackToList")}
-        </Button>
+        <div className="flex items-center gap-2">
+          {order.status === "READY" ? (
+            <Button
+              type="button"
+              size="sm"
+              disabled={acknowledgeMutation.isPending}
+              onClick={() => acknowledgeMutation.mutate(order.orderId)}
+            >
+              {t("detailAcknowledgeButton")}
+            </Button>
+          ) : null}
+          <Button type="button" size="sm" variant="outline" onClick={() => router.back()}>
+            {t("detailBackToList")}
+          </Button>
+        </div>
       </div>
 
       <Card>

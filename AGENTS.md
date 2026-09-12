@@ -72,7 +72,7 @@
 
 - Issue 또는 코드 변경 작업: `.agents/skills/lam-work-on-issue/SKILL.md`
 - 본인 dev 브랜치에서 `main`으로 변경 전달: `.agents/skills/lam-deliver-change/SKILL.md`
-- `lam-api` CI 실패 재현과 원인 확정: `.agents/skills/lam-verify-ci/SKILL.md`
+- CI(`lam-api CI`, `lam-admin-web CI`) 실패 재현과 원인 확정: `.agents/skills/lam-verify-ci/SKILL.md`
 
 RBAC 전용 Skill은 두지 않는다. 권한 변경도 `lam-work-on-issue`와 이 문서의 보안 규칙을 따른다.
 

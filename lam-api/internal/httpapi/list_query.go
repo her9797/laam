@@ -258,7 +258,7 @@ func parseSpecialRequestListQuery(query url.Values) (specialRequestListQuery, bo
 type paymentOrderListQuery struct {
 	Page          int
 	PageSize      int
-	Status        string // "" = all | "READY" | "DONE"
+	Status        string // "" = all | "READY" | "ACKNOWLEDGED" | "DONE" | "CANCELLED"
 	PosSyncStatus string // "" = all | "PENDING" | "SUCCEEDED" | "FAILED" | "NOT_CONFIGURED"
 	Search        string
 	From          *time.Time // inclusive
@@ -289,7 +289,7 @@ func parsePaymentOrderListQuery(query url.Values) (paymentOrderListQuery, error)
 
 	if status := query.Get("status"); status != "" {
 		switch status {
-		case "READY", "DONE":
+		case "READY", "ACKNOWLEDGED", "DONE", "CANCELLED":
 			q.Status = status
 		default:
 			return q, fmt.Errorf("invalid status: %q", status)

@@ -9,10 +9,10 @@ import {
   mockCreateMenuItem,
   mockCreateNotice,
   mockCustomerRequestStatusUpdate,
-  mockCustomerRequestsList,
+  mockCustomerRequestsPage,
   mockDashboardData,
   mockSpecialRequestDelete,
-  mockSpecialRequestsList,
+  mockSpecialRequestsPage,
 } from "./fixtures";
 
 // Every test below builds its own fixtures via `buildAppData()` /
@@ -41,12 +41,16 @@ test.describe("관리자 MVP 핵심 흐름", () => {
     await mockDashboardData(page);
     await loginAsAdmin(page);
 
-    const requests = buildCustomerRequests();
-    await mockCustomerRequestsList(page, requests);
-    const refreshedRequests = requests.map((request) =>
+    // `/requests` reads the paged envelope, not the bare array the
+    // notification bell reads (already mocked by `mockDashboardData`) — and
+    // the PATCH below invalidates rather than seeds that query, so the list
+    // refetches afterwards and the mock has to move with it.
+    const listState = { requests: buildCustomerRequests() };
+    await mockCustomerRequestsPage(page, listState);
+    const refreshedRequests = listState.requests.map((request) =>
       request.id === "r1" ? { ...request, status: "checked" as const } : request,
     );
-    await mockCustomerRequestStatusUpdate(page, refreshedRequests);
+    await mockCustomerRequestStatusUpdate(page, refreshedRequests, listState);
 
     await page.goto("/requests");
     const row = page.locator("tr", { hasText: "물 좀 주세요" });
@@ -64,9 +68,11 @@ test.describe("관리자 MVP 핵심 흐름", () => {
     await mockDashboardData(page);
     await loginAsAdmin(page);
 
-    const specialRequests = buildSpecialRequests();
-    await mockSpecialRequestsList(page, specialRequests);
-    await mockSpecialRequestDelete(page, []);
+    // Same paged-envelope/refetch-after-mutation shape as the general
+    // request test above.
+    const listState = { requests: buildSpecialRequests() };
+    await mockSpecialRequestsPage(page, listState);
+    await mockSpecialRequestDelete(page, [], listState);
 
     await page.goto("/special-requests");
     await expect(page.getByText("홍길동")).toBeVisible();
@@ -84,7 +90,6 @@ test.describe("관리자 MVP 핵심 흐름", () => {
     await loginAsAdmin(page);
 
     const appData = buildAppData();
-    await mockCustomerRequestsList(page, buildCustomerRequests());
     await mockBootstrap(page, appData);
     const refreshedAppData = {
       ...appData,
@@ -107,9 +112,15 @@ test.describe("관리자 MVP 핵심 흐름", () => {
     await page.goto("/menu");
     await expect(page.getByText("아메리카노")).toBeVisible();
 
-    await page.getByLabel("이름", { exact: true }).fill("라떼");
-    await page.getByLabel("가격", { exact: true }).fill("4500");
+    // The create form lives in a dialog behind this trigger now (see
+    // `features/menu/MenuItemForm.tsx`); it is no longer inline on the page.
     await page.getByRole("button", { name: "메뉴 추가" }).click();
+    const createDialog = page.getByRole("dialog");
+    await expect(createDialog.getByRole("heading", { name: "메뉴 등록" })).toBeVisible();
+
+    await createDialog.getByLabel("이름", { exact: true }).fill("라떼");
+    await createDialog.getByLabel("가격", { exact: true }).fill("4500");
+    await createDialog.getByRole("button", { name: "저장" }).click();
 
     await expect(page.getByText("라떼")).toBeVisible();
   });
@@ -129,8 +140,16 @@ test.describe("관리자 MVP 핵심 흐름", () => {
     await page.goto("/notices");
     await expect(page.getByText("매주 수요일 하이볼 1,000원 할인")).toBeVisible();
 
-    await page.getByLabel("공지 문구").fill("새 이벤트 안내");
-    await page.getByRole("button", { name: "등록" }).click();
+    // Same move as the menu screen: the create form is behind this trigger
+    // in a dialog, and the page itself now only carries a search box (whose
+    // "공지 문구로 검색" label a page-wide `getByLabel("공지 문구")` would
+    // otherwise match, filtering the list instead of filling the form).
+    await page.getByRole("button", { name: "공지 추가" }).click();
+    const createDialog = page.getByRole("dialog");
+    await expect(createDialog.getByRole("heading", { name: "새 공지/이벤트 등록" })).toBeVisible();
+
+    await createDialog.getByLabel("공지 문구", { exact: true }).fill("새 이벤트 안내");
+    await createDialog.getByRole("button", { name: "등록" }).click();
 
     await expect(page.getByText("새 이벤트 안내")).toBeVisible();
   });

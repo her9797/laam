@@ -1,7 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchOrder, fetchOrdersPage } from "./api";
-import type { OrderListQuery } from "./model";
+import { acknowledgeOrder, fetchOrder, fetchOrdersPage } from "./api";
+import type { OrderListQuery, PaymentOrderStatus } from "./model";
 
 /**
  * Cache keys for `payment_orders`. Kept separate from every other
@@ -22,6 +22,7 @@ export const orderKeys = {
   list: (query: OrderListQuery) => ["orders", "list", query] as const,
   notifications: ["orders", "notifications"] as const,
   count: ["orders", "count"] as const,
+  detail: (orderId: string) => ["orders", "detail", orderId] as const,
 };
 
 /**
@@ -86,27 +87,46 @@ export function useOrderNotificationsQuery() {
 }
 
 /**
- * Dashboard's order-history aggregate: total READY (미결제/unpaid) orders,
- * all-time — surfaces orders still awaiting payment, unlike `/orders`'s own
- * default filter (see `list-query-url.ts`'s `DEFAULT_STATUS`), which shows
- * every status. `pageSize: 1` keeps the request cheap; only `total`
- * from the paginated envelope is read, never `items`.
+ * Dashboard's order-history aggregate: every order still awaiting payment,
+ * all-time — unlike `/orders`'s own default filter (see `list-query-url.ts`'s
+ * `DEFAULT_STATUS`), which shows every status. `pageSize: 1` keeps each
+ * request cheap; only `total` from the paginated envelope is read, never
+ * `items`.
+ *
+ * "Unpaid" spans two statuses, not one: an order stays unpaid after a staff
+ * member acknowledges it (READY → ACKNOWLEDGED), and only leaves that state
+ * on a POS webhook (→ DONE/CANCELLED). Counting READY alone would silently
+ * drop an order from this card the moment someone pressed 주문확인, while it
+ * was still sitting unpaid on the table. The list endpoint's `status` filter
+ * takes a single value, so the two are fetched separately and summed here
+ * rather than widening that API contract for one dashboard card.
  */
-const DASHBOARD_ORDER_COUNT_QUERY: OrderListQuery = {
-  page: 1,
-  pageSize: 1,
-  status: "READY",
-  search: "",
-  dateFrom: "",
-  dateTo: "",
-  sort: "createdAt",
-  order: "desc",
-};
+const DASHBOARD_UNPAID_STATUSES = ["READY", "ACKNOWLEDGED"] as const;
+
+function buildDashboardOrderCountQuery(status: PaymentOrderStatus): OrderListQuery {
+  return {
+    page: 1,
+    pageSize: 1,
+    status,
+    search: "",
+    dateFrom: "",
+    dateTo: "",
+    sort: "createdAt",
+    order: "desc",
+  };
+}
 
 export function useOrderCountQuery() {
   return useQuery({
     queryKey: orderKeys.count,
-    queryFn: () => fetchOrdersPage(DASHBOARD_ORDER_COUNT_QUERY),
+    queryFn: async () => {
+      const pages = await Promise.all(
+        DASHBOARD_UNPAID_STATUSES.map((status) =>
+          fetchOrdersPage(buildDashboardOrderCountQuery(status)),
+        ),
+      );
+      return { total: pages.reduce((sum, page) => sum + page.total, 0) };
+    },
   });
 }
 
@@ -118,7 +138,27 @@ export function useOrderCountQuery() {
  */
 export function useOrderQuery(orderId: string) {
   return useQuery({
-    queryKey: ["orders", "detail", orderId] as const,
+    queryKey: orderKeys.detail(orderId),
     queryFn: () => fetchOrder(orderId),
+  });
+}
+
+/**
+ * The order-detail screen's "주문확인" action. `lam-api` returns the
+ * updated order, but this invalidates the whole `orderKeys.all` prefix
+ * (list, notifications, count, and every detail entry) rather than writing
+ * the response directly into a single cache entry — the same
+ * refetch-under-current-condition strategy `features/requests/queries.ts`'s
+ * status mutation uses, since the list screen's active filter/page could
+ * differ from what this response describes.
+ */
+export function useAcknowledgeOrderMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (orderId: string) => acknowledgeOrder(orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderKeys.all });
+    },
   });
 }

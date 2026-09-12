@@ -38,6 +38,12 @@ type Config struct {
 	// rather than silently signing with an empty secret.
 	QRSigningSecret    string
 	CustomerWebBaseURL string
+	// TossPlaceWebhookSecret verifies inbound TossPlace order webhooks (see
+	// internal/httpapi/tossplace_webhooks.go). It is a separate value from
+	// TossPlaceSecretKey (used for outbound POS API calls) — empty by
+	// default, like TossPlaceSecretKey, since local/dev environments may not
+	// have webhooks configured.
+	TossPlaceWebhookSecret string
 }
 
 func Load() Config {
@@ -108,6 +114,7 @@ func Load() Config {
 		SupabaseBroadcastKey:   os.Getenv("SUPABASE_BROADCAST_KEY"),
 		QRSigningSecret:        os.Getenv("QR_SIGNING_SECRET"),
 		CustomerWebBaseURL:     os.Getenv("CUSTOMER_WEB_BASE_URL"),
+		TossPlaceWebhookSecret: os.Getenv("TOSS_PLACE_WEBHOOK_SECRET"),
 	}
 }
 

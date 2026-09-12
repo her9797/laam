@@ -54,6 +54,10 @@ type updateCustomerRequestStatusRequest struct {
 	Status string `json:"status"`
 }
 
+type updatePaymentOrderStatusRequest struct {
+	Status string `json:"status"`
+}
+
 type bulkUpdateCustomerRequestStatusRequest struct {
 	IDs    []string `json:"ids"`
 	Status string   `json:"status"`

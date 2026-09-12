@@ -1,0 +1,106 @@
+name: lam-admin-web CI
+
+on:
+  push:
+    paths:
+      - "lam-admin-web/**"
+      - ".github/workflows/lam-admin-web-ci.yml"
+  pull_request:
+    paths:
+      - "lam-admin-web/**"
+      - ".github/workflows/lam-admin-web-ci.yml"
+
+concurrency:
+  group: lam-admin-web-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-and-unit:
+    name: 정적 검사와 단위 테스트 (타입·린트·vitest)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: lam-admin-web
+        shell: bash
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Node 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: lam-admin-web/package-lock.json
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 타입 검사 (tsc --noEmit)
+        run: npm run typecheck
+
+      - name: 린트 (eslint)
+        run: npm run lint
+
+      - name: 단위·컴포넌트 테스트 (vitest)
+        run: npm run test
+
+  e2e:
+    name: E2E 테스트 (Playwright)
+    runs-on: ubuntu-latest
+
+    # E2E는 `lam-api`를 호출하지 않는다. playwright.config.ts의 webServer가
+    # 도달 불가능한 API_BASE_URL을 넘기고 tests/e2e/fixtures.ts가 모든
+    # `/api/admin/*` 호출을 page.route로 가로채므로, 이 job은 DB도 백엔드도
+    # 필요 없이 단독으로 돈다. 모킹에 구멍이 있으면 연결 거부로 요란하게
+    # 실패한다 — 조용히 실제 호스트를 때리지 않는다.
+    defaults:
+      run:
+        working-directory: lam-admin-web
+        shell: bash
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Node 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: lam-admin-web/package-lock.json
+
+      - name: 의존성 설치
+        run: npm ci
+
+      # 브라우저 바이너리는 @playwright/test 버전과 짝이 맞아야 하므로
+      # package-lock.json 해시로 캐시한다. 캐시가 맞으면 다운로드를 건너뛴다.
+      - name: Playwright 브라우저 캐시
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('lam-admin-web/package-lock.json') }}
+
+      - name: Playwright 브라우저 설치
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      # 캐시가 맞아 브라우저 다운로드를 건너뛴 경우에도 OS 레벨 의존
+      # 라이브러리는 러너에 남아있지 않으므로 그것만 따로 설치한다.
+      - name: Playwright 시스템 의존성 설치
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: E2E 테스트 실행
+        run: npm run test:e2e
+
+      - name: Playwright 리포트 업로드
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lam-admin-web-playwright-report
+          path: lam-admin-web/playwright-report/
+          retention-days: 7

@@ -28,7 +28,7 @@ const DEFAULT_PAGE_SIZE = 10;
 const DEFAULT_STATUS: PaymentOrderStatus | undefined = undefined;
 const DEFAULT_SORT: PaymentOrderSort = "createdAt";
 
-const VALID_STATUSES: PaymentOrderStatus[] = ["READY", "DONE"];
+const VALID_STATUSES: PaymentOrderStatus[] = ["READY", "ACKNOWLEDGED", "DONE", "CANCELLED"];
 const VALID_POS_SYNC_STATUSES: PaymentOrderPosSyncStatus[] = [
   "PENDING",
   "SUCCEEDED",

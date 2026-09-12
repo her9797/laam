@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchJson } from "@/lib/api/fetch-json";
 
-import { fetchOrder, fetchOrdersPage } from "./api";
+import { acknowledgeOrder, fetchOrder, fetchOrdersPage } from "./api";
 import type { OrderListQuery } from "./model";
 
 vi.mock("@/lib/api/fetch-json", () => ({ fetchJson: vi.fn() }));
@@ -90,5 +90,23 @@ describe("fetchOrder", () => {
 
     const [path] = vi.mocked(fetchJson).mock.calls[0];
     expect(path).toBe("/api/admin/payment-orders/order%201%2Fweird");
+  });
+});
+
+describe("acknowledgeOrder", () => {
+  beforeEach(() => {
+    vi.mocked(fetchJson).mockReset().mockResolvedValue({ orderId: "order-1", status: "ACKNOWLEDGED" });
+  });
+
+  it("PATCHes the order's status path with status ACKNOWLEDGED", async () => {
+    await acknowledgeOrder("order 1/weird");
+
+    const [path, init] = vi.mocked(fetchJson).mock.calls[0];
+    expect(path).toBe("/api/admin/payment-orders/order%201%2Fweird/status");
+    expect(init).toMatchObject({
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "ACKNOWLEDGED" }),
+    });
   });
 });

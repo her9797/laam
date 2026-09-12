@@ -72,7 +72,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 deploy_api() {
   local customer_web_base_url="$1"
   local api_secrets
-  api_secrets="DATABASE_URL=lam-database-url:latest,ADMIN_API_TOKEN=lam-admin-api-token:latest,PAYMENT_API_TOKEN=lam-payment-api-token:latest,SUPABASE_BROADCAST_KEY=lam-supabase-secret-key:latest,SUPABASE_URL=lam-supabase-url:latest,QR_SIGNING_SECRET=lam-qr-signing-secret:latest,TOSS_PLACE_ACCESS_KEY=lam-toss-place-access-key:latest,TOSS_PLACE_SECRET_KEY=lam-toss-place-secret-key:latest,TOSS_PLACE_MERCHANT_ID=lam-toss-place-merchant-id:latest"
+  api_secrets="DATABASE_URL=lam-database-url:latest,ADMIN_API_TOKEN=lam-admin-api-token:latest,PAYMENT_API_TOKEN=lam-payment-api-token:latest,SUPABASE_BROADCAST_KEY=lam-supabase-secret-key:latest,SUPABASE_URL=lam-supabase-url:latest,QR_SIGNING_SECRET=lam-qr-signing-secret:latest,TOSS_PLACE_ACCESS_KEY=lam-toss-place-access-key:latest,TOSS_PLACE_SECRET_KEY=lam-toss-place-secret-key:latest,TOSS_PLACE_MERCHANT_ID=lam-toss-place-merchant-id:latest,TOSS_PLACE_WEBHOOK_SECRET=lam-toss-place-webhook-secret:latest"
   if "$GCLOUD" secrets describe lam-youtube-api-key --project="$PROJECT_ID" >/dev/null 2>&1; then
     api_secrets+=",YOUTUBE_API_KEY=lam-youtube-api-key:latest"
   else

@@ -274,6 +274,16 @@ func TestParsePaymentOrderListQuery_ValidValues(t *testing.T) {
 	}
 }
 
+func TestParsePaymentOrderListQuery_AcceptsCancelledStatus(t *testing.T) {
+	q, err := parsePaymentOrderListQuery(url.Values{"status": {"CANCELLED"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q.Status != "CANCELLED" {
+		t.Errorf("Status = %q, want CANCELLED", q.Status)
+	}
+}
+
 func TestParsePaymentOrderListQuery_InvalidValuesRejected(t *testing.T) {
 	cases := []struct {
 		name  string

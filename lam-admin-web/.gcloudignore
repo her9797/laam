@@ -1,0 +1,22 @@
+# `gcloud run deploy --source`가 Cloud Build로 올릴 때 제외할 경로.
+#
+# gcloud는 `.dockerignore`가 아니라 이 파일을 본다. 이 파일이 없으면 로컬
+# 빌드 산출물(`.next`는 1GB를 넘는다)과 `node_modules`까지 통째로 업로드되어
+# 배포가 매우 느려지고, 로컬 dev 서버가 `.next/dev/lock`을 잡고 있으면
+# 업로드가 Permission denied로 깨진다. 컨테이너 빌드는 Dockerfile 안에서
+# 새로 하므로 이 산출물들은 올릴 필요가 없다.
+#
+# 내용은 `.dockerignore`와 같은 의도를 유지한다. 한쪽만 고치면 어긋난다.
+.git
+.gcloudignore
+
+node_modules
+.next
+.env
+.env.*
+npm-debug.log*
+test-results
+playwright-report
+*.tsbuildinfo
+coverage
+tests

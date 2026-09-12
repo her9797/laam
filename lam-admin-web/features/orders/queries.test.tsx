@@ -30,18 +30,32 @@ describe("useOrderCountQuery", () => {
     vi.restoreAllMocks();
   });
 
-  // The dashboard card now counts unpaid orders, so this asserts the fixed
-  // query object it hands to `fetchOrdersPage` filters on `READY` (미결제)
-  // rather than `DONE`.
-  it("fetches the count filtered to READY (unpaid) orders", async () => {
+  // The dashboard card counts unpaid orders, and an order stays unpaid
+  // across both READY and ACKNOWLEDGED — acknowledging one must not drop it
+  // from the card. Asserting on both calls is what catches a regression back
+  // to counting a single status.
+  it("counts both READY and ACKNOWLEDGED (unpaid) orders", async () => {
     vi.mocked(fetchOrdersPage).mockResolvedValue(fixture);
     const { Wrapper } = createWrapper();
 
     const { result } = renderHook(() => useOrderCountQuery(), { wrapper: Wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
+    expect(fetchOrdersPage).toHaveBeenCalledWith(expect.objectContaining({ status: "READY" }));
     expect(fetchOrdersPage).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "READY" }),
+      expect.objectContaining({ status: "ACKNOWLEDGED" }),
     );
+  });
+
+  it("sums the totals of both unpaid statuses", async () => {
+    vi.mocked(fetchOrdersPage)
+      .mockResolvedValueOnce({ ...fixture, total: 3 })
+      .mockResolvedValueOnce({ ...fixture, total: 2 });
+    const { Wrapper } = createWrapper();
+
+    const { result } = renderHook(() => useOrderCountQuery(), { wrapper: Wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(result.current.data?.total).toBe(5);
   });
 });

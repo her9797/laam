@@ -402,7 +402,7 @@ func (r *Repository) CompletePaymentOrder(ctx context.Context, orderID string, i
 		}
 		return PaymentOrder{}, ErrAlreadyExists
 	}
-	if order.Status != "READY" || strings.TrimSpace(input.PaymentKey) == "" {
+	if (order.Status != "READY" && order.Status != "ACKNOWLEDGED") || strings.TrimSpace(input.PaymentKey) == "" {
 		return PaymentOrder{}, ErrInvalidInput
 	}
 
@@ -416,7 +416,7 @@ func (r *Repository) CompletePaymentOrder(ctx context.Context, orderID string, i
 			supplied_amount = $6,
 			tax_free_amount = $7,
 			updated_at = NOW()
-		WHERE id = $1 AND status = 'READY'
+		WHERE id = $1 AND status IN ('READY', 'ACKNOWLEDGED')
 	`, orderID, input.PaymentKey, input.PaymentMethod, input.ApprovedAt, input.VAT, input.SuppliedAmount, input.TaxFreeAmount)
 	if err != nil {
 		return PaymentOrder{}, classifyError(err)
@@ -428,11 +428,137 @@ func (r *Repository) CompletePaymentOrder(ctx context.Context, orderID string, i
 	return r.GetPaymentOrder(ctx, orderID)
 }
 
+// CompletePaymentOrderFromPOS records a POS (offline card/cash) payment
+// observed via a TossPlace order.order.completed.v1 webhook — see
+// internal/httpapi/tossplace_webhooks.go. It is a distinct method from
+// CompletePaymentOrder (the in-app Toss Payments flow) rather than a shared
+// code path because that method requires a non-empty PaymentKey, which a POS
+// payment never has; keeping them separate avoids weakening that existing
+// validation for the app flow.
+//
+// Accepts both READY and ACKNOWLEDGED source orders — ACKNOWLEDGED marks
+// that staff acknowledged the order in the admin screen, which does not
+// block POS payment from completing it.
+//
+// Idempotent for retried webhook deliveries: an already-DONE order is
+// returned unchanged rather than erroring. An already-CANCELLED order
+// returns ErrInvalidInput — a cancelled order must never be silently
+// resurrected into DONE by a stale/out-of-order webhook delivery.
+func (r *Repository) CompletePaymentOrderFromPOS(ctx context.Context, orderID string, approvedAt time.Time, vat int64, suppliedAmount int64, taxFreeAmount int64) (PaymentOrder, error) {
+	order, err := r.GetPaymentOrder(ctx, orderID)
+	if err != nil {
+		return PaymentOrder{}, err
+	}
+
+	if order.Status == "DONE" {
+		return order, nil
+	}
+	if order.Status != "READY" && order.Status != "ACKNOWLEDGED" {
+		return PaymentOrder{}, ErrInvalidInput
+	}
+
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE payment_orders
+		SET status = 'DONE',
+			payment_method = 'POS',
+			approved_at = $2,
+			vat = $3,
+			supplied_amount = $4,
+			tax_free_amount = $5,
+			updated_at = NOW()
+		WHERE id = $1 AND status IN ('READY', 'ACKNOWLEDGED')
+	`, orderID, approvedAt, vat, suppliedAmount, taxFreeAmount)
+	if err != nil {
+		return PaymentOrder{}, classifyError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return PaymentOrder{}, ErrAlreadyExists
+	}
+
+	return r.GetPaymentOrder(ctx, orderID)
+}
+
+// CancelPaymentOrder marks an order CANCELLED after a TossPlace
+// order.order.cancelled.v1 webhook — the order was rejected, or a
+// previously-completed POS sale was later refunded/voided (TossPlace fires
+// this event for READY, ACKNOWLEDGED, and DONE orders). No cancelled_at
+// column is added; updated_at records when the cancellation was observed.
+//
+// Idempotent for retried webhook deliveries: an already-CANCELLED order is
+// returned unchanged rather than erroring.
+func (r *Repository) CancelPaymentOrder(ctx context.Context, orderID string, cancelledAt time.Time) (PaymentOrder, error) {
+	order, err := r.GetPaymentOrder(ctx, orderID)
+	if err != nil {
+		return PaymentOrder{}, err
+	}
+
+	if order.Status == "CANCELLED" {
+		return order, nil
+	}
+
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE payment_orders
+		SET status = 'CANCELLED',
+			updated_at = NOW()
+		WHERE id = $1 AND status IN ('READY', 'ACKNOWLEDGED', 'DONE')
+	`, orderID)
+	if err != nil {
+		return PaymentOrder{}, classifyError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return PaymentOrder{}, ErrAlreadyExists
+	}
+
+	return r.GetPaymentOrder(ctx, orderID)
+}
+
+// AcknowledgePaymentOrder transitions an order from READY to ACKNOWLEDGED —
+// the one manual status change staff can make from the admin screen,
+// recording that the kitchen/bar has seen the order. DONE and CANCELLED
+// remain webhook-only: staff can never set them directly (see
+// httpapi's admin payment-order status route).
+//
+// Idempotent for repeated clicks: an already-ACKNOWLEDGED order is returned
+// unchanged rather than erroring, so double-clicking the admin button never
+// surfaces an error toast. DONE and CANCELLED orders are rejected with
+// ErrInvalidInput — acknowledgement only makes sense before payment settles.
+//
+// Returns the admin read shape (lamdata.PaymentOrder), matching
+// GetPaymentOrderForAdmin, since this is exclusively an admin-screen action.
+func (r *Repository) AcknowledgePaymentOrder(ctx context.Context, orderID string) (lamdata.PaymentOrder, error) {
+	order, err := r.GetPaymentOrderForAdmin(ctx, orderID)
+	if err != nil {
+		return lamdata.PaymentOrder{}, err
+	}
+
+	if order.Status == "ACKNOWLEDGED" {
+		return order, nil
+	}
+	if order.Status != "READY" {
+		return lamdata.PaymentOrder{}, ErrInvalidInput
+	}
+
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE payment_orders
+		SET status = 'ACKNOWLEDGED',
+			updated_at = NOW()
+		WHERE id = $1 AND status = 'READY'
+	`, orderID)
+	if err != nil {
+		return lamdata.PaymentOrder{}, classifyError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return lamdata.PaymentOrder{}, ErrAlreadyExists
+	}
+
+	return r.GetPaymentOrderForAdmin(ctx, orderID)
+}
+
 // PaymentOrderFilter is the parsed, validated filter/sort/page input for
 // ListPaymentOrdersPage, mirroring CustomerRequestFilter/SpecialRequestFilter's
 // shape and validation style.
 type PaymentOrderFilter struct {
-	Status        string // "" = all | "READY" | "DONE"
+	Status        string // "" = all | "READY" | "ACKNOWLEDGED" | "DONE" | "CANCELLED"
 	PosSyncStatus string // "" = all | "PENDING" | "SUCCEEDED" | "FAILED" | "NOT_CONFIGURED"
 	Search        string
 	From          *time.Time // inclusive

@@ -43,6 +43,16 @@ describe("parseOrderListQuery", () => {
     expect(query.status).toBeUndefined();
   });
 
+  it("accepts status=CANCELLED as a valid status filter", () => {
+    const query = parseOrderListQuery(new URLSearchParams("status=CANCELLED"));
+    expect(query.status).toBe("CANCELLED");
+  });
+
+  it("accepts status=ACKNOWLEDGED as a valid status filter", () => {
+    const query = parseOrderListQuery(new URLSearchParams("status=ACKNOWLEDGED"));
+    expect(query.status).toBe("ACKNOWLEDGED");
+  });
+
   it("falls back to defaults for unrecognized enum values", () => {
     const query = parseOrderListQuery(
       new URLSearchParams("status=CANCELED&posSync=UNKNOWN&dateFrom=not-a-date&sort=tableNumber&order=random"),
@@ -82,7 +92,7 @@ describe("buildOrderListSearchParams", () => {
     const query: OrderListQuery = {
       page: 2,
       pageSize: 30,
-      status: "READY",
+      status: "CANCELLED",
       posSyncStatus: "FAILED",
       search: "T-01",
       dateFrom: "2026-01-01",

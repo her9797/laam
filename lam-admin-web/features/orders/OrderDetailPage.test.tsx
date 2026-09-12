@@ -11,9 +11,12 @@ vi.mock("next/navigation", () => ({
 
 const useOrderQueryMock = vi.fn();
 const refetchMock = vi.fn();
+const useAcknowledgeOrderMutationMock = vi.fn();
+const acknowledgeMutateMock = vi.fn();
 
 vi.mock("./queries", () => ({
   useOrderQuery: (orderId: string) => useOrderQueryMock(orderId),
+  useAcknowledgeOrderMutation: () => useAcknowledgeOrderMutationMock(),
 }));
 
 import { OrderDetailPage } from "./OrderDetailPage";
@@ -52,12 +55,23 @@ function defaultQueryResult() {
   };
 }
 
+function mockAcknowledgeMutation(overrides: Record<string, unknown> = {}) {
+  useAcknowledgeOrderMutationMock.mockReturnValue({
+    mutate: acknowledgeMutateMock,
+    isPending: false,
+    ...overrides,
+  });
+}
+
 describe("OrderDetailPage", () => {
   beforeEach(() => {
     refetchMock.mockClear();
     backMock.mockClear();
     useOrderQueryMock.mockClear();
+    acknowledgeMutateMock.mockClear();
+    useAcknowledgeOrderMutationMock.mockClear();
     mockQuery();
+    mockAcknowledgeMutation();
   });
 
   afterEach(() => {
@@ -105,10 +119,47 @@ describe("OrderDetailPage", () => {
     expect(screen.getByText("얼음은 적게 주세요")).toBeInTheDocument();
   });
 
+  it("renders a CANCELLED order's status label", () => {
+    mockQuery({ data: { ...ORDER, status: "CANCELLED" } });
+
+    render(<OrderDetailPage orderId="order-1" />);
+
+    expect(screen.getByText("취소됨")).toBeInTheDocument();
+  });
+
   it("navigates back via router history when the back link is clicked", () => {
     render(<OrderDetailPage orderId="order-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "목록으로" }));
     expect(backMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the acknowledge button for a READY order and calls the mutation with its id when clicked", () => {
+    mockQuery({ data: { ...ORDER, status: "READY" } });
+
+    render(<OrderDetailPage orderId="order-1" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "주문확인" }));
+    expect(acknowledgeMutateMock).toHaveBeenCalledWith("order-1");
+  });
+
+  it.each(["ACKNOWLEDGED", "DONE", "CANCELLED"] as const)(
+    "hides the acknowledge button for a %s order",
+    (status) => {
+      mockQuery({ data: { ...ORDER, status } });
+
+      render(<OrderDetailPage orderId="order-1" />);
+
+      expect(screen.queryByRole("button", { name: "주문확인" })).not.toBeInTheDocument();
+    },
+  );
+
+  it("disables the acknowledge button while the mutation is pending", () => {
+    mockQuery({ data: { ...ORDER, status: "READY" } });
+    mockAcknowledgeMutation({ isPending: true });
+
+    render(<OrderDetailPage orderId="order-1" />);
+
+    expect(screen.getByRole("button", { name: "주문확인" })).toBeDisabled();
   });
 });
