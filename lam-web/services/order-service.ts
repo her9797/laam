@@ -31,7 +31,7 @@ export async function createOrder(input: { menuItemId: string; tableNumber: stri
   }
 
   const order = body as CustomerOrder;
-  if (order.posSyncStatus !== "SUCCEEDED") {
+  if (order.posSyncStatus === "FAILED") {
     throw new Error("매장 주문 등록에 실패했습니다. 직원에게 직접 말씀해 주세요.");
   }
   return order;

@@ -30,6 +30,9 @@ lam-api
 - `POST /api/v1/payments/orders`
 - `GET /api/v1/payments/orders/{orderId}`
 - `POST /api/v1/payments/confirm`
+- `POST /api/v1/pos-plugin/orders/claim`
+- `POST /api/v1/pos-plugin/orders/{orderId}/complete`
+- `POST /api/v1/pos-plugin/orders/{orderId}/fail`
 - `POST /api/v1/admin/song-requests/{requestId}/approve`
 - `GET /api/v1/admin/song-player/queue`
 - `PATCH /api/v1/admin/song-player/queue/{queueId}/status`
@@ -65,6 +68,15 @@ TOSS_PLACE_MERCHANT_ID=토스플레이스_가맹점_ID
 ```
 
 `POST /api/v1/orders`는 결제 내역 없이 후불 주문을 토스 POS에 생성합니다. 손님은 매장에서 별도로 결제합니다. 토스페이먼츠 결제 기능을 별도로 사용할 때만 `TOSS_PAYMENTS_SECRET_KEY`가 필요합니다.
+
+기본 `POS_ORDER_PROVIDER=open-api`는 토스플레이스 Open API 주문을 생성합니다. 이 방식의 주문은 POS 주문 목록에는 들어가지만 내부 `tableId`를 지정할 수 없어 POS 테이블 카드에 연결되지 않습니다. 매장 POS의 테이블에 직접 주문을 붙이려면 `lam-pos-plugin`을 먼저 설치·설정한 뒤 API를 다음처럼 전환합니다.
+
+```bash
+POS_ORDER_PROVIDER=plugin
+POS_PLUGIN_API_TOKEN=플러그인과_API가_공유할_별도의_긴_임의값
+```
+
+`plugin` 모드에서는 Open API 주문 생성을 건너뛰고 주문을 `PENDING`으로 보관합니다. POS 플러그인이 전용 Bearer 토큰으로 주문 한 건을 가져가 실제 토스 테이블을 찾은 다음, 빈 테이블에는 신규 주문을 만들고 진행 중 주문이 있는 테이블에는 메뉴만 추가합니다. 플러그인 설치 전에는 이 모드를 켜지 마세요. 설정과 패키징 방법은 [`../lam-pos-plugin/README.md`](../lam-pos-plugin/README.md)를 참고합니다.
 
 토스플레이스가 설정되어 있으면 API 시작 시 POS 카탈로그를 한 번 동기화합니다. 이후 변경 사항은 관리자 메뉴의 `다시 동기화` 버튼으로 반영합니다.
 

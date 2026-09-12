@@ -21,6 +21,7 @@ lam
 ├─ lam-web         # 손님용 모바일 웹
 ├─ lam-admin-web   # 운영자용 관리자 웹
 ├─ lam-api         # 메뉴/운영 데이터 API
+├─ lam-pos-plugin  # 토스 POS 테이블 주문 연동 Worker 플러그인
 ├─ docker-compose.yml
 ├─ .gitignore
 └─ README.md
@@ -68,6 +69,7 @@ lam
 - 손님 요청 생성 API
 - 특별 요청 전용 생성/조회/삭제 API
 - 토스페이먼츠 결제 승인과 토스플레이스 POS 주문 동기화
+- 토스 POS Worker 플러그인을 통한 실제 테이블 주문 연결
 - 토스 POS 상품 카탈로그를 API 시작 시 한 번 동기화하고, 이후에는 관리자 화면에서 수동 동기화
 - PostgreSQL 기반 저장 구조
   - `customer_requests`: 바로 전달하기 요청
@@ -153,6 +155,8 @@ go run ./cmd/server
 ```
 
 실제 결제를 사용하려면 `lam-api` 실행 환경에 `TOSS_PAYMENTS_SECRET_KEY`, `TOSS_PLACE_ACCESS_KEY`, `TOSS_PLACE_SECRET_KEY`, `TOSS_PLACE_MERCHANT_ID`를 추가합니다.
+
+POS 주문을 실제 테이블 카드에 표시하려면 [`lam-pos-plugin/README.md`](lam-pos-plugin/README.md)의 설치를 먼저 끝낸 다음 `lam-api`의 `POS_ORDER_PROVIDER=plugin`과 `POS_PLUGIN_API_TOKEN`을 설정합니다. 플러그인을 설치하기 전 기본값은 `open-api`로 유지합니다.
 
 ### 2. 웹 실행
 

@@ -25,3 +25,8 @@ lam-admin-web/*.tsbuildinfo
 lam-api/bin
 lam-api/.env
 lam-api/.env.local
+
+# Toss POS worker plugin
+lam-pos-plugin/node_modules
+lam-pos-plugin/dist
+lam-pos-plugin/*.zip
