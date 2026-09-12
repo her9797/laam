@@ -62,6 +62,7 @@ PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-lam-production}"
 API_REGION="${CLOUD_RUN_API_REGION:-asia-northeast3}"
 WEB_REGION="${CLOUD_RUN_WEB_REGION:-asia-northeast1}"
 ADMIN_WEB_REGION="${CLOUD_RUN_ADMIN_WEB_REGION:-asia-northeast3}"
+POS_ORDER_PROVIDER="${CLOUD_RUN_POS_ORDER_PROVIDER:-open-api}"
 WEB_DOMAIN="${CLOUD_RUN_WEB_DOMAIN-www.barlaam.store}"
 CLOUD_RUN_SERVICE_ACCOUNT="${CLOUD_RUN_SERVICE_ACCOUNT:-${CLOUD_RUN_WEB_SERVICE_ACCOUNT:-lam-cloud-run@${PROJECT_ID}.iam.gserviceaccount.com}}"
 NEXT_PUBLIC_SUPABASE_URL="${CLOUD_RUN_NEXT_PUBLIC_SUPABASE_URL:-https://escntlunkvcoiylczijh.supabase.co}"
@@ -77,6 +78,20 @@ deploy_api() {
   else
     printf 'Warning: lam-youtube-api-key is missing; song approval will stay disabled.\n' >&2
   fi
+  case "$POS_ORDER_PROVIDER" in
+    open-api) ;;
+    plugin)
+      if ! "$GCLOUD" secrets describe lam-pos-plugin-api-token --project="$PROJECT_ID" >/dev/null 2>&1; then
+        printf 'Error: plugin mode requires Secret Manager secret lam-pos-plugin-api-token.\n' >&2
+        return 1
+      fi
+      api_secrets+=",POS_PLUGIN_API_TOKEN=lam-pos-plugin-api-token:latest"
+      ;;
+    *)
+      printf 'Error: CLOUD_RUN_POS_ORDER_PROVIDER must be open-api or plugin.\n' >&2
+      return 1
+      ;;
+  esac
 
   "$GCLOUD" run deploy lam-api \
     --project="$PROJECT_ID" \
@@ -87,7 +102,7 @@ deploy_api() {
     --min-instances=0 \
     --max-instances=1 \
     --set-secrets="$api_secrets" \
-    --set-env-vars="ALLOWED_ORIGIN=*,CUSTOMER_WEB_BASE_URL=$customer_web_base_url" \
+    --set-env-vars="ALLOWED_ORIGIN=*,CUSTOMER_WEB_BASE_URL=$customer_web_base_url,POS_ORDER_PROVIDER=$POS_ORDER_PROVIDER" \
     --quiet
 }
 

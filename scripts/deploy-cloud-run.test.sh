@@ -22,6 +22,11 @@ case "$*" in
       exit 1
     fi
     ;;
+  "secrets describe lam-pos-plugin-api-token "*)
+    if [[ "${MOCK_MISSING_POS_PLUGIN_SECRET:-}" = "1" ]]; then
+      exit 1
+    fi
+    ;;
   "run services describe lam-api "*)
     printf '%s\n' 'https://lam-api.example.run.app'
     ;;
@@ -67,6 +72,18 @@ grep -Fq 'TOSS_PLACE_SECRET_KEY=lam-toss-place-secret-key:latest' "$GCLOUD_LOG"
 grep -Fq 'TOSS_PLACE_MERCHANT_ID=lam-toss-place-merchant-id:latest' "$GCLOUD_LOG"
 grep -Fq 'YOUTUBE_API_KEY=lam-youtube-api-key:latest' "$GCLOUD_LOG"
 grep -Fq 'CUSTOMER_WEB_BASE_URL=https://www.barlaam.store' "$GCLOUD_LOG"
+grep -Fq 'POS_ORDER_PROVIDER=open-api' "$GCLOUD_LOG"
+
+: >"$GCLOUD_LOG"
+CLOUD_RUN_POS_ORDER_PROVIDER=plugin PATH="$TEST_TMP:$PATH" bash "$ROOT_DIR/scripts/deploy-cloud-run.sh" api >/dev/null
+grep -Fq 'POS_ORDER_PROVIDER=plugin' "$GCLOUD_LOG"
+grep -Fq 'POS_PLUGIN_API_TOKEN=lam-pos-plugin-api-token:latest' "$GCLOUD_LOG"
+
+: >"$GCLOUD_LOG"
+if MOCK_MISSING_POS_PLUGIN_SECRET=1 CLOUD_RUN_POS_ORDER_PROVIDER=plugin PATH="$TEST_TMP:$PATH" bash "$ROOT_DIR/scripts/deploy-cloud-run.sh" api >/dev/null 2>&1; then
+  printf '%s\n' 'plugin mode must fail when lam-pos-plugin-api-token is missing' >&2
+  exit 1
+fi
 
 : >"$GCLOUD_LOG"
 PATH="$TEST_TMP:$PATH" bash "$ROOT_DIR/scripts/deploy-cloud-run.sh" admin >/dev/null

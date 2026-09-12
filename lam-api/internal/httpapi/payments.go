@@ -58,9 +58,16 @@ func registerPaymentRoutes(mux *http.ServeMux, repository *store.Repository, cfg
 			writeStoreError(w, err)
 			return
 		}
-		order = syncUnpaidOrderToPOS(r, repository, posClient, order)
-		if order.POSSyncStatus == "SUCCEEDED" {
-			sendNewOrderBroadcastAsync(broadcaster)
+		if cfg.POSOrderProvider == "plugin" {
+			if err := repository.MarkPaymentOrderPOSReady(r.Context(), order.OrderID); err != nil {
+				writeStoreError(w, err)
+				return
+			}
+		} else {
+			order = syncUnpaidOrderToPOS(r, repository, posClient, order)
+			if order.POSSyncStatus == "SUCCEEDED" {
+				sendNewOrderBroadcastAsync(broadcaster)
+			}
 		}
 		writeJSON(w, http.StatusCreated, order)
 	}))
@@ -191,9 +198,18 @@ func registerPaymentRoutes(mux *http.ServeMux, repository *store.Repository, cfg
 			sendNewOrderBroadcastAsync(broadcaster)
 		}
 
-		order = syncPaymentOrderToPOS(r, repository, posClient, order)
+		if cfg.POSOrderProvider == "plugin" {
+			if err := repository.MarkPaymentOrderPOSReady(r.Context(), order.OrderID); err != nil {
+				writeStoreError(w, err)
+				return
+			}
+		} else {
+			order = syncPaymentOrderToPOS(r, repository, posClient, order)
+		}
 		writeJSON(w, http.StatusOK, order)
 	}))
+
+	registerPOSPluginRoutes(mux, repository, cfg, broadcaster)
 }
 
 func requirePaymentAuth(w http.ResponseWriter, r *http.Request, token string) bool {
