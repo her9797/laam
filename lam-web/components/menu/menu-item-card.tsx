@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
+import { createPortal } from "react-dom";
 
 import type { MenuItem } from "@/data/menu-data";
 import { getMenuItemDetail } from "@/lib/menu-item-detail";
@@ -154,7 +155,7 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
         </div>
       </button>
 
-      {isOpen ? (
+      {isOpen ? createPortal(
         <div
           className="table-session-modal-backdrop"
           role="presentation"
@@ -296,7 +297,8 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </>
   );

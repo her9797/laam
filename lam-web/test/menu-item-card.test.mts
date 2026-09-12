@@ -41,3 +41,13 @@ test("메뉴 상세 사진은 오른쪽 위의 작은 정사각형 썸네일이�
   assert.match(imageRule, /width:\s*88px/);
   assert.match(imageRule, /height:\s*88px/);
 });
+
+test("메뉴 상세 모달은 화면을 기준으로 가운데에 고정되도록 body에 렌더링한다", async () => {
+  const source = await readFile(
+    new URL("../components/menu/menu-item-card.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /import\s+\{\s*createPortal\s*\}\s+from\s+"react-dom"/);
+  assert.match(source, /createPortal\([\s\S]*document\.body,\s*\)/);
+});
