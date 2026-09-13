@@ -306,6 +306,9 @@ export const ko = {
     fieldInstagram: "연락처",
     fieldIdealType: "이상형",
     fieldText: "하고 싶은 말",
+    columnGender: "성별",
+    columnAge: "나이",
+    columnResidence: "사는 곳",
   },
   menu: {
     title: "메뉴 관리",
@@ -746,6 +749,9 @@ export const en = {
     fieldInstagram: "Contact",
     fieldIdealType: "Ideal type",
     fieldText: "Message",
+    columnGender: "Gender",
+    columnAge: "Age",
+    columnResidence: "Lives in",
   },
   menu: {
     title: "Menu management",

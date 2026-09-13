@@ -304,6 +304,35 @@ describe("SpecialRequestPage", () => {
     expect(screen.getByText("총 1건")).toBeInTheDocument();
   });
 
+  it("shows gender, age, and residence columns in the list table", () => {
+    render(<SpecialRequestPage />);
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("성별")).toBeInTheDocument();
+    expect(within(table).getByText("나이")).toBeInTheDocument();
+    expect(within(table).getByText("사는 곳")).toBeInTheDocument();
+
+    const row = screen.getByText("홍길동").closest("tr");
+    if (!row) {
+      throw new Error("row not found");
+    }
+    expect(within(row).getByText("여")).toBeInTheDocument();
+    expect(within(row).getByText("20대")).toBeInTheDocument();
+    expect(within(row).getByText("서울")).toBeInTheDocument();
+  });
+
+  it("shows a dash for blank age/residence values in the list table", () => {
+    mockQuery({ data: pageFixture([{ ...ITEMS[0], age: "", residence: "" }]) });
+
+    render(<SpecialRequestPage />);
+
+    const row = screen.getByText("홍길동").closest("tr");
+    if (!row) {
+      throw new Error("row not found");
+    }
+    expect(within(row).getAllByText("-").length).toBeGreaterThanOrEqual(2);
+  });
+
   it("opens a detail dialog showing every field when '상세보기' is clicked", () => {
     render(<SpecialRequestPage />);
 
