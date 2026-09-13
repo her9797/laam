@@ -360,6 +360,16 @@ describe("OrderListPage", () => {
     expect(screen.getByText("취소됨")).toBeInTheDocument();
   });
 
+  it("shows each row's request note, with a placeholder when there isn't one", () => {
+    render(<OrderListPage />);
+
+    expect(screen.getByRole("columnheader", { name: "요청사항" })).toBeInTheDocument();
+    const beerRow = screen.getByRole("link", { name: "Beer" }).closest("tr") as HTMLElement;
+    expect(within(beerRow).getByText("얼음은 적게 주세요")).toBeInTheDocument();
+    const ciderRow = screen.getByRole("link", { name: "Cider" }).closest("tr") as HTMLElement;
+    expect(within(ciderRow).getByText("-")).toBeInTheDocument();
+  });
+
   it("adds an action column and acknowledges a READY order from its row", () => {
     render(<OrderListPage />);
 

@@ -123,7 +123,7 @@ export function OrderListPage() {
   const acknowledgeMutation = useAcknowledgeOrderMutation();
 
   if (!query.dateFrom || !query.dateTo || ordersQuery.isLoading) {
-    return <ListSkeletonState columns={7} label={t("loading")} />;
+    return <ListSkeletonState columns={8} label={t("loading")} />;
   }
 
   if (!dateRangeResult.ok) {
@@ -319,6 +319,7 @@ export function OrderListPage() {
                 <TableHead className="w-40">{t("columnApprovedAt")}</TableHead>
                 <TableHead className="w-20">{t("common:columnTable")}</TableHead>
                 <TableHead>{t("columnMenuItem")}</TableHead>
+                <TableHead>{t("columnRequestNote")}</TableHead>
                 <TableHead className="w-28">{t("columnAmount")}</TableHead>
                 <TableHead className="w-24">{t("columnStatus")}</TableHead>
                 <TableHead className="w-32">{t("columnPosSync")}</TableHead>
@@ -341,6 +342,7 @@ export function OrderListPage() {
                     </Link>
                     <span className="text-muted-foreground"> ({order.categoryName})</span>
                   </TableCell>
+                  <TableCell>{order.requestNote || "-"}</TableCell>
                   <TableCell>{formatCurrencyKRW(order.amount, i18n.language)}</TableCell>
                   <TableCell>{t(STATUS_LABEL_KEY[order.status])}</TableCell>
                   <TableCell>{t(POS_SYNC_LABEL_KEY[order.posSyncStatus])}</TableCell>
