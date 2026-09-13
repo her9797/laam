@@ -1,5 +1,15 @@
 # scripts
 
+## send-test-tossplace-webhook.sh
+
+실제 토스플레이스 결제 없이, 서명된 주문 웹훅(`POST /api/v1/webhooks/tossplace/orders`)을 로컬(또는 임의 URL)의 `lam-api`로 보내서 결제완료·취소 동기화 경로를 재현하는 스크립트. `./scripts/send-test-tossplace-webhook.sh --help` 참고.
+
+로컬에서 쓰려면:
+
+1. 테스트할 `payment_orders` 행을 하나 준비한다(실제 손님 주문 생성 플로우를 타거나, 로컬 Postgres에 직접 INSERT).
+2. 그 주문에 쓰인 `lam-api` 인스턴스와 **같은** `TOSS_PLACE_WEBHOOK_SECRET` 값을 환경변수로 넘겨 스크립트를 실행한다. Docker Compose로 띄웠다면 저장소 루트 `.env`의 값, `go run`으로 직접 띄웠다면 `lam-api/.env`(또는 `.env.local`)의 값이다(`lam-api`가 시작 시 자동으로 읽는다). 둘은 서로 다른 값일 수 있다.
+3. 응답이 `200`이고 주문의 `status`가 바뀌었는지 확인한다(REST로는 관리자 주문 조회, 직접 확인하려면 `payment_orders` 테이블 조회).
+
 ## deploy-cloud-run.sh
 
 `lam-api`, `lam-web`, `lam-admin-web`를 Google Cloud Run에 배포하는 스크립트.

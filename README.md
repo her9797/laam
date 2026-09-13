@@ -248,15 +248,14 @@ CUSTOMER_WEB_BASE_URL=http://localhost:3000
 QR_SIGNING_SECRET=lam-api와_동일한_긴_임의값
 ```
 
-`lam-web`은 Next.js가 `.env.local`을 자동으로 읽지만, `lam-api`에는 `.env` 로더가 없어 `os.Getenv`만 사용합니다. `go run`으로 직접 실행할 때는 `lam-api/.env`를 셸에 먼저 불러오세요.
+`lam-web`은 Next.js가 `.env.local`을 자동으로 읽습니다. `lam-api`도 시작 시점에 `lam-api/.env.local`과 `lam-api/.env`(또는 저장소 루트의 같은 파일들)를 자동으로 읽으므로, 보통은 수동으로 `source`할 필요 없이 그냥 실행하면 됩니다.
 
 ```bash
 cd lam-api
-set -a
-source ./.env
-set +a
 go run ./cmd/server
 ```
+
+이미 셸 환경변수로 값이 설정되어 있으면 그 값이 `.env` 파일 내용보다 항상 우선합니다. 과거에 `source ./.env`로 값을 내보낸 적이 있는 셸에서는, 그 뒤에 `.env` 파일을 수정해도 셸에 남아 있는 예전 값이 계속 쓰입니다 — 새 셸을 열거나 해당 변수를 `unset`한 뒤 다시 실행하세요.
 
 Docker Compose로 실행할 때는 저장소 루트 `.env`의 `QR_SIGNING_SECRET` 하나가 두 서비스에 모두 주입되므로 값이 어긋날 일이 없습니다(아래 [Docker Compose 실행](#docker-compose-실행) 참고).
 
