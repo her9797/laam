@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, type ComponentType, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  RiAlarmWarningLine,
   RiArrowDownSLine,
   RiBarChart2Line,
   RiDashboardLine,
@@ -105,6 +106,10 @@ const BOTTOM_NAV_ITEMS: NavItem[] = [
   { href: "/tables", labelKey: "navTables", icon: RiQrCodeLine },
   { href: "/notices", labelKey: "navNotices", icon: RiMegaphoneLine },
   { href: "/store-copy", labelKey: "navStoreCopy", icon: RiFileTextLine },
+  // A standalone top-level item, not folded into any of the grouped
+  // dropdowns above — this is an operational diagnostics screen, not a
+  // guest-request/order/product management concern.
+  { href: "/system-logs", labelKey: "navSystemLogs", icon: RiAlarmWarningLine },
 ];
 
 const ALL_NAV_ITEMS: NavItem[] = [

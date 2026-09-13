@@ -32,6 +32,7 @@ export const ko = {
     navTables: "테이블 QR 관리",
     navNotices: "이벤트·공지",
     navStoreCopy: "안내 문구",
+    navSystemLogs: "시스템 로그",
     openMenu: "메뉴 열기",
     closeMenu: "메뉴 닫기",
     breadcrumbHome: "홈",
@@ -461,6 +462,16 @@ export const ko = {
     linkCopied: "링크를 복사했습니다.",
     linkCopyFailed: "링크 복사에 실패했습니다.",
   },
+  systemLogs: {
+    title: "시스템 로그",
+    loading: "시스템 로그를 불러오는 중입니다.",
+    errorTitle: "시스템 로그를 불러오지 못했습니다.",
+    emptyTitle: "시스템 로그가 없습니다.",
+    emptyDescription: "서버 오류가 발생하면 이 목록에 표시됩니다.",
+    columnRequest: "요청",
+    columnStatus: "상태 코드",
+    columnMessage: "메시지",
+  },
 } as const;
 
 export const en = {
@@ -483,6 +494,7 @@ export const en = {
     navTables: "Table QR codes",
     navNotices: "Events & notices",
     navStoreCopy: "Guide text",
+    navSystemLogs: "System logs",
     openMenu: "Open menu",
     closeMenu: "Close menu",
     breadcrumbHome: "Home",
@@ -899,6 +911,16 @@ export const en = {
     copyLink: "Copy link",
     linkCopied: "Link copied.",
     linkCopyFailed: "Could not copy the link.",
+  },
+  systemLogs: {
+    title: "System Logs",
+    loading: "Loading system logs…",
+    errorTitle: "Could not load system logs.",
+    emptyTitle: "There are no system logs.",
+    emptyDescription: "Server errors appear in this list as they occur.",
+    columnRequest: "Request",
+    columnStatus: "Status Code",
+    columnMessage: "Message",
   },
 } as const;
 

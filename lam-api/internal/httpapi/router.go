@@ -1012,7 +1012,43 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 		writeJSON(w, http.StatusOK, bootstrap)
 	}))
 
-	return mux
+	mux.HandleFunc("/api/v1/admin/system-logs", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
+		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
+			return
+		}
+
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowed(w)
+			return
+		}
+
+		query := r.URL.Query()
+		page, err := parsePage(query)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		pageSize, err := parsePageSize(query)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+
+		items, total, err := repository.ListSystemErrorLogs(r.Context(), page, pageSize)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, lamdata.SystemErrorLogPage{
+			Items:    items,
+			Page:     page,
+			PageSize: pageSize,
+			Total:    total,
+		})
+	}))
+
+	return systemLogMiddleware(mux, repository)
 }
 
 func parseVisibilityResourceID(path string, prefix string) (string, bool) {

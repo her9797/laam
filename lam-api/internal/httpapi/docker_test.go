@@ -147,7 +147,7 @@ func resetServerWithConfig(t *testing.T, cfg config.Config) http.Handler {
 	}
 
 	ctx := context.Background()
-	if _, err := testPool.Exec(ctx, `TRUNCATE payment_orders, menu_item_images, menu_items, menu_categories, request_guides, notices, song_playback_queue, customer_requests, special_requests, store_profile RESTART IDENTITY CASCADE`); err != nil {
+	if _, err := testPool.Exec(ctx, `TRUNCATE payment_orders, menu_item_images, menu_items, menu_categories, request_guides, notices, song_playback_queue, customer_requests, special_requests, system_error_logs, store_profile RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("truncate tables: %v", err)
 	}
 	if _, err := testPool.Exec(ctx, `
