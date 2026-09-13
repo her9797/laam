@@ -24,15 +24,16 @@ vi.mock(
   }),
 );
 
-// `NotificationBell` calls `useCustomerRequestsQuery()` (a real TanStack
+// `NotificationBells` calls `useCustomerRequestsQuery()` (a real TanStack
 // Query hook), which throws without a `QueryClientProvider` ancestor — one
 // this file's many `render(<AdminShell>...)` call sites don't have, since
-// nothing else here needs Query. Its own behavior (badge count, panel,
-// mark-checked, mark-all, toast) is already covered by
-// `features/notifications/NotificationBell.test.tsx`; this file's job is
-// only to verify the shell places it in the header.
-vi.mock("@/features/notifications/NotificationBell", () => ({
-  NotificationBell: () => <button type="button">알림</button>,
+// nothing else here needs Query. Its own behavior (badge counts, panels,
+// mark-checked, mark-all, toast, sound toggle) is already covered by
+// `features/notifications/NotificationBells.test.tsx` and the two bells'
+// own test files; this file's job is only to verify the shell places it
+// in the header.
+vi.mock("@/features/notifications/NotificationBells", () => ({
+  NotificationBells: () => <button type="button">알림</button>,
 }));
 
 import i18n from "@/i18n/client";

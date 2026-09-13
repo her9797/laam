@@ -13,7 +13,9 @@ import {
 // Each test builds its own fixtures and registers its own `page.route`
 // mocks, per this suite's existing convention (see `admin-mvp.spec.ts`).
 //
-// The bell is addressed by its accessible name throughout, which is
+// The request bell (one of two independent bells in the GNB, alongside the
+// order bell — see `features/notifications/NotificationBells`) is
+// addressed by its accessible name throughout, which is
 // `notifications:bellLabel` ("새 알림 {{count}}건") while anything is unread
 // and `notifications:bellLabelEmpty` ("손님 요청 알림") when nothing is —
 // two different strings, so the name a test uses also asserts which of the
@@ -138,8 +140,8 @@ test.describe("관리자 알림", () => {
     ]);
 
     // Only the general requests are sent: r2 is a song request, which
-    // `handleConfirmMarkAll` filters out (see `NotificationBell`), leaving
-    // r1 alone — the same split the dialog copy asserted above.
+    // `handleConfirmMarkAll` filters out (see `RequestNotificationBell`),
+    // leaving r1 alone — the same split the dialog copy asserted above.
     expect(bulkRequest.postDataJSON()).toEqual({ ids: ["r1"], status: "checked" });
   });
 
