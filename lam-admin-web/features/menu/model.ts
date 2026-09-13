@@ -13,6 +13,25 @@
 
 import type { AppData, MenuItem } from "@/features/bootstrap/model";
 
+export type MenuItemDisplayImage = {
+  src: string;
+  focusX?: number;
+  focusY?: number;
+};
+
+/** Uses the same image precedence as the customer menu. */
+export function getMenuItemDisplayImage(item: MenuItem): MenuItemDisplayImage | undefined {
+  if (item.imageUrl) {
+    return { src: item.imageUrl };
+  }
+
+  const images = item.images ?? [];
+  const image = images.find((candidate) => candidate.isPrimary) ?? images[0];
+  return image
+    ? { src: image.contentUrl, focusX: image.focusX, focusY: image.focusY }
+    : undefined;
+}
+
 /**
  * Mirrors `lam-api/internal/lamdata.CatalogSyncResponse` — the manual
  * "다시 동기화" button's response, wrapping the created/linked/updated

@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useBootstrapQuery } from "@/features/bootstrap/queries";
 
 import { useMenuItemRecipeQuery, useUpdateMenuItemRecipeMutation } from "./queries";
-import type { UpdateMenuItemRecipeInput } from "./model";
+import { getMenuItemDisplayImage, type UpdateMenuItemRecipeInput } from "./model";
 
 /**
  * Menu item detail screen: basic item info (name/category/price/
@@ -62,6 +62,8 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
   }
 
   const category = bootstrapQuery.data?.categories.find((candidate) => candidate.id === item.categoryId);
+  const displayImage = getMenuItemDisplayImage(item);
+  const options = item.options ?? [];
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -98,23 +100,97 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
         <CardHeader>
           <CardTitle>{t("detailBasicInfoTitle")}</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <span className="text-sm text-muted-foreground">{t("itemNameLabel")}</span>
-            <span className="text-sm text-foreground">{item.name}</span>
+        <CardContent className="flex flex-col gap-6 md:flex-row">
+          {displayImage ? (
+            // POS image hosts are provided dynamically by the API.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={displayImage.src}
+              alt={t("itemImageAlt", { name: item.name })}
+              className="aspect-square w-full rounded-3xl object-cover md:w-48"
+              style={
+                displayImage.focusX === undefined
+                  ? undefined
+                  : { objectPosition: `${displayImage.focusX}% ${displayImage.focusY}%` }
+              }
+            />
+          ) : null}
+          <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1">
+              <span className="text-sm text-muted-foreground">{t("itemNameLabel")}</span>
+              <span className="text-sm text-foreground">{item.name}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-sm text-muted-foreground">{t("itemCategoryLabel")}</span>
+              <span className="text-sm text-foreground">{category?.label ?? item.categoryId}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-sm text-muted-foreground">{t("itemPriceLabel")}</span>
+              <span className="text-sm text-foreground">{item.price}</span>
+            </div>
+            <div className="flex flex-col gap-1 sm:col-span-2">
+              <span className="text-sm text-muted-foreground">{t("itemDescriptionLabel")}</span>
+              <span className="text-sm text-foreground">{item.description}</span>
+            </div>
           </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-sm text-muted-foreground">{t("itemCategoryLabel")}</span>
-            <span className="text-sm text-foreground">{category?.label ?? item.categoryId}</span>
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className="text-sm text-muted-foreground">{t("itemPriceLabel")}</span>
-            <span className="text-sm text-foreground">{item.price}</span>
-          </div>
-          <div className="flex flex-col gap-1 sm:col-span-2">
-            <span className="text-sm text-muted-foreground">{t("itemDescriptionLabel")}</span>
-            <span className="text-sm text-foreground">{item.description}</span>
-          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2>{t("detailOptionsTitle")}</h2>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {options.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("detailOptionsEmpty")}</p>
+          ) : (
+            <div className="flex flex-col gap-4">
+              {options.map((option) => (
+                <section key={option.id} className="flex flex-col gap-3 rounded-3xl bg-muted/50 p-4">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h3 className="font-medium text-foreground">{option.title}</h3>
+                    <span className="text-xs text-muted-foreground">
+                      {option.required
+                        ? t("optionSelectionRuleRequired", {
+                            min: option.minChoices,
+                            max: option.maxChoices,
+                          })
+                        : t("optionSelectionRuleOptional", { max: option.maxChoices })}
+                    </span>
+                  </div>
+                  <ul className="flex flex-col gap-2">
+                    {option.choices.map((choice) => (
+                      <li
+                        key={choice.id}
+                        className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-2"
+                      >
+                        <span className="text-sm text-foreground">{choice.title}</span>
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                          <span>
+                            {choice.priceValue > 0
+                              ? t("optionAdditionalPrice", {
+                                  price: new Intl.NumberFormat().format(choice.priceValue),
+                                })
+                              : t("optionNoAdditionalPrice")}
+                          </span>
+                          {choice.quantityEnabled ? (
+                            <span>
+                              {t("optionQuantityRange", {
+                                min: choice.minQuantity,
+                                max: choice.maxQuantity,
+                              })}
+                            </span>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

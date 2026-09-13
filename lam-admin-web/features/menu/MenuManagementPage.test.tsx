@@ -89,7 +89,27 @@ const FIXTURE: AppData = {
       name: "아메리카노",
       description: "시원한 아메리카노",
       price: "4000",
+      imageUrl: "https://cdn.example.com/americano.png",
       isVisible: true,
+      options: [
+        {
+          id: "option-size",
+          title: "사이즈",
+          required: true,
+          minChoices: 1,
+          maxChoices: 1,
+          choices: [
+            {
+              id: "choice-large",
+              title: "라지",
+              priceValue: 1000,
+              quantityEnabled: false,
+              minQuantity: 0,
+              maxQuantity: 1,
+            },
+          ],
+        },
+      ],
     },
   ],
   requestGuides: [],
@@ -176,6 +196,41 @@ describe("pure validators", () => {
   it("accepts an allowed, appropriately sized image file", () => {
     const file = new File([new Uint8Array(10)], "a.jpg", { type: "image/jpeg" });
     expect(validateImageFile(file)).toBeUndefined();
+  });
+});
+
+describe("POS catalog fields", () => {
+  it("shows the synced product image in the first, read-only table column", () => {
+    render(<MenuManagementPage />);
+
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual([
+      "이미지",
+      "이름",
+      "카테고리",
+      "가격",
+      "옵션",
+      "공개 여부",
+    ]);
+    expect(screen.getByRole("img", { name: "아메리카노 상품 이미지" })).toHaveAttribute(
+      "src",
+      "https://cdn.example.com/americano.png",
+    );
+    expect(screen.queryByLabelText("아메리카노 이미지 선택")).not.toBeInTheDocument();
+    expect(screen.getByText("옵션 1개 · 선택지 1개")).toBeInTheDocument();
+    expect(screen.getByText("사이즈")).toBeInTheDocument();
+  });
+
+  it("shows a default placeholder when a product has no image", () => {
+    mockBootstrap({
+      data: {
+        ...FIXTURE,
+        items: [{ ...FIXTURE.items[0], imageUrl: "" }],
+      },
+    });
+
+    render(<MenuManagementPage />);
+
+    expect(screen.getByRole("img", { name: "아메리카노 상품 이미지 없음" })).toBeInTheDocument();
   });
 });
 
@@ -420,153 +475,6 @@ describe("MenuManagementPage", () => {
     expect(screen.queryByRole("button", { name: "삭제" })).not.toBeInTheDocument();
   });
 
-  it("rejects a disallowed image type without opening the crop editor", async () => {
-    render(<MenuManagementPage />);
-
-    const file = new File(["x"], "a.gif", { type: "image/gif" });
-    const input = screen.getByLabelText("아메리카노 이미지 선택");
-    fireEvent.change(input, { target: { files: [file] } });
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("지원하지 않는 이미지 형식");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(loadImageNaturalSizeMock).not.toHaveBeenCalled();
-  });
-
-  it("opens the crop editor for a valid image and uploads the CROPPED bitmap on save", async () => {
-    render(<MenuManagementPage />);
-
-    const file = new File([new Uint8Array(10)], "a.jpg", { type: "image/jpeg" });
-    const input = screen.getByLabelText("아메리카노 이미지 선택");
-    fireEvent.change(input, { target: { files: [file] } });
-
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByRole("slider", { name: "이미지 확대/축소" })).toBeInTheDocument();
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "저장" }));
-
-    await waitFor(() => expect(uploadMenuItemImageMutate).toHaveBeenCalledTimes(1));
-    // The original file goes to the cropper; the cropper's output — not the
-    // original — is what gets uploaded, with a no-op centred focus point.
-    expect(cropImageFileToSquareMock).toHaveBeenCalledWith(file, expect.anything());
-    expect(croppedTransform()).toEqual(createInitialCropTransform(400, 200));
-    expect(uploadMenuItemImageMutate).toHaveBeenCalledWith(
-      {
-        menuItemId: "menu-1",
-        image: CROPPED_FILE,
-        isPrimary: true,
-        displayArea: "menu",
-        focusX: UPLOAD_FOCUS_CENTER,
-        focusY: UPLOAD_FOCUS_CENTER,
-      },
-      expect.anything(),
-    );
-  });
-
-  it("crops from the panned region after dragging the image with the pointer", async () => {
-    render(<MenuManagementPage />);
-
-    const file = new File([new Uint8Array(10)], "a.jpg", { type: "image/jpeg" });
-    const input = screen.getByLabelText("아메리카노 이미지 선택");
-    fireEvent.change(input, { target: { files: [file] } });
-
-    const dialog = await screen.findByRole("dialog");
-    const frame = within(dialog).getByRole("application");
-
-    // jsdom has no `PointerEvent` constructor, so `fireEvent.pointerDown`'s
-    // event init (including `clientX`) is silently dropped and the drag
-    // reads `undefined` coordinates. Dispatching a real `MouseEvent` under
-    // the `pointerdown`/`pointermove` type is what actually carries
-    // coordinates into React's pointer handlers here.
-    fireEvent(frame, new MouseEvent("pointerdown", { bubbles: true, clientX: 0, clientY: 0 }));
-    fireEvent(frame, new MouseEvent("pointermove", { bubbles: true, clientX: -80, clientY: 0 }));
-    fireEvent(frame, new MouseEvent("pointerup", { bubbles: true }));
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "저장" }));
-
-    await waitFor(() => expect(cropImageFileToSquareMock).toHaveBeenCalledTimes(1));
-    const centered = createInitialCropTransform(400, 200);
-    expect(croppedTransform().offsetX).toBe(centered.offsetX - 80);
-  });
-
-  it("pans the image with arrow keys and crops from the panned region (keyboard operable)", async () => {
-    render(<MenuManagementPage />);
-
-    const file = new File([new Uint8Array(10)], "a.jpg", { type: "image/jpeg" });
-    const input = screen.getByLabelText("아메리카노 이미지 선택");
-    fireEvent.change(input, { target: { files: [file] } });
-
-    const dialog = await screen.findByRole("dialog");
-    const frame = within(dialog).getByRole("application");
-
-    for (let i = 0; i < 30; i += 1) {
-      fireEvent.keyDown(frame, { key: "ArrowLeft" });
-    }
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "저장" }));
-
-    await waitFor(() => expect(cropImageFileToSquareMock).toHaveBeenCalledTimes(1));
-    const transform = croppedTransform();
-    const centered = createInitialCropTransform(400, 200);
-    // ArrowLeft pans the image right (positive offset), so 30 steps of 12px
-    // from the centred -140 run into the left edge and clamp at 0 — the crop
-    // that reaches the cropper is the left edge of the image, not the centre.
-    expect(transform.offsetX).toBeGreaterThan(centered.offsetX);
-    expect(transform.offsetX).toBe(0);
-  });
-
-  it("carries the selected zoom into the crop, so a zoomed crop differs from an unzoomed one", async () => {
-    render(<MenuManagementPage />);
-
-    const file = new File([new Uint8Array(10)], "a.jpg", { type: "image/jpeg" });
-    const input = screen.getByLabelText("아메리카노 이미지 선택");
-    fireEvent.change(input, { target: { files: [file] } });
-
-    const dialog = await screen.findByRole("dialog");
-    const zoomSlider = within(dialog).getByRole("slider", { name: "이미지 확대/축소" });
-    fireEvent.change(zoomSlider, { target: { value: "3" } });
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "저장" }));
-
-    await waitFor(() => expect(cropImageFileToSquareMock).toHaveBeenCalledTimes(1));
-    // The regression the whole-branch review found: zoom used to be dropped
-    // entirely, so this transform reached nothing that affected the upload.
-    expect(croppedTransform().scale).toBe(3);
-    expect(croppedTransform()).not.toEqual(createInitialCropTransform(400, 200));
-  });
-
-  it("reports a failed crop and uploads nothing", async () => {
-    cropImageFileToSquareMock.mockRejectedValue(new Error("canvas unavailable"));
-
-    render(<MenuManagementPage />);
-
-    const file = new File([new Uint8Array(10)], "a.jpg", { type: "image/jpeg" });
-    fireEvent.change(screen.getByLabelText("아메리카노 이미지 선택"), {
-      target: { files: [file] },
-    });
-
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "저장" }));
-
-    await waitFor(() =>
-      expect(screen.getByText("이미지를 잘라내는 데 실패했습니다.")).toBeInTheDocument(),
-    );
-    expect(uploadMenuItemImageMutate).not.toHaveBeenCalled();
-  });
-
-  it("closes the crop dialog on cancel without uploading", async () => {
-    render(<MenuManagementPage />);
-
-    const file = new File([new Uint8Array(10)], "a.jpg", { type: "image/jpeg" });
-    const input = screen.getByLabelText("아메리카노 이미지 선택");
-    fireEvent.change(input, { target: { files: [file] } });
-
-    const dialog = await screen.findByRole("dialog");
-    fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(uploadMenuItemImageMutate).not.toHaveBeenCalled();
-  });
-
   describe("search, sort and pagination", () => {
     const TWO_ITEM_FIXTURE: AppData = {
       ...FIXTURE,
@@ -705,13 +613,17 @@ describe("MenuManagementPage", () => {
       render(<MenuManagementPage />);
 
       expect(screen.getByText("총 11건")).toBeInTheDocument();
-      expect(screen.getByText("1 / 2")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "1페이지" })).toHaveAttribute("aria-current", "page");
+      expect(screen.getByRole("button", { name: "2페이지" })).toBeInTheDocument();
       expect(screen.getByText("메뉴 00")).toBeInTheDocument();
       expect(screen.queryByText("메뉴 10")).not.toBeInTheDocument();
 
       fireEvent.click(screen.getByRole("button", { name: "다음" }));
 
-      expect(replaceMock).toHaveBeenCalledWith("/menu?page=2");
+      // `scroll: false` — App Router scrolls the document to the top on every
+      // navigation by default, which yanked the operator away from the list
+      // they had just clicked in. See `features/orders/OrderListPage.tsx`.
+      expect(replaceMock).toHaveBeenCalledWith("/menu?page=2", { scroll: false });
     });
 
     it("renders page 2's items when a page param is already in the URL", () => {
@@ -728,7 +640,7 @@ describe("MenuManagementPage", () => {
 
       render(<MenuManagementPage />);
 
-      expect(screen.getByText("2 / 2")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "2페이지" })).toHaveAttribute("aria-current", "page");
       expect(screen.getByText("메뉴 10")).toBeInTheDocument();
       expect(screen.queryByText("메뉴 00")).not.toBeInTheDocument();
     });
@@ -746,13 +658,14 @@ describe("MenuManagementPage", () => {
 
       render(<MenuManagementPage />);
 
-      expect(screen.getByText("1 / 3")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "1페이지" })).toHaveAttribute("aria-current", "page");
+      expect(screen.getByRole("button", { name: "3페이지" })).toBeInTheDocument();
 
       fireEvent.change(screen.getByRole("combobox", { name: "페이지당 개수" }), {
         target: { value: "30" },
       });
 
-      expect(replaceMock).toHaveBeenCalledWith("/menu?pageSize=30");
+      expect(replaceMock).toHaveBeenCalledWith("/menu?pageSize=30", { scroll: false });
     });
 
     it("shows all 25 items on one page when a pageSize=30 param is already in the URL", () => {
@@ -769,7 +682,7 @@ describe("MenuManagementPage", () => {
 
       render(<MenuManagementPage />);
 
-      expect(screen.getByText("1 / 1")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "1페이지" })).toHaveAttribute("aria-current", "page");
       expect(screen.getByText("메뉴 00")).toBeInTheDocument();
       expect(screen.getByText("메뉴 24")).toBeInTheDocument();
     });

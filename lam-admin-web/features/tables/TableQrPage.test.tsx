@@ -149,4 +149,33 @@ describe("TableQrPage", () => {
     expect(printSpy).toHaveBeenCalledTimes(1);
     printSpy.mockRestore();
   });
+
+  it("copies the table's link when its QR code image is clicked", async () => {
+    const writeTextMock = vi.fn(async () => undefined);
+    Object.assign(navigator, { clipboard: { writeText: writeTextMock } });
+
+    render(<TableQrPage />);
+
+    const images = await screen.findAllByRole("img");
+    fireEvent.click(images[0]);
+
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith("https://example.com/qr/enter?table=B-01&sig=abc");
+    });
+    expect(await screen.findByText("링크를 복사했습니다.")).toBeInTheDocument();
+  });
+
+  it("shows an error message when copying the table's link fails", async () => {
+    const writeTextMock = vi.fn(async () => {
+      throw new Error("denied");
+    });
+    Object.assign(navigator, { clipboard: { writeText: writeTextMock } });
+
+    render(<TableQrPage />);
+
+    const images = await screen.findAllByRole("img");
+    fireEvent.click(images[0]);
+
+    expect(await screen.findByText("링크 복사에 실패했습니다.")).toBeInTheDocument();
+  });
 });

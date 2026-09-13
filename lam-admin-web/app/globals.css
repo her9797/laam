@@ -42,11 +42,17 @@
   --sidebar-border: oklch(0.923 0.003 48.717);
   --sidebar-ring: oklch(0.709 0.01 56.259);
 
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
+  /* Categorical (identity) palette, not a lightness ramp of one hue — each
+     slot is a separate hue (blue/orange/teal/yellow/magenta) so adjacent pie
+     slices and bars stay distinguishable, including under CVD simulation.
+     Values derived from the dataviz skill's validated default categorical
+     order (first five of its eight hues); see globals.css chart comment in
+     the .dark block for the dark-mode counterpart. */
+  --chart-1: oklch(0.575 0.163 255.532);
+  --chart-2: oklch(0.671 0.175 40.642);
+  --chart-3: oklch(0.669 0.141 162.111);
+  --chart-4: oklch(0.764 0.161 75.116);
+  --chart-5: oklch(0.716 0.141 357.389);
 }
 
 .dark {
@@ -57,7 +63,7 @@
   --card-foreground: oklch(0.985 0.001 106.423);
   --popover: oklch(0.216 0.006 56.043);
   --popover-foreground: oklch(0.985 0.001 106.423);
-  --primary: oklch(0.424 0.199 265.638);
+  --primary: oklch(0.55 0.21 264.376);
   --primary-foreground: oklch(0.97 0.014 254.604);
   --secondary: oklch(0.274 0.006 286.033);
   --secondary-foreground: oklch(0.985 0 0);
@@ -81,11 +87,14 @@
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.553 0.013 58.071);
 
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
+  /* Same categorical palette as :root, re-stepped for the dark surface
+     (see dataviz skill validation: worst adjacent CVD ΔE 8.4, worst
+     normal-vision ΔE 19.3 — both clear the required floors). */
+  --chart-1: oklch(0.622 0.161 255.053);
+  --chart-2: oklch(0.622 0.173 40.112);
+  --chart-3: oklch(0.621 0.128 163.115);
+  --chart-4: oklch(0.67 0.143 73.227);
+  --chart-5: oklch(0.622 0.171 0.838);
 }
 
 @theme inline {
@@ -139,6 +148,11 @@
   }
   html {
     @apply bg-background font-sans;
+    /* Hold the scrollbar's width whether or not the page currently
+       overflows. Without this, any content change that crosses the
+       viewport height — a list page dropping from 30 rows to 10 — takes
+       the scrollbar with it and shifts the whole layout sideways. */
+    scrollbar-gutter: stable;
   }
   body {
     @apply m-0 min-w-80 antialiased bg-background text-foreground;
@@ -188,6 +202,29 @@
 
 .status-success {
   @apply text-success;
+}
+
+/* `components/list/ListProgressBar`'s indeterminate sweep. The bar's own
+   resting width is the full track, and the sweep is expressed purely as a
+   transform: the reduced-motion rule below collapses the animation, and
+   what remains is a static full-width bar that still reads as busy. The
+   segment stretches as it crosses the middle so the motion reads as travel
+   rather than a block marching across. */
+.list-progress-bar {
+  transform-origin: left center;
+  animation: list-progress-sweep 1.05s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes list-progress-sweep {
+  0% {
+    transform: translateX(-25%) scaleX(0.25);
+  }
+  50% {
+    transform: translateX(35%) scaleX(0.45);
+  }
+  100% {
+    transform: translateX(100%) scaleX(0.25);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

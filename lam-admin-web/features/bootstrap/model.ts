@@ -32,6 +32,25 @@ export type MenuImage = {
   contentUrl: string;
 };
 
+export type MenuOptionChoice = {
+  id: string;
+  title: string;
+  priceValue: number;
+  imageUrl?: string;
+  quantityEnabled: boolean;
+  minQuantity: number;
+  maxQuantity: number;
+};
+
+export type MenuOption = {
+  id: string;
+  title: string;
+  required: boolean;
+  minChoices: number;
+  maxChoices: number;
+  choices: MenuOptionChoice[];
+};
+
 export type MenuItem = {
   id: string;
   categoryId: string;
@@ -40,8 +59,10 @@ export type MenuItem = {
   name: string;
   description: string;
   price: string;
+  imageUrl?: string;
   isVisible: boolean;
   images?: MenuImage[];
+  options?: MenuOption[];
 };
 
 export type NoticeItem = {

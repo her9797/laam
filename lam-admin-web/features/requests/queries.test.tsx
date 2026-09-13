@@ -1,4 +1,9 @@
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  keepPreviousData,
+  useQuery,
+} from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,8 +15,12 @@ vi.mock("@tanstack/react-query", async () => {
   return { ...actual, useQuery: vi.fn(actual.useQuery) };
 });
 
-import type { CustomerRequest } from "./model";
-import { useCustomerRequestsQuery, useUpdateCustomerRequestStatusesMutation } from "./queries";
+import type { CustomerRequest, CustomerRequestListQuery } from "./model";
+import {
+  useCustomerRequestsPageQuery,
+  useCustomerRequestsQuery,
+  useUpdateCustomerRequestStatusesMutation,
+} from "./queries";
 
 vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
@@ -37,6 +46,50 @@ function createWrapper() {
   }
   return { Wrapper, queryClient };
 }
+
+const LIST_QUERY: CustomerRequestListQuery = {
+  page: 2,
+  pageSize: 10,
+  status: undefined,
+  kind: "general",
+  search: "",
+  dateFrom: "2026-01-01",
+  dateTo: "2026-01-10",
+  sort: "createdAt",
+  order: "desc",
+};
+
+describe("useCustomerRequestsPageQuery", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // Paging changes the query key, and without a placeholder
+  // `RequestListPage` falls back to its page-level loading state and
+  // unmounts the list on every page click.
+  it("keeps the previous page's data while the next page loads", () => {
+    const { Wrapper } = createWrapper();
+
+    renderHook(() => useCustomerRequestsPageQuery(LIST_QUERY), { wrapper: Wrapper });
+
+    expect(vi.mocked(useQuery).mock.calls.at(-1)?.[0]).toMatchObject({
+      placeholderData: keepPreviousData,
+    });
+  });
+
+  // Keeps a revisited page or focus refetch from firing instantly — this is
+  // the list-screen-only query, not the notification `all` query below,
+  // whose safety-net poll must keep firing regardless.
+  it("keeps a fetched page fresh for 30s", () => {
+    const { Wrapper } = createWrapper();
+
+    renderHook(() => useCustomerRequestsPageQuery(LIST_QUERY), { wrapper: Wrapper });
+
+    expect(vi.mocked(useQuery).mock.calls.at(-1)?.[0]).toMatchObject({
+      staleTime: 30_000,
+    });
+  });
+});
 
 describe("useCustomerRequestsQuery safety-net polling", () => {
   afterEach(() => {

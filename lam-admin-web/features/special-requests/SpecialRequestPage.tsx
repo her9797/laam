@@ -19,8 +19,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { ListTotalCount } from "@/components/list/ListTotalCount";
+import { ListUpdatingRegion } from "@/components/list/ListUpdatingRegion";
 import { Pagination } from "@/components/list/Pagination";
-import { EmptyState, ErrorState, LoadingState } from "@/components/states/PageStates";
+import { EmptyState, ErrorState, ListSkeletonState } from "@/components/states/PageStates";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -39,6 +40,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useRetainedListQuery } from "@/hooks/use-retained-list-query";
 import { defaultDateRangeDays, resolveCalendarDateRange } from "@/lib/date-range";
 import { formatDateTime } from "@/lib/utils";
 
@@ -118,7 +120,13 @@ export function SpecialRequestPage() {
   }, []);
 
   const dateRangeResult = resolveCalendarDateRange(query.dateFrom, query.dateTo);
-  const requestsQuery = useSpecialRequestsPageQuery(query, dateRangeResult.ok);
+  // Wrapped so a failed page/filter/sort/date change keeps the rows the
+  // operator was already reading — `keepPreviousData` alone drops them the
+  // moment the new key's request fails. See `useRetainedListQuery`.
+  const requestsQuery = useRetainedListQuery(
+    useSpecialRequestsPageQuery(query, dateRangeResult.ok),
+    query,
+  );
   const deleteMutation = useDeleteSpecialRequestMutation();
   // Both dialogs are driven by in-memory ids only (never a URL/query param),
   // so a guest's personal fields never end up in the address bar or browser
@@ -127,7 +135,7 @@ export function SpecialRequestPage() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   if (!query.dateFrom || !query.dateTo || requestsQuery.isLoading) {
-    return <LoadingState label={t("loading")} />;
+    return <ListSkeletonState columns={4} label={t("loading")} />;
   }
 
   if (!dateRangeResult.ok) {
@@ -138,7 +146,11 @@ export function SpecialRequestPage() {
     );
   }
 
-  if (requestsQuery.isError) {
+  // A failure with rows already on screen — a page click, a filter change, a
+  // background refetch — must not tear the table down. Only a failure with
+  // nothing preserved behind it, i.e. a first load, replaces the whole
+  // screen.
+  if (requestsQuery.isError && !requestsQuery.data) {
     return (
       <ErrorState
         title={t("errorTitle")}
@@ -149,7 +161,6 @@ export function SpecialRequestPage() {
   }
 
   const requests = requestsQuery.data?.items ?? [];
-  const total = requestsQuery.data?.total ?? 0;
   const hasActiveFilter = Boolean(query.gender) || query.search.trim().length > 0;
   const detailRequest = requests.find((request) => request.id === detailId) ?? null;
   const deleteTarget = requests.find((request) => request.id === pendingDeleteId) ?? null;
@@ -272,6 +283,17 @@ export function SpecialRequestPage() {
         </div>
       </ListToolbar>
 
+      {requestsQuery.isError ? (
+        <ErrorState
+          // When rows survived the failure they are the previously loaded
+          // page, not the one the screen now asks for — the title has to say
+          // so, or the screen silently misreports what it is showing.
+          title={requestsQuery.isRetained ? t("common:listRetainedErrorTitle") : t("errorTitle")}
+          message={requestsQuery.error instanceof Error ? requestsQuery.error.message : undefined}
+          onRetry={() => requestsQuery.refetch()}
+        />
+      ) : null}
+
       {deleteMutation.isError ? (
         <p role="alert" className="text-sm text-destructive">
           {deleteMutation.error instanceof Error
@@ -280,64 +302,76 @@ export function SpecialRequestPage() {
         </p>
       ) : null}
 
-      <ListTotalCount count={total} />
+      {/* Total, pagination, and rows are all read off the same result, so a
+          retained page reports its own total and position rather than the
+          ones the failed request asked for. */}
+      <ListTotalCount count={requestsQuery.total} />
 
-      {requests.length === 0 ? (
-        hasActiveFilter ? (
-          <EmptyState
-            title={t("common:listNoResultsTitle")}
-            description={t("common:listNoResultsDescription")}
-          />
+      {/* The rows stay put through a page change (see
+          `useSpecialRequestsPageQuery`'s `placeholderData`) and through a
+          failed one (see `useRetainedListQuery`) — the bar reports the fetch,
+          and `stale` says the page on screen is still the previous one. */}
+      <ListUpdatingRegion
+        active={requestsQuery.isFetching}
+        stale={requestsQuery.isStale}
+      >
+        {requests.length === 0 ? (
+          hasActiveFilter ? (
+            <EmptyState
+              title={t("common:listNoResultsTitle")}
+              description={t("common:listNoResultsDescription")}
+            />
+          ) : (
+            <EmptyState title={t("emptyTitle")} description={t("emptyDescription")} />
+          )
         ) : (
-          <EmptyState title={t("emptyTitle")} description={t("emptyDescription")} />
-        )
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-40">{t("common:columnCreatedAt")}</TableHead>
-              <TableHead className="w-20">{t("common:columnTable")}</TableHead>
-              <TableHead>{t("common:columnName")}</TableHead>
-              <TableHead className="w-44">{t("common:columnActions")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {requests.map((request) => (
-              <TableRow key={request.id}>
-                <TableCell>{formatDateTime(request.createdAt, i18n.language)}</TableCell>
-                <TableCell>{request.tableNumber || "-"}</TableCell>
-                <TableCell>{request.name}</TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setDetailId(request.id)}
-                    >
-                      {t("viewDetail")}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      disabled={isRowDeleting(request.id)}
-                      onClick={() => setPendingDeleteId(request.id)}
-                    >
-                      {t("common:delete")}
-                    </Button>
-                  </div>
-                </TableCell>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-40">{t("common:columnCreatedAt")}</TableHead>
+                <TableHead className="w-20">{t("common:columnTable")}</TableHead>
+                <TableHead>{t("common:columnName")}</TableHead>
+                <TableHead className="w-44">{t("common:columnActions")}</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+            </TableHeader>
+            <TableBody>
+              {requests.map((request) => (
+                <TableRow key={request.id}>
+                  <TableCell>{formatDateTime(request.createdAt, i18n.language)}</TableCell>
+                  <TableCell>{request.tableNumber || "-"}</TableCell>
+                  <TableCell>{request.name}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setDetailId(request.id)}
+                      >
+                        {t("viewDetail")}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={isRowDeleting(request.id)}
+                        onClick={() => setPendingDeleteId(request.id)}
+                      >
+                        {t("common:delete")}
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </ListUpdatingRegion>
 
       <Pagination
-        page={query.page}
-        pageSize={query.pageSize}
-        total={total}
+        page={requestsQuery.page}
+        pageSize={requestsQuery.pageSize}
+        total={requestsQuery.total}
         onPageChange={(page) => setQuery((prev) => ({ ...prev, page }))}
         onPageSizeChange={(pageSize) => setQuery((prev) => ({ ...prev, pageSize, page: 1 }))}
       />

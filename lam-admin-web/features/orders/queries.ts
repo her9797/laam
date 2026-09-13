@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { acknowledgeOrder, fetchOrder, fetchOrdersPage } from "./api";
 import type { OrderListQuery, PaymentOrderStatus } from "./model";
@@ -37,6 +37,17 @@ export function useOrdersPageQuery(query: OrderListQuery, enabled: boolean = tru
     queryKey: orderKeys.list(query),
     queryFn: () => fetchOrdersPage(query),
     enabled,
+    // A revisited page or a window-focus refetch shouldn't refire against
+    // the server for 30s — pairs with `ListUpdatingRegion`'s show-delay to
+    // keep a cached page revisit silent end to end.
+    staleTime: 30_000,
+    // Every page, filter, sort, and date change is a different cache entry,
+    // so without a placeholder each one reports `isLoading` again and
+    // `OrderListPage`'s page-level loading gate tears the whole list down
+    // mid-interaction. Serving the previous entry's data until the new one
+    // lands keeps the rows, the pagination, and the focused button in place;
+    // the screen distinguishes the two with `isPlaceholderData`.
+    placeholderData: keepPreviousData,
   });
 }
 

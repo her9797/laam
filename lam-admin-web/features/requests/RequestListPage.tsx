@@ -8,8 +8,9 @@ import { useTranslation } from "react-i18next";
 
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { ListTotalCount } from "@/components/list/ListTotalCount";
+import { ListUpdatingRegion } from "@/components/list/ListUpdatingRegion";
 import { Pagination } from "@/components/list/Pagination";
-import { EmptyState, ErrorState, LoadingState } from "@/components/states/PageStates";
+import { EmptyState, ErrorState, ListSkeletonState } from "@/components/states/PageStates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +31,7 @@ import {
 } from "@/components/ui/table";
 import { stripSongRequestPrefix } from "@/features/dashboard/summary";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
+import { useRetainedListQuery } from "@/hooks/use-retained-list-query";
 import { defaultDateRangeDays, resolveCalendarDateRange } from "@/lib/date-range";
 import { formatDateTime } from "@/lib/utils";
 
@@ -98,7 +100,10 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
     (patch: Partial<CustomerRequestListQuery>) => {
       const params = buildRequestListSearchParams({ ...query, ...patch });
       const queryString = params.toString();
-      router.replace(queryString ? `${pathname}?${queryString}` : pathname);
+      // `scroll: false` — see `features/orders/OrderListPage.tsx`: App Router
+      // scrolls to the top of the document on every navigation, and a
+      // page/filter change here is a navigation.
+      router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
     },
     [query, pathname, router],
   );
@@ -141,13 +146,19 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
   }, []);
 
   const dateRangeResult = resolveCalendarDateRange(query.dateFrom, query.dateTo);
-  const requestsQuery = useCustomerRequestsPageQuery(query, dateRangeResult.ok);
+  // Wrapped so a failed page/filter/sort/date change keeps the rows the
+  // operator was already reading — `keepPreviousData` alone drops them the
+  // moment the new key's request fails. See `useRetainedListQuery`.
+  const requestsQuery = useRetainedListQuery(
+    useCustomerRequestsPageQuery(query, dateRangeResult.ok),
+    query,
+  );
   const statusMutation = useUpdateCustomerRequestStatusMutation();
   const approveMutation = useApproveSongRequestMutation();
   const copyKeys = COPY_KEYS[kind];
 
   if (!query.dateFrom || !query.dateTo || requestsQuery.isLoading) {
-    return <LoadingState label={t(copyKeys.loadingLabel)} />;
+    return <ListSkeletonState columns={5} label={t(copyKeys.loadingLabel)} />;
   }
 
   if (!dateRangeResult.ok) {
@@ -158,7 +169,11 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
     );
   }
 
-  if (requestsQuery.isError) {
+  // A failure with rows already on screen — a page click, a filter change, a
+  // background refetch — must not tear the table down. Only a failure with
+  // nothing preserved behind it, i.e. a first load, replaces the whole
+  // screen.
+  if (requestsQuery.isError && !requestsQuery.data) {
     return (
       <ErrorState
         title={t("errorTitle")}
@@ -169,7 +184,6 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
   }
 
   const requests = requestsQuery.data?.items ?? [];
-  const total = requestsQuery.data?.total ?? 0;
   const hasActiveFilter = Boolean(query.status) || query.search.trim().length > 0;
 
   // Label lookups for the two <Select>s below — see the render-prop comment
@@ -303,82 +317,105 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
         </div>
       </ListToolbar>
 
+      {requestsQuery.isError ? (
+        <ErrorState
+          // When rows survived the failure they are the previously loaded
+          // page, not the one the URL now names — the title has to say so,
+          // or the screen silently misreports what it is showing.
+          title={requestsQuery.isRetained ? t("common:listRetainedErrorTitle") : t("errorTitle")}
+          message={requestsQuery.error instanceof Error ? requestsQuery.error.message : undefined}
+          onRetry={() => requestsQuery.refetch()}
+        />
+      ) : null}
+
       {statusMutation.isError || approveMutation.isError ? (
         <p role="alert" className="text-sm text-destructive">
           {mutationErrorMessage()}
         </p>
       ) : null}
 
-      <ListTotalCount count={total} />
+      {/* Total, pagination, and rows are all read off the same result, so a
+          retained page reports its own total and position rather than the
+          ones the failed request asked for. */}
+      <ListTotalCount count={requestsQuery.total} />
 
-      {requests.length === 0 ? (
-        hasActiveFilter ? (
-          <EmptyState
-            title={t("common:listNoResultsTitle")}
-            description={t("common:listNoResultsDescription")}
-          />
+      {/* The rows stay put through a page change (see
+          `useCustomerRequestsPageQuery`'s `placeholderData`) and through a
+          failed one (see `useRetainedListQuery`) — the bar reports the fetch,
+          and `stale` says the page on screen is still the previous one. */}
+      <ListUpdatingRegion
+        active={requestsQuery.isFetching}
+        stale={requestsQuery.isStale}
+      >
+        {requests.length === 0 ? (
+          hasActiveFilter ? (
+            <EmptyState
+              title={t("common:listNoResultsTitle")}
+              description={t("common:listNoResultsDescription")}
+            />
+          ) : (
+            <EmptyState title={t(copyKeys.emptyTitle)} description={t(copyKeys.emptyDescription)} />
+          )
         ) : (
-          <EmptyState title={t(copyKeys.emptyTitle)} description={t(copyKeys.emptyDescription)} />
-        )
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-40">{t("common:columnCreatedAt")}</TableHead>
-              <TableHead className="w-20">{t("common:columnTable")}</TableHead>
-              <TableHead>{t("columnText")}</TableHead>
-              <TableHead className="w-24">{t("columnStatus")}</TableHead>
-              <TableHead className="w-28">{t("common:columnActions")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {requests.map((request) => {
-              const next =
-                kind === "song"
-                  ? request.status === "pending"
-                    ? { status: "checked" as const, labelKey: "actionApproveAndPlay" }
-                    : undefined
-                  : NEXT_STATUS[request.status];
-              const statusLabel =
-                kind === "song" && request.status === "checked"
-                  ? t("songStatusQueued")
-                  : kind === "song" && request.status === "completed"
-                    ? t("songStatusCompleted")
-                    : t(STATUS_LABEL_KEY[request.status]);
-              return (
-                <TableRow key={request.id}>
-                  <TableCell>{formatDateTime(request.createdAt, i18n.language)}</TableCell>
-                  <TableCell>{request.tableNumber || "-"}</TableCell>
-                  <TableCell className="whitespace-normal">
-                    {kind === "song" ? stripSongRequestPrefix(request.text) : request.text}
-                  </TableCell>
-                  <TableCell>{statusLabel}</TableCell>
-                  <TableCell>
-                    {next ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={isRowMutating(request.id)}
-                        onClick={() => handleAdvance(request)}
-                      >
-                        {t(next.labelKey)}
-                      </Button>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">-</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      )}
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-40">{t("common:columnCreatedAt")}</TableHead>
+                <TableHead className="w-20">{t("common:columnTable")}</TableHead>
+                <TableHead>{t("columnText")}</TableHead>
+                <TableHead className="w-24">{t("columnStatus")}</TableHead>
+                <TableHead className="w-28">{t("common:columnActions")}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {requests.map((request) => {
+                const next =
+                  kind === "song"
+                    ? request.status === "pending"
+                      ? { status: "checked" as const, labelKey: "actionApproveAndPlay" }
+                      : undefined
+                    : NEXT_STATUS[request.status];
+                const statusLabel =
+                  kind === "song" && request.status === "checked"
+                    ? t("songStatusQueued")
+                    : kind === "song" && request.status === "completed"
+                      ? t("songStatusCompleted")
+                      : t(STATUS_LABEL_KEY[request.status]);
+                return (
+                  <TableRow key={request.id}>
+                    <TableCell>{formatDateTime(request.createdAt, i18n.language)}</TableCell>
+                    <TableCell>{request.tableNumber || "-"}</TableCell>
+                    <TableCell className="whitespace-normal">
+                      {kind === "song" ? stripSongRequestPrefix(request.text) : request.text}
+                    </TableCell>
+                    <TableCell>{statusLabel}</TableCell>
+                    <TableCell>
+                      {next ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={isRowMutating(request.id)}
+                          onClick={() => handleAdvance(request)}
+                        >
+                          {t(next.labelKey)}
+                        </Button>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">-</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </ListUpdatingRegion>
 
       <Pagination
-        page={query.page}
-        pageSize={query.pageSize}
-        total={total}
+        page={requestsQuery.page}
+        pageSize={requestsQuery.pageSize}
+        total={requestsQuery.total}
         onPageChange={(page) => updateQuery({ page })}
         onPageSizeChange={(pageSize) => updateQuery({ pageSize, page: 1 })}
       />

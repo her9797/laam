@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { approveSongRequest } from "@/features/player/api";
 import { songQueueKeys } from "@/features/player/keys";
@@ -63,6 +63,14 @@ export function useCustomerRequestsPageQuery(query: CustomerRequestListQuery, en
     queryKey: requestsKeys.list(query),
     queryFn: () => fetchCustomerRequestsPage(query),
     enabled,
+    // A revisited page or a window-focus refetch shouldn't refire against
+    // the server for 30s. Only this list-screen query — the `all`-keyed
+    // notification query above keeps its own 60s safety-net poll untouched.
+    staleTime: 30_000,
+    // See `features/orders/queries.ts`'s equivalent: paging changes the
+    // cache key, and without a placeholder `RequestListPage` unmounts its
+    // whole list to a spinner on every page click.
+    placeholderData: keepPreviousData,
   });
 }
 

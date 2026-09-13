@@ -36,7 +36,27 @@ const FIXTURE: AppData = {
       name: "감자튀김",
       description: "바삭한 감자튀김",
       price: "5000",
+      imageUrl: "https://cdn.example.com/fries.png",
       isVisible: true,
+      options: [
+        {
+          id: "option-sauce",
+          title: "소스",
+          required: true,
+          minChoices: 1,
+          maxChoices: 2,
+          choices: [
+            {
+              id: "choice-cheese",
+              title: "치즈 소스",
+              priceValue: 500,
+              quantityEnabled: true,
+              minQuantity: 1,
+              maxQuantity: 3,
+            },
+          ],
+        },
+      ],
     },
   ],
   requestGuides: [],
@@ -127,6 +147,21 @@ describe("MenuItemDetailPage", () => {
     expect(screen.getByText("안주")).toBeInTheDocument();
     expect(screen.getByText("5000")).toBeInTheDocument();
     expect(screen.getByText("바삭한 감자튀김")).toBeInTheDocument();
+  });
+
+  it("shows the POS-synced image and option details", () => {
+    render(<MenuItemDetailPage menuItemId="menu-1" />);
+
+    expect(screen.getByRole("img", { name: "감자튀김 상품 이미지" })).toHaveAttribute(
+      "src",
+      "https://cdn.example.com/fries.png",
+    );
+    expect(screen.getByRole("heading", { name: "옵션" })).toBeInTheDocument();
+    expect(screen.getByText("소스")).toBeInTheDocument();
+    expect(screen.getByText("필수 · 1~2개 선택")).toBeInTheDocument();
+    expect(screen.getByText("치즈 소스")).toBeInTheDocument();
+    expect(screen.getByText("+500원")).toBeInTheDocument();
+    expect(screen.getByText("수량 1~3개")).toBeInTheDocument();
   });
 
   it("shows a loading state while the recipe is loading", () => {

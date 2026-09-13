@@ -24,6 +24,7 @@ function TableQrCard({ table }: { table: AdminTable }) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [previewFailed, setPreviewFailed] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
 
   useEffect(() => {
     let cancelled = false;
@@ -61,14 +62,30 @@ function TableQrCard({ table }: { table: AdminTable }) {
     }
   }
 
+  async function handleCopyLink() {
+    try {
+      await navigator.clipboard.writeText(table.qrUrl);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
+  }
+
   const tableLabel = t("tableLabel", { id: table.id });
 
   return (
     <div className="flex flex-col items-center gap-2 rounded-2xl border border-border p-4 print:break-inside-avoid">
       <p className="text-sm font-medium text-foreground">{tableLabel}</p>
       {qrDataUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- client-generated data: URL, not an optimizable remote asset
-        <img src={qrDataUrl} alt={tableLabel} className="size-32" />
+        <button
+          type="button"
+          className="size-32 cursor-pointer print:pointer-events-none"
+          title={t("copyLink")}
+          onClick={handleCopyLink}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- client-generated data: URL, not an optimizable remote asset */}
+          <img src={qrDataUrl} alt={tableLabel} className="size-32" />
+        </button>
       ) : (
         <div className="flex size-32 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
           {previewFailed ? t("downloadPngFailed") : null}
@@ -82,6 +99,16 @@ function TableQrCard({ table }: { table: AdminTable }) {
           {t("downloadSvg")}
         </Button>
       </div>
+      {copyStatus === "copied" ? (
+        <p role="status" aria-live="polite" className="text-xs text-emerald-600 dark:text-emerald-400 print:hidden">
+          {t("linkCopied")}
+        </p>
+      ) : null}
+      {copyStatus === "failed" ? (
+        <p role="alert" className="text-xs text-destructive print:hidden">
+          {t("linkCopyFailed")}
+        </p>
+      ) : null}
       {downloadError ? (
         <p role="alert" className="text-xs text-destructive print:hidden">
           {downloadError}

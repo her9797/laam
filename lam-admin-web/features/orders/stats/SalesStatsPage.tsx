@@ -49,9 +49,10 @@ import { useSalesStatsQuery } from "./queries";
 // the order-history screen's "오늘" preset — see `../business-day.ts`.
 const DEFAULT_BASIS: DayBasis = "business";
 
-// One color per pie slice/bar, cycling through the theme's 5-step chart
-// palette (`app/globals.css`'s `--chart-1`..`--chart-5`) rather than
-// hardcoding colors, so charts stay correct in both light and dark theme.
+// One color per pie slice/bar, cycling through the theme's 5-hue categorical
+// chart palette (`app/globals.css`'s `--chart-1`..`--chart-5`) rather than
+// hardcoding colors, so charts stay correct — and adjacent slices stay
+// distinguishable — in both light and dark theme.
 const CHART_COLORS = [
   "var(--chart-1)",
   "var(--chart-2)",

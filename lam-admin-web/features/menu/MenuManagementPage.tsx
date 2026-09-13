@@ -6,8 +6,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslation } from "react-i18next";
+import { RiImageLine } from "@remixicon/react";
 
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ListToolbar } from "@/components/list/ListToolbar";
 import { ListTotalCount } from "@/components/list/ListTotalCount";
 import { Pagination } from "@/components/list/Pagination";
@@ -35,26 +35,11 @@ import type { MenuItem } from "@/features/bootstrap/model";
 import { applyListQuery } from "@/lib/list/apply-list-query";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
-import {
-  UPLOAD_FOCUS_CENTER,
-  createInitialCropTransform,
-  cropImageFileToSquare,
-  loadImageNaturalSize,
-  type CropTransform,
-} from "./crop";
 import { CatalogResyncButton } from "./CatalogResyncButton";
-import { ImageCropEditor } from "./ImageCropEditor";
 import { MenuItemForm } from "./MenuItemForm";
 import { buildMenuListSearchParams, parseMenuListQuery, type MenuListQuery } from "./list-query-url";
-import { filterItemsByCategory, validateImageFile } from "./model";
-import { useUpdateMenuItemVisibilityMutation, useUploadMenuItemImageMutation } from "./queries";
-
-type CropDraft = {
-  menuItemId: string;
-  file: File;
-  imageUrl: string;
-  transform: CropTransform;
-};
+import { filterItemsByCategory, getMenuItemDisplayImage } from "./model";
+import { useUpdateMenuItemVisibilityMutation } from "./queries";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -65,12 +50,6 @@ export function MenuManagementPage() {
   const searchParams = useSearchParams();
   const bootstrapQuery = useBootstrapQuery();
   const visibilityMutation = useUpdateMenuItemVisibilityMutation();
-  const uploadMutation = useUploadMenuItemImageMutation();
-
-  const [cropDraft, setCropDraft] = useState<CropDraft | null>(null);
-  // Holds a translation key (from `validateImageFile`, or one raised here),
-  // not rendered text, so the message follows a language switch.
-  const [imageErrorKey, setImageErrorKey] = useState<string | null>(null);
 
   // Search/category/sort/pagination applies only to this table's own
   // rendering — never to the `items` passed to `MenuItemForm` below, which
@@ -83,7 +62,12 @@ export function MenuManagementPage() {
     (patch: Partial<MenuListQuery>) => {
       const params = buildMenuListSearchParams({ ...listQuery, ...patch });
       const queryString = params.toString();
-      router.replace(queryString ? `${pathname}?${queryString}` : pathname);
+      // `scroll: false` — see `features/orders/OrderListPage.tsx`: App Router
+      // scrolls to the top of the document on every navigation, and a
+      // page/filter change here is a navigation. This list pages client-side
+      // from the bootstrap payload, so it needs no progress indicator — the
+      // scroll jump was the only part of the paging problem it shared.
+      router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
     },
     [listQuery, pathname, router],
   );
@@ -147,76 +131,6 @@ export function MenuManagementPage() {
     return visibilityMutation.isPending && visibilityMutation.variables?.id === id;
   }
 
-  function isUploadPending(id: string): boolean {
-    return uploadMutation.isPending && uploadMutation.variables?.menuItemId === id;
-  }
-
-  function closeCropDraft() {
-    setCropDraft((current) => {
-      if (current) {
-        URL.revokeObjectURL(current.imageUrl);
-      }
-      return null;
-    });
-  }
-
-  async function handleImageSelected(menuItemId: string, file: File | undefined) {
-    setImageErrorKey(null);
-    if (!file) {
-      return;
-    }
-
-    const validationErrorKey = validateImageFile(file);
-    if (validationErrorKey) {
-      setImageErrorKey(validationErrorKey);
-      return;
-    }
-
-    const imageUrl = URL.createObjectURL(file);
-    try {
-      const { naturalWidth, naturalHeight } = await loadImageNaturalSize(imageUrl);
-      setCropDraft({
-        menuItemId,
-        file,
-        imageUrl,
-        transform: createInitialCropTransform(naturalWidth, naturalHeight),
-      });
-    } catch {
-      URL.revokeObjectURL(imageUrl);
-      setImageErrorKey("imageLoadFailed");
-    }
-  }
-
-  // Renders the selected crop region (pan AND zoom) into a square bitmap and
-  // uploads that, rather than the original file — `focusX`/`focusY` alone
-  // are a CSS `object-position` and cannot express zoom. See `./crop`.
-  async function handleSaveCrop() {
-    if (!cropDraft) {
-      return;
-    }
-
-    setImageErrorKey(null);
-    let croppedImage: File;
-    try {
-      croppedImage = await cropImageFileToSquare(cropDraft.file, cropDraft.transform);
-    } catch {
-      setImageErrorKey("cropFailed");
-      return;
-    }
-
-    uploadMutation.mutate(
-      {
-        menuItemId: cropDraft.menuItemId,
-        image: croppedImage,
-        isPrimary: true,
-        displayArea: "menu",
-        focusX: UPLOAD_FOCUS_CENTER,
-        focusY: UPLOAD_FOCUS_CENTER,
-      },
-      { onSuccess: () => closeCropDraft() },
-    );
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -230,19 +144,6 @@ export function MenuManagementPage() {
       {!hasCategories ? (
         <p className="text-sm text-muted-foreground">{t("noCategoriesHint")}</p>
       ) : null}
-      {imageErrorKey ? (
-        <p role="alert" className="text-sm text-destructive">
-          {t(imageErrorKey)}
-        </p>
-      ) : null}
-      {uploadMutation.isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {uploadMutation.error instanceof Error
-            ? uploadMutation.error.message
-            : t("imageUploadFailed")}
-        </p>
-      ) : null}
-
       {items.length > 0 ? (
         <ListToolbar
           searchValue={searchInput}
@@ -318,18 +219,46 @@ export function MenuManagementPage() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-20">{t("columnImage")}</TableHead>
               <TableHead>{t("common:columnName")}</TableHead>
               <TableHead className="w-32">{t("columnCategory")}</TableHead>
               <TableHead className="w-24">{t("columnPrice")}</TableHead>
+              <TableHead className="w-44">{t("columnOptions")}</TableHead>
               <TableHead className="w-24">{t("common:columnVisibility")}</TableHead>
-              <TableHead className="w-28">{t("columnImage")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {visibleItems.map((item) => {
               const category = categories.find((candidate) => candidate.id === item.categoryId);
+              const displayImage = getMenuItemDisplayImage(item);
+              const options = item.options ?? [];
+              const choiceCount = options.reduce((total, option) => total + option.choices.length, 0);
               return (
                 <TableRow key={item.id}>
+                  <TableCell>
+                    {displayImage ? (
+                      // POS image hosts are provided dynamically by the API.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={displayImage.src}
+                        alt={t("itemImageAlt", { name: item.name })}
+                        className="size-12 shrink-0 rounded-2xl object-cover"
+                        style={
+                          displayImage.focusX === undefined
+                            ? undefined
+                            : { objectPosition: `${displayImage.focusX}% ${displayImage.focusY}%` }
+                        }
+                      />
+                    ) : (
+                      <div
+                        role="img"
+                        aria-label={t("itemImageEmptyAlt", { name: item.name })}
+                        className="flex size-12 shrink-0 items-center justify-center rounded-2xl border border-border bg-muted text-muted-foreground"
+                      >
+                        <RiImageLine className="size-5" aria-hidden="true" />
+                      </div>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Link
                       href={`/menu/${item.id}`}
@@ -340,6 +269,20 @@ export function MenuManagementPage() {
                   </TableCell>
                   <TableCell>{category?.label ?? item.categoryId}</TableCell>
                   <TableCell>{item.price}</TableCell>
+                  <TableCell>
+                    {options.length > 0 ? (
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="text-sm text-foreground">
+                          {t("optionSummary", { optionCount: options.length, choiceCount })}
+                        </span>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {options.map((option) => option.title).join(" · ")}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">{t("noOptions")}</span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Button
                       type="button"
@@ -352,23 +295,6 @@ export function MenuManagementPage() {
                     >
                       {item.isVisible ? t("common:visible") : t("common:hidden")}
                     </Button>
-                  </TableCell>
-                  <TableCell>
-                    <label className="cursor-pointer text-sm text-foreground underline underline-offset-4 hover:font-bold">
-                      {t("imageSelect")}
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp"
-                        className="sr-only"
-                        aria-label={t("imageSelectRowAria", { name: item.name })}
-                        disabled={isUploadPending(item.id)}
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          void handleImageSelected(item.id, file);
-                          event.target.value = "";
-                        }}
-                      />
-                    </label>
                   </TableCell>
                 </TableRow>
               );
@@ -386,42 +312,6 @@ export function MenuManagementPage() {
           onPageSizeChange={(pageSize) => updateQuery({ pageSize, page: 1 })}
         />
       ) : null}
-
-      <Dialog
-        open={cropDraft !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeCropDraft();
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("cropDialogTitle")}</DialogTitle>
-          </DialogHeader>
-          {cropDraft ? (
-            <ImageCropEditor
-              imageUrl={cropDraft.imageUrl}
-              transform={cropDraft.transform}
-              onTransformChange={(transform) =>
-                setCropDraft((current) => (current ? { ...current, transform } : current))
-              }
-            />
-          ) : null}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={closeCropDraft}>
-              {t("common:cancel")}
-            </Button>
-            <Button
-              type="button"
-              disabled={uploadMutation.isPending}
-              onClick={() => void handleSaveCrop()}
-            >
-              {t("common:save")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

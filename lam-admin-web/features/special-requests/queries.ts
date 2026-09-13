@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { deleteSpecialRequest, fetchSpecialRequests, fetchSpecialRequestsPage } from "./api";
 import type { SpecialRequestListQuery } from "./model";
@@ -32,6 +32,13 @@ export function useSpecialRequestsPageQuery(query: SpecialRequestListQuery, enab
     queryKey: specialRequestKeys.list(query),
     queryFn: () => fetchSpecialRequestsPage(query),
     enabled,
+    // A revisited page or a window-focus refetch shouldn't refire against
+    // the server for 30s.
+    staleTime: 30_000,
+    // See `features/orders/queries.ts`'s equivalent: paging changes the
+    // cache key, and without a placeholder `SpecialRequestPage` unmounts
+    // its whole list to a spinner on every page click.
+    placeholderData: keepPreviousData,
   });
 }
 
