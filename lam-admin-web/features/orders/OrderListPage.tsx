@@ -61,6 +61,24 @@ const POS_SYNC_LABEL_KEY: Record<PaymentOrderPosSyncStatus, string> = {
   NOT_CONFIGURED: "posSyncNotConfigured",
 };
 
+// READY hasn't been handled yet and needs attention; DONE is the settled,
+// successful outcome; CANCELLED is inert. FAILED POS syncs get the most
+// attention since they are a real operational error the operator must act
+// on, unlike PENDING/NOT_CONFIGURED which are expected states.
+const STATUS_COLOR_CLASS: Record<PaymentOrderStatus, string> = {
+  READY: "text-warning",
+  ACKNOWLEDGED: "text-foreground",
+  DONE: "text-success",
+  CANCELLED: "text-muted-foreground",
+};
+
+const POS_SYNC_COLOR_CLASS: Record<PaymentOrderPosSyncStatus, string> = {
+  PENDING: "text-muted-foreground",
+  SUCCEEDED: "text-success",
+  FAILED: "text-destructive",
+  NOT_CONFIGURED: "text-muted-foreground",
+};
+
 export function OrderListPage() {
   const { t, i18n } = useTranslation("orders");
   const router = useRouter();
@@ -123,7 +141,7 @@ export function OrderListPage() {
   const acknowledgeMutation = useAcknowledgeOrderMutation();
 
   if (!query.dateFrom || !query.dateTo || ordersQuery.isLoading) {
-    return <ListSkeletonState columns={7} label={t("loading")} />;
+    return <ListSkeletonState columns={8} label={t("loading")} />;
   }
 
   if (!dateRangeResult.ok) {
@@ -318,7 +336,8 @@ export function OrderListPage() {
               <TableRow>
                 <TableHead className="w-40">{t("columnApprovedAt")}</TableHead>
                 <TableHead className="w-20">{t("common:columnTable")}</TableHead>
-                <TableHead>{t("columnMenuItem")}</TableHead>
+                <TableHead className="w-[32%]">{t("columnMenuItem")}</TableHead>
+                <TableHead>{t("columnRequestNote")}</TableHead>
                 <TableHead className="w-28">{t("columnAmount")}</TableHead>
                 <TableHead className="w-24">{t("columnStatus")}</TableHead>
                 <TableHead className="w-32">{t("columnPosSync")}</TableHead>
@@ -332,7 +351,7 @@ export function OrderListPage() {
                     {formatDateTime(order.approvedAt ?? order.createdAt, i18n.language)}
                   </TableCell>
                   <TableCell>{order.tableNumber || "-"}</TableCell>
-                  <TableCell>
+                  <TableCell title={`${order.menuItemName} (${order.categoryName})`}>
                     <Link
                       href={`/orders/${order.orderId}`}
                       className="text-foreground underline underline-offset-4 hover:font-bold"
@@ -341,9 +360,14 @@ export function OrderListPage() {
                     </Link>
                     <span className="text-muted-foreground"> ({order.categoryName})</span>
                   </TableCell>
+                  <TableCell>{order.requestNote || "-"}</TableCell>
                   <TableCell>{formatCurrencyKRW(order.amount, i18n.language)}</TableCell>
-                  <TableCell>{t(STATUS_LABEL_KEY[order.status])}</TableCell>
-                  <TableCell>{t(POS_SYNC_LABEL_KEY[order.posSyncStatus])}</TableCell>
+                  <TableCell className={STATUS_COLOR_CLASS[order.status]}>
+                    {t(STATUS_LABEL_KEY[order.status])}
+                  </TableCell>
+                  <TableCell className={POS_SYNC_COLOR_CLASS[order.posSyncStatus]}>
+                    {t(POS_SYNC_LABEL_KEY[order.posSyncStatus])}
+                  </TableCell>
                   <TableCell>
                     {order.status === "READY" ? (
                       <Button

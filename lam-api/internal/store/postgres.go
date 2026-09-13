@@ -309,6 +309,16 @@ BEGIN
     ALTER TABLE customer_requests DROP COLUMN IF EXISTS ideal_type;
   END IF;
 END $$;
+
+CREATE TABLE IF NOT EXISTS system_error_logs (
+  id TEXT PRIMARY KEY,
+  method TEXT NOT NULL,
+  path TEXT NOT NULL,
+  status INTEGER NOT NULL,
+  message TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_system_error_logs_created_at ON system_error_logs (created_at DESC, id DESC);
 `)
 	return err
 }
@@ -1407,6 +1417,78 @@ func (r *Repository) CreateSpecialRequest(ctx context.Context, input lamdata.Spe
 		input.Text,
 	)
 	return classifyError(err)
+}
+
+const (
+	systemErrorLogRetentionLimit = 500
+	systemErrorLogMessageMaxLen  = 2000
+)
+
+// RecordSystemErrorLog persists one 5xx response (from writeError or a
+// recovered handler panic) for the admin system-log screen, then prunes
+// down to the most recent systemErrorLogRetentionLimit rows. Callers (the
+// httpapi system-log middleware) treat a failure here as best-effort and
+// must never let it affect the original request's response.
+func (r *Repository) RecordSystemErrorLog(ctx context.Context, method string, path string, status int, message string) error {
+	if runes := []rune(message); len(runes) > systemErrorLogMessageMaxLen {
+		message = string(runes[:systemErrorLogMessageMaxLen])
+	}
+
+	id := nextID("system-error-log")
+	if _, err := r.pool.Exec(ctx, `
+		INSERT INTO system_error_logs (id, method, path, status, message)
+		VALUES ($1, $2, $3, $4, $5)
+	`, id, method, path, status, message); err != nil {
+		return err
+	}
+
+	_, err := r.pool.Exec(ctx, `
+		DELETE FROM system_error_logs
+		WHERE id NOT IN (
+			SELECT id FROM system_error_logs ORDER BY created_at DESC, id DESC LIMIT $1
+		)
+	`, systemErrorLogRetentionLimit)
+	return err
+}
+
+// ListSystemErrorLogs returns a page of system_error_logs, newest first, for
+// GET /api/v1/admin/system-logs.
+func (r *Repository) ListSystemErrorLogs(ctx context.Context, page int, pageSize int) ([]lamdata.SystemErrorLog, int, error) {
+	page = clampListPage(page)
+	pageSize = clampListPageSize(pageSize)
+
+	var total int
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM system_error_logs`).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, method, path, status, message, created_at
+		FROM system_error_logs
+		ORDER BY created_at DESC, id DESC
+		LIMIT $1 OFFSET $2
+	`, pageSize, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	logs := make([]lamdata.SystemErrorLog, 0)
+	for rows.Next() {
+		var item lamdata.SystemErrorLog
+		var createdAt time.Time
+		if err := rows.Scan(&item.ID, &item.Method, &item.Path, &item.Status, &item.Message, &createdAt); err != nil {
+			return nil, 0, err
+		}
+		item.CreatedAt = formatTimestamp(createdAt)
+		logs = append(logs, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return logs, total, nil
 }
 
 func (r *Repository) UpdateCustomerRequestStatus(ctx context.Context, id string, status string) error {

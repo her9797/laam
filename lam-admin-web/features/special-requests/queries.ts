@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { deleteSpecialRequest, fetchSpecialRequests, fetchSpecialRequestsPage } from "./api";
+import { deleteSpecialRequest, fetchSpecialRequestsPage } from "./api";
 import type { SpecialRequestListQuery } from "./model";
 
 /**
@@ -11,12 +11,36 @@ import type { SpecialRequestListQuery } from "./model";
 export const specialRequestKeys = {
   all: ["special-requests"] as const,
   list: (query: SpecialRequestListQuery) => ["special-requests", "list", query] as const,
+  count: ["special-requests", "count"] as const,
 };
 
-export function useSpecialRequestsQuery() {
+/**
+ * Dashboard's special-request-count aggregate: every `special_requests` row,
+ * all-time, no filter — matching `SpecialRequestPage`'s default "no filter"
+ * meaning once `dateFrom`/`dateTo` are blank (see
+ * `features/special-requests/api.ts`'s `resolveCalendarDateRange`, which
+ * treats a blank range as unbounded). `pageSize: 1` keeps the request cheap,
+ * mirroring `features/orders/queries.ts`'s `useOrderCountQuery`; only
+ * `total` from the paginated envelope is read, never `items`.
+ */
+const DASHBOARD_SPECIAL_REQUEST_COUNT_QUERY: SpecialRequestListQuery = {
+  page: 1,
+  pageSize: 1,
+  gender: undefined,
+  search: "",
+  dateFrom: "",
+  dateTo: "",
+  sort: "createdAt",
+  order: "desc",
+};
+
+export function useSpecialRequestCountQuery() {
   return useQuery({
-    queryKey: specialRequestKeys.all,
-    queryFn: fetchSpecialRequests,
+    queryKey: specialRequestKeys.count,
+    queryFn: async () => {
+      const page = await fetchSpecialRequestsPage(DASHBOARD_SPECIAL_REQUEST_COUNT_QUERY);
+      return { total: page.total };
+    },
   });
 }
 

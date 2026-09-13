@@ -335,9 +335,23 @@ export async function mockDashboardData(
     orderCount?: number;
   } = {},
 ): Promise<void> {
+  const specialRequests = overrides.specialRequests ?? buildSpecialRequests();
   await mockBootstrap(page, overrides.appData ?? buildAppData());
   await mockCustomerRequestsList(page, overrides.requests ?? buildCustomerRequests());
-  await mockSpecialRequestsList(page, overrides.specialRequests ?? buildSpecialRequests());
+  // Kept for any test that still reads the bare, query-less list directly —
+  // nothing on the dashboard itself does since `useSpecialRequestCountQuery`
+  // below replaced its old full-list read.
+  await mockSpecialRequestsList(page, specialRequests);
+  // The dashboard's special-request card reads only `total` from the paged
+  // envelope (`features/special-requests/queries.ts`'s
+  // `useSpecialRequestCountQuery`, pageSize 1, no filters) — a *different*
+  // route (path + non-empty query string) from the bare list mocked just
+  // above, so it needs its own mock or the dashboard's load hangs against
+  // this suite's deliberately unreachable real API origin. Matches
+  // `mockPaymentOrdersList`'s same path-regardless-of-query-string shape.
+  await page.route("**/api/admin/special-requests?**", async (route) => {
+    await route.fulfill({ json: { items: [], page: 1, pageSize: 1, total: specialRequests.length } });
+  });
   // The dashboard renders an error state if any of its queries fails, so the
   // unpaid-order card's request must be mocked here too — without it the
   // whole screen fails to render and every assertion on the dashboard (page

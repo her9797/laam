@@ -1,6 +1,5 @@
 import type { AppData } from "@/features/bootstrap/model";
 import type { CustomerRequest } from "@/features/requests/model";
-import type { SpecialRequest } from "@/features/special-requests/model";
 
 /**
  * `lam-web`'s `song-requests-screen.tsx` (customer side, creates the
@@ -60,28 +59,29 @@ function countPending(requests: CustomerRequest[]): number {
 /**
  * Aggregates the dashboard's shortcut-card counts from the already-separate
  * feature queries (`AppData` from `bootstrapKeys.all`, `CustomerRequest[]`
- * from `requestsKeys.all`, `SpecialRequest[]` from `specialRequestKeys.all`,
- * and the `payment_orders` total from `orderKeys.count`). Pure and
- * synchronous — callers own fetching and caching; this only ever combines
- * already-loaded data, so it never merges the general/special request or
- * order API calls, models, or mutation flows themselves.
+ * from `requestsKeys.all`, the `special_requests` total from
+ * `specialRequestKeys.count`, and the `payment_orders` total from
+ * `orderKeys.count`). Pure and synchronous — callers own fetching and
+ * caching; this only ever combines already-loaded data, so it never merges
+ * the general/special request or order API calls, models, or mutation flows
+ * themselves.
  *
- * `orderCount` is passed in as a plain number rather than an order array:
- * it is a server-side total (from `OrderPageResult.total`) of the orders
- * still awaiting payment — both `READY` and `ACKNOWLEDGED` — regardless of
- * `/orders`'s own default filter. See `features/orders/queries.ts`'s
- * `useOrderCountQuery`.
+ * `specialRequestCount` and `orderCount` are passed in as plain numbers
+ * rather than the full row arrays: both are server-side totals (from each
+ * feature's paginated envelope's `total`) — see
+ * `features/special-requests/queries.ts`'s `useSpecialRequestCountQuery` and
+ * `features/orders/queries.ts`'s `useOrderCountQuery`.
  */
 export function buildDashboardSummary(
   appData: AppData,
   requests: CustomerRequest[],
-  specialRequests: SpecialRequest[],
+  specialRequestCount: number,
   orderCount: number,
 ): DashboardSummary {
   return {
     pendingGeneralRequestCount: countPending(selectGeneralRequests(requests)),
     pendingSongRequestCount: countPending(selectSongRequests(requests)),
-    specialRequestCount: specialRequests.length,
+    specialRequestCount,
     orderCount,
     menuItemCount: appData.items.length,
     noticeCount: appData.notices.length,

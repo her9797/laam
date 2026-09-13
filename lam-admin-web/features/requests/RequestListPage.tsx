@@ -50,6 +50,16 @@ const STATUS_LABEL_KEY: Record<CustomerRequestStatus, string> = {
   completed: "statusCompleted",
 };
 
+// Pending is what a customer is actively waiting on, so it gets the
+// warning color to draw the eye first; completed reads as done/success.
+// Checked stays neutral (default text color) as a middle state. Text
+// labels are kept regardless, so status is never conveyed by color alone.
+const STATUS_TEXT_CLASS: Record<CustomerRequestStatus, string> = {
+  pending: "text-warning",
+  checked: "text-foreground",
+  completed: "text-success",
+};
+
 // Which status a "next action" button on a row moves it to, and the label
 // key for that button — mirrors `admin-screen.tsx`'s `handleCustomerRequestStatusChange`
 // two-step flow (pending -> checked -> completed). A completed request has
@@ -362,7 +372,7 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
               <TableRow>
                 <TableHead className="w-40">{t("common:columnCreatedAt")}</TableHead>
                 <TableHead className="w-20">{t("common:columnTable")}</TableHead>
-                <TableHead>{t("columnText")}</TableHead>
+                <TableHead className="w-[45%]">{t("columnText")}</TableHead>
                 <TableHead className="w-24">{t("columnStatus")}</TableHead>
                 <TableHead className="w-28">{t("common:columnActions")}</TableHead>
               </TableRow>
@@ -388,7 +398,7 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
                     <TableCell className="whitespace-normal">
                       {kind === "song" ? stripSongRequestPrefix(request.text) : request.text}
                     </TableCell>
-                    <TableCell>{statusLabel}</TableCell>
+                    <TableCell className={STATUS_TEXT_CLASS[request.status]}>{statusLabel}</TableCell>
                     <TableCell>
                       {next ? (
                         <Button

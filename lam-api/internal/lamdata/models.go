@@ -220,6 +220,25 @@ type SpecialRequestPage struct {
 	Total    int              `json:"total"`
 }
 
+// SystemErrorLog is one recorded 5xx response (from a normal writeError
+// path or a recovered handler panic) — see
+// store.Repository.RecordSystemErrorLog / ListSystemErrorLogs.
+type SystemErrorLog struct {
+	ID        string `json:"id"`
+	Method    string `json:"method"`
+	Path      string `json:"path"`
+	Status    int    `json:"status"`
+	Message   string `json:"message"`
+	CreatedAt string `json:"createdAt"`
+}
+
+type SystemErrorLogPage struct {
+	Items    []SystemErrorLog `json:"items"`
+	Page     int              `json:"page"`
+	PageSize int              `json:"pageSize"`
+	Total    int              `json:"total"`
+}
+
 type BootstrapData struct {
 	Store         StoreInfo      `json:"store"`
 	Categories    []MenuCategory `json:"categories"`

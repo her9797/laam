@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, type ComponentType, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  RiAlarmWarningLine,
   RiArrowDownSLine,
   RiBarChart2Line,
   RiDashboardLine,
@@ -41,7 +42,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { NotificationBell } from "@/features/notifications/NotificationBell";
+import { NotificationBells } from "@/features/notifications/NotificationBells";
 import { LanguageMenu } from "@/features/settings/LanguageMenu";
 import { ThemeMenu } from "@/features/settings/ThemeMenu";
 import { ThemeProvider } from "@/features/settings/ThemeProvider";
@@ -105,6 +106,10 @@ const BOTTOM_NAV_ITEMS: NavItem[] = [
   { href: "/tables", labelKey: "navTables", icon: RiQrCodeLine },
   { href: "/notices", labelKey: "navNotices", icon: RiMegaphoneLine },
   { href: "/store-copy", labelKey: "navStoreCopy", icon: RiFileTextLine },
+  // A standalone top-level item, not folded into any of the grouped
+  // dropdowns above — this is an operational diagnostics screen, not a
+  // guest-request/order/product management concern.
+  { href: "/system-logs", labelKey: "navSystemLogs", icon: RiAlarmWarningLine },
 ];
 
 const ALL_NAV_ITEMS: NavItem[] = [
@@ -262,7 +267,7 @@ function AdminShellContent({ children }: { children: ReactNode }) {
             </ol>
           </nav>
           <div className="flex items-center gap-2">
-            <NotificationBell />
+            <NotificationBells />
             <LanguageMenu />
             <ThemeMenu />
           </div>

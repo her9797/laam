@@ -304,6 +304,35 @@ describe("SpecialRequestPage", () => {
     expect(screen.getByText("총 1건")).toBeInTheDocument();
   });
 
+  it("shows gender, age, and residence columns in the list table", () => {
+    render(<SpecialRequestPage />);
+
+    const table = screen.getByRole("table");
+    expect(within(table).getByText("성별")).toBeInTheDocument();
+    expect(within(table).getByText("나이")).toBeInTheDocument();
+    expect(within(table).getByText("사는 곳")).toBeInTheDocument();
+
+    const row = screen.getByText("홍길동").closest("tr");
+    if (!row) {
+      throw new Error("row not found");
+    }
+    expect(within(row).getByText("여")).toBeInTheDocument();
+    expect(within(row).getByText("20대")).toBeInTheDocument();
+    expect(within(row).getByText("서울")).toBeInTheDocument();
+  });
+
+  it("shows a dash for blank age/residence values in the list table", () => {
+    mockQuery({ data: pageFixture([{ ...ITEMS[0], age: "", residence: "" }]) });
+
+    render(<SpecialRequestPage />);
+
+    const row = screen.getByText("홍길동").closest("tr");
+    if (!row) {
+      throw new Error("row not found");
+    }
+    expect(within(row).getAllByText("-").length).toBeGreaterThanOrEqual(2);
+  });
+
   it("opens a detail dialog showing every field when '상세보기' is clicked", () => {
     render(<SpecialRequestPage />);
 
@@ -436,6 +465,16 @@ describe("SpecialRequestPage", () => {
     expect(screen.getByText("검색 결과가 없습니다.")).toBeInTheDocument();
     expect(screen.queryByText("접수된 특별 요청이 없습니다.")).not.toBeInTheDocument();
     vi.useRealTimers();
+  });
+
+  it("caps the name column's width and keeps the full name reachable via a title attribute", () => {
+    render(<SpecialRequestPage />);
+
+    const header = screen.getByRole("columnheader", { name: "이름" });
+    expect(header.className).toMatch(/w-\[\d+%\]/);
+
+    const nameCell = screen.getByText("홍길동");
+    expect(nameCell.closest("td")).toHaveAttribute("title", "홍길동");
   });
 
   it("moves to the next page via Pagination", () => {

@@ -6,47 +6,32 @@ import { RiCheckDoubleLine } from "@remixicon/react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
-import { formatCurrencyKRW, formatDateTime } from "@/lib/utils";
+import { formatDateTime } from "@/lib/utils";
 
-import type { OrderNotification, RequestNotification, RequestNotificationKind } from "./model";
+import type { RequestNotification, RequestNotificationKind } from "./model";
 
 const KIND_LABEL_KEY: Record<RequestNotificationKind, string> = {
   general: "kindGeneral",
   song: "kindSong",
 };
 
-export type NotificationPanelProps = {
+export type RequestNotificationPanelProps = {
   notifications: RequestNotification[];
   isError: boolean;
   isItemPending: (id: string) => boolean;
   onItemClick: (notification: RequestNotification) => void;
   onMarkAllClick: () => void;
   isMarkAllPending: boolean;
-  /**
-   * Orders that just came in and haven't been dismissed yet, shown as a
-   * feed below the guest-request list. Deliberately separate from
-   * `notifications`/`onItemClick` above: an order's "read" state is
-   * client-only (`useOrderNotifications`'s `dismiss`, kept in
-   * `localStorage` — see `order-dismissal.ts`), not the server-owned
-   * `pending`→`checked` status requests use, so there is no "모두 확인"
-   * bulk action for orders and no separate pending/loading props — each
-   * click's `onOrderItemClick` removes that order from this list
-   * immediately.
-   */
-  orderNotifications: OrderNotification[];
-  onOrderItemClick: (order: OrderNotification) => void;
 };
 
-export function NotificationPanel({
+export function RequestNotificationPanel({
   notifications,
   isError,
   isItemPending,
   onItemClick,
   onMarkAllClick,
   isMarkAllPending,
-  orderNotifications,
-  onOrderItemClick,
-}: NotificationPanelProps) {
+}: RequestNotificationPanelProps) {
   const { t, i18n } = useTranslation("notifications");
   const hasGeneralRequest = notifications.some((notification) => notification.kind === "general");
 
@@ -98,34 +83,6 @@ export function NotificationPanel({
             ))}
           </ul>
         )}
-
-        {orderNotifications.length > 0 ? (
-          <div className="mt-2 border-t border-foreground/5 pt-2">
-            <p className="px-2 pb-1 text-xs font-medium text-muted-foreground">
-              {t("ordersPanelTitle")}
-            </p>
-            <ul className="flex flex-col gap-1">
-              {orderNotifications.map((order) => (
-                <li key={order.id}>
-                  <button
-                    type="button"
-                    onClick={() => onOrderItemClick(order)}
-                    className="flex w-full flex-col items-start gap-0.5 rounded-2xl px-3 py-2 text-left text-sm hover:bg-foreground/5"
-                  >
-                    <span className="flex w-full items-center justify-between gap-2 text-xs text-muted-foreground">
-                      <span>{t("kindOrder")}</span>
-                      <span>{formatDateTime(order.approvedAt, i18n.language)}</span>
-                    </span>
-                    <span className="line-clamp-2 w-full text-foreground">
-                      {order.tableNumber} · {order.menuItemName} ·{" "}
-                      {formatCurrencyKRW(order.amount, i18n.language)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
       </div>
     </div>
   );

@@ -118,27 +118,6 @@ func Load() Config {
 	}
 }
 
-var localEnvKeys = map[string]struct{}{
-	"ADMIN_API_TOKEN":            {},
-	"ALLOWED_ORIGIN":             {},
-	"APP_ADDR":                   {},
-	"DATABASE_URL":               {},
-	"PAYMENT_API_TOKEN":          {},
-	"PORT":                       {},
-	"POS_ORDER_PROVIDER":         {},
-	"POS_PLUGIN_API_TOKEN":       {},
-	"SUPABASE_BROADCAST_KEY":     {},
-	"SUPABASE_URL":               {},
-	"TOSS_PAYMENTS_API_BASE_URL": {},
-	"TOSS_PAYMENTS_SECRET_KEY":   {},
-	"TOSS_PLACE_ACCESS_KEY":      {},
-	"TOSS_PLACE_API_BASE_URL":    {},
-	"TOSS_PLACE_MERCHANT_ID":     {},
-	"TOSS_PLACE_SECRET_KEY":      {},
-	"YOUTUBE_API_BASE_URL":       {},
-	"YOUTUBE_API_KEY":            {},
-}
-
 // loadLocalEnv lets `go run ./cmd/server` use the same ignored .env file as
 // Docker Compose. Non-empty process environment always takes priority; Cloud
 // Run therefore continues to use the values injected from Secret Manager.
@@ -158,13 +137,13 @@ func loadEnvFile(path string) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
 		line = strings.TrimPrefix(line, "export ")
 		key, value, ok := strings.Cut(line, "=")
 		key = strings.TrimSpace(key)
-		if !ok || os.Getenv(key) != "" {
-			continue
-		}
-		if _, allowed := localEnvKeys[key]; !allowed {
+		if !ok || key == "" || os.Getenv(key) != "" {
 			continue
 		}
 

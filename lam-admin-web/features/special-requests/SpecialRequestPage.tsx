@@ -135,7 +135,7 @@ export function SpecialRequestPage() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
   if (!query.dateFrom || !query.dateTo || requestsQuery.isLoading) {
-    return <ListSkeletonState columns={4} label={t("loading")} />;
+    return <ListSkeletonState columns={7} label={t("loading")} />;
   }
 
   if (!dateRangeResult.ok) {
@@ -190,6 +190,13 @@ export function SpecialRequestPage() {
   // label}"). These items are plain strings, so the render-prop is required.
   const GENDER_FILTER_LABELS: Record<string, string> = {
     all: t("common:filterAll"),
+    male: t("genderMale"),
+    female: t("genderFemale"),
+  };
+  // Row display only — deliberately excludes the filter dropdown's "all"
+  // option so an unexpected gender value falls back to the raw string
+  // instead of ever rendering "전체" in a table cell.
+  const GENDER_ROW_LABELS: Record<string, string> = {
     male: t("genderMale"),
     female: t("genderFemale"),
   };
@@ -330,7 +337,10 @@ export function SpecialRequestPage() {
               <TableRow>
                 <TableHead className="w-40">{t("common:columnCreatedAt")}</TableHead>
                 <TableHead className="w-20">{t("common:columnTable")}</TableHead>
-                <TableHead>{t("common:columnName")}</TableHead>
+                <TableHead className="w-[45%]">{t("common:columnName")}</TableHead>
+                <TableHead className="w-20">{t("columnGender")}</TableHead>
+                <TableHead className="w-24">{t("columnAge")}</TableHead>
+                <TableHead className="w-32">{t("columnResidence")}</TableHead>
                 <TableHead className="w-44">{t("common:columnActions")}</TableHead>
               </TableRow>
             </TableHeader>
@@ -339,7 +349,10 @@ export function SpecialRequestPage() {
                 <TableRow key={request.id}>
                   <TableCell>{formatDateTime(request.createdAt, i18n.language)}</TableCell>
                   <TableCell>{request.tableNumber || "-"}</TableCell>
-                  <TableCell>{request.name}</TableCell>
+                  <TableCell title={request.name}>{request.name}</TableCell>
+                  <TableCell>{GENDER_ROW_LABELS[request.gender] ?? request.gender}</TableCell>
+                  <TableCell>{request.age || "-"}</TableCell>
+                  <TableCell>{request.residence || "-"}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">
                       <Button

@@ -41,6 +41,50 @@ func TestLoad_ReadsRepositoryDotEnvWhenRunningFromLamAPI(t *testing.T) {
 	}
 }
 
+// TestLoad_ReadsEveryKnownKeyFromDotEnv guards against the local .env loader
+// silently ignoring a key: it previously only loaded a fixed allowlist, so a
+// key absent from that list (e.g. TOSS_PLACE_WEBHOOK_SECRET) stayed empty
+// even when `go run` was launched without `source .env` first and the key
+// was right there in the file — plain `go run ./cmd/server` still 401'd
+// every TossPlace webhook, QR_SIGNING_SECRET 500'd the admin tables
+// endpoint, etc. This test seeds every key the loader is documented to
+// read and asserts each one actually reaches Config.
+func TestLoad_ReadsEveryKnownKeyFromDotEnv(t *testing.T) {
+	repositoryDir := t.TempDir()
+	apiDir := filepath.Join(repositoryDir, "lam-api")
+	if err := os.Mkdir(apiDir, 0o755); err != nil {
+		t.Fatalf("create lam-api directory: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(repositoryDir, ".env"),
+		[]byte(
+			"QR_SIGNING_SECRET=qr-secret\n"+
+				"CUSTOMER_WEB_BASE_URL=https://guest.example.com\n"+
+				"TOSS_PLACE_WEBHOOK_SECRET=webhook-secret\n",
+		),
+		0o600,
+	); err != nil {
+		t.Fatalf("write repository .env: %v", err)
+	}
+
+	t.Chdir(apiDir)
+	t.Setenv("QR_SIGNING_SECRET", "")
+	t.Setenv("CUSTOMER_WEB_BASE_URL", "")
+	t.Setenv("TOSS_PLACE_WEBHOOK_SECRET", "")
+
+	cfg := Load()
+
+	if cfg.QRSigningSecret != "qr-secret" {
+		t.Errorf("QRSigningSecret = %q, want %q", cfg.QRSigningSecret, "qr-secret")
+	}
+	if cfg.CustomerWebBaseURL != "https://guest.example.com" {
+		t.Errorf("CustomerWebBaseURL = %q, want %q", cfg.CustomerWebBaseURL, "https://guest.example.com")
+	}
+	if cfg.TossPlaceWebhookSecret != "webhook-secret" {
+		t.Errorf("TossPlaceWebhookSecret = %q, want %q", cfg.TossPlaceWebhookSecret, "webhook-secret")
+	}
+}
+
 func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("APP_ADDR", "")
 	t.Setenv("PORT", "")
