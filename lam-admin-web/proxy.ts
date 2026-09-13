@@ -39,6 +39,7 @@ export const config = {
     "/tables/:path*",
     "/notices/:path*",
     "/store-copy/:path*",
+    "/system-logs/:path*",
   ],
 };
 

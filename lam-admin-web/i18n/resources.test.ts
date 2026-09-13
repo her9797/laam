@@ -23,6 +23,7 @@ describe("i18n resources", () => {
         "requests",
         "specialRequests",
         "storeCopy",
+        "systemLogs",
         "tables",
       ].sort(),
     );
