@@ -10,7 +10,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/states/PageSt
 import { useBootstrapQuery } from "@/features/bootstrap/queries";
 import { useOrderCountQuery } from "@/features/orders/queries";
 import { useCustomerRequestsQuery } from "@/features/requests/queries";
-import { useSpecialRequestsQuery } from "@/features/special-requests/queries";
+import { useSpecialRequestCountQuery } from "@/features/special-requests/queries";
 
 import { buildDashboardSummary, type DashboardSummary } from "./summary";
 
@@ -80,15 +80,15 @@ export function DashboardPage() {
   const { t } = useTranslation("dashboard");
   const bootstrapQuery = useBootstrapQuery();
   const requestsQuery = useCustomerRequestsQuery();
-  const specialRequestsQuery = useSpecialRequestsQuery();
+  const specialRequestCountQuery = useSpecialRequestCountQuery();
   const orderCountQuery = useOrderCountQuery();
 
   const isLoading =
     bootstrapQuery.isLoading ||
     requestsQuery.isLoading ||
-    specialRequestsQuery.isLoading ||
+    specialRequestCountQuery.isLoading ||
     orderCountQuery.isLoading;
-  const failedQuery = [bootstrapQuery, requestsQuery, specialRequestsQuery, orderCountQuery].find(
+  const failedQuery = [bootstrapQuery, requestsQuery, specialRequestCountQuery, orderCountQuery].find(
     (query) => query.isError,
   );
 
@@ -99,8 +99,8 @@ export function DashboardPage() {
     if (requestsQuery.isError) {
       void requestsQuery.refetch();
     }
-    if (specialRequestsQuery.isError) {
-      void specialRequestsQuery.refetch();
+    if (specialRequestCountQuery.isError) {
+      void specialRequestCountQuery.refetch();
     }
     if (orderCountQuery.isError) {
       void orderCountQuery.refetch();
@@ -115,7 +115,7 @@ export function DashboardPage() {
     failedQuery ||
     !bootstrapQuery.data ||
     !requestsQuery.data ||
-    !specialRequestsQuery.data ||
+    !specialRequestCountQuery.data ||
     !orderCountQuery.data
   ) {
     return (
@@ -132,7 +132,7 @@ export function DashboardPage() {
   const summary = buildDashboardSummary(
     bootstrapQuery.data,
     requestsQuery.data,
-    specialRequestsQuery.data,
+    specialRequestCountQuery.data.total,
     orderCountQuery.data.total,
   );
   // All 4 queries have already succeeded above (the loading/error branches

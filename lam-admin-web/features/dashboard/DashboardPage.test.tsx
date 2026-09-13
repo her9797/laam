@@ -4,15 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppData } from "@/features/bootstrap/model";
 import type { OrderPageResult } from "@/features/orders/model";
 import type { CustomerRequest } from "@/features/requests/model";
-import type { SpecialRequest } from "@/features/special-requests/model";
 
 const useBootstrapQueryMock = vi.fn();
 const useCustomerRequestsQueryMock = vi.fn();
-const useSpecialRequestsQueryMock = vi.fn();
+const useSpecialRequestCountQueryMock = vi.fn();
 const useOrderCountQueryMock = vi.fn();
 const bootstrapRefetchMock = vi.fn();
 const requestsRefetchMock = vi.fn();
-const specialRequestsRefetchMock = vi.fn();
+const specialRequestCountRefetchMock = vi.fn();
 const orderCountRefetchMock = vi.fn();
 
 vi.mock("@/features/bootstrap/queries", () => ({
@@ -22,7 +21,7 @@ vi.mock("@/features/requests/queries", () => ({
   useCustomerRequestsQuery: () => useCustomerRequestsQueryMock(),
 }));
 vi.mock("@/features/special-requests/queries", () => ({
-  useSpecialRequestsQuery: () => useSpecialRequestsQueryMock(),
+  useSpecialRequestCountQuery: () => useSpecialRequestCountQueryMock(),
 }));
 vi.mock("@/features/orders/queries", () => ({
   useOrderCountQuery: () => useOrderCountQueryMock(),
@@ -58,21 +57,6 @@ const NON_EMPTY_REQUESTS: CustomerRequest[] = [
   },
 ];
 
-const NON_EMPTY_SPECIAL_REQUESTS: SpecialRequest[] = [
-  {
-    id: "s1",
-    tableNumber: "5",
-    gender: "female",
-    name: "홍길동",
-    age: "20대",
-    residence: "서울",
-    instagram: "@handle",
-    idealType: "친절한 사람",
-    text: "소개해주세요",
-    createdAt: "2026-09-03T10:00:00Z",
-  },
-];
-
 const EMPTY_APP_DATA: AppData = {
   ...NON_EMPTY_APP_DATA,
   items: [],
@@ -81,6 +65,9 @@ const EMPTY_APP_DATA: AppData = {
 
 const NON_EMPTY_ORDER_COUNT: OrderPageResult = { items: [], page: 1, pageSize: 1, total: 1 };
 const EMPTY_ORDER_COUNT: OrderPageResult = { items: [], page: 1, pageSize: 1, total: 0 };
+
+const NON_EMPTY_SPECIAL_REQUEST_COUNT = { total: 1 };
+const EMPTY_SPECIAL_REQUEST_COUNT = { total: 0 };
 
 function mockBootstrap(overrides: Partial<ReturnType<typeof defaultBootstrapResult>> = {}) {
   useBootstrapQueryMock.mockReturnValue({ ...defaultBootstrapResult(), ...overrides });
@@ -110,19 +97,22 @@ function defaultRequestsResult() {
   };
 }
 
-function mockSpecialRequests(
-  overrides: Partial<ReturnType<typeof defaultSpecialRequestsResult>> = {},
+function mockSpecialRequestCount(
+  overrides: Partial<ReturnType<typeof defaultSpecialRequestCountResult>> = {},
 ) {
-  useSpecialRequestsQueryMock.mockReturnValue({ ...defaultSpecialRequestsResult(), ...overrides });
+  useSpecialRequestCountQueryMock.mockReturnValue({
+    ...defaultSpecialRequestCountResult(),
+    ...overrides,
+  });
 }
 
-function defaultSpecialRequestsResult() {
+function defaultSpecialRequestCountResult() {
   return {
-    data: NON_EMPTY_SPECIAL_REQUESTS,
+    data: NON_EMPTY_SPECIAL_REQUEST_COUNT,
     isLoading: false,
     isError: false,
     error: null as unknown,
-    refetch: specialRequestsRefetchMock,
+    refetch: specialRequestCountRefetchMock,
   };
 }
 
@@ -144,11 +134,11 @@ describe("DashboardPage", () => {
   beforeEach(() => {
     bootstrapRefetchMock.mockClear();
     requestsRefetchMock.mockClear();
-    specialRequestsRefetchMock.mockClear();
+    specialRequestCountRefetchMock.mockClear();
     orderCountRefetchMock.mockClear();
     mockBootstrap();
     mockRequests();
-    mockSpecialRequests();
+    mockSpecialRequestCount();
     mockOrderCount();
   });
 
@@ -183,14 +173,14 @@ describe("DashboardPage", () => {
 
     expect(requestsRefetchMock).toHaveBeenCalledTimes(1);
     expect(bootstrapRefetchMock).not.toHaveBeenCalled();
-    expect(specialRequestsRefetchMock).not.toHaveBeenCalled();
+    expect(specialRequestCountRefetchMock).not.toHaveBeenCalled();
     expect(orderCountRefetchMock).not.toHaveBeenCalled();
   });
 
   it("shows the empty state when every aggregate count is genuinely zero", () => {
     mockBootstrap({ data: EMPTY_APP_DATA });
     mockRequests({ data: [] });
-    mockSpecialRequests({ data: [] });
+    mockSpecialRequestCount({ data: EMPTY_SPECIAL_REQUEST_COUNT });
     mockOrderCount({ data: EMPTY_ORDER_COUNT });
 
     render(<DashboardPage />);

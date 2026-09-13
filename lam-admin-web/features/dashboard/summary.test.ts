@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import type { AppData } from "@/features/bootstrap/model";
 import type { CustomerRequest } from "@/features/requests/model";
-import type { SpecialRequest } from "@/features/special-requests/model";
 
 import {
   buildDashboardSummary,
@@ -65,21 +64,6 @@ const requestsFixture: CustomerRequest[] = [
   },
 ];
 
-const specialRequestsFixture: SpecialRequest[] = [
-  {
-    id: "s1",
-    tableNumber: "5",
-    gender: "female",
-    name: "홍길동",
-    age: "20대",
-    residence: "서울",
-    instagram: "@handle",
-    idealType: "친절한 사람",
-    text: "소개해주세요",
-    createdAt: "2026-09-03T10:00:00Z",
-  },
-];
-
 describe("isSongRequest", () => {
   it("is true only when text starts with the exact [노래 신청] prefix", () => {
     expect(isSongRequest({ text: "[노래 신청] Dynamite" })).toBe(true);
@@ -114,7 +98,7 @@ describe("stripSongRequestPrefix", () => {
 
 describe("buildDashboardSummary", () => {
   it("aggregates pending general, pending song, special request, order, menu and notice counts", () => {
-    const summary = buildDashboardSummary(appDataFixture, requestsFixture, specialRequestsFixture, 7);
+    const summary = buildDashboardSummary(appDataFixture, requestsFixture, 1, 7);
 
     expect(summary).toEqual({
       pendingGeneralRequestCount: 1, // r1 only — r2 is completed
@@ -133,7 +117,7 @@ describe("buildDashboardSummary", () => {
       notices: [],
     };
 
-    const summary = buildDashboardSummary(emptyAppData, [], [], 0);
+    const summary = buildDashboardSummary(emptyAppData, [], 0, 0);
 
     expect(summary).toEqual({
       pendingGeneralRequestCount: 0,
