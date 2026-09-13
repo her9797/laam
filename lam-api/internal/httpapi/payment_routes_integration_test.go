@@ -205,6 +205,197 @@ func TestRouter_OrderOnlyFlowCreatesUnpaidPOSOrder(t *testing.T) {
 	}
 }
 
+func TestRouter_PluginOrderFlowClaimsAndCompletesTableOrder(t *testing.T) {
+	resetServer(t)
+	if _, err := testPool.Exec(t.Context(), `
+		INSERT INTO menu_categories (id, label, sort_order) VALUES ('highball', '하이볼', 1);
+		INSERT INTO menu_items (id, category_id, name, description, price, sort_order, toss_catalog_item_id)
+		VALUES ('house-highball', 'highball', '하우스 하이볼', '테스트 메뉴', '10,000원', 1, '42');
+		INSERT INTO menu_options (id, title, is_enabled, is_required, min_choices, max_choices, sort_order)
+		VALUES ('7', '샷', TRUE, FALSE, 0, 1, 1);
+		INSERT INTO menu_option_choices (id, option_id, title, price_value, is_enabled, state, quantity_enabled, min_quantity, max_quantity, sort_order)
+		VALUES ('9', '7', '샷 추가', 500, TRUE, 'ON_SALE', FALSE, 1, 1, 1);
+		INSERT INTO menu_item_options (menu_item_id, option_id, sort_order)
+		VALUES ('house-highball', '7', 1);
+	`); err != nil {
+		t.Fatalf("seed menu: %v", err)
+	}
+
+	var openAPICalls atomic.Int32
+	openAPIServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		openAPICalls.Add(1)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"resultType": "SUCCESS",
+			"success":    map[string]string{"id": "must-not-be-called"},
+		})
+	}))
+	defer openAPIServer.Close()
+
+	cfg := testCfg
+	cfg.TossPlaceAccessKey = "access"
+	cfg.TossPlaceSecretKey = "place-secret"
+	cfg.TossPlaceMerchantID = "merchant"
+	cfg.TossPlaceAPIBaseURL = openAPIServer.URL
+	cfg.POSOrderProvider = "plugin"
+	cfg.POSPluginAPIToken = "plugin-token"
+	handler := NewMux(testRepo, cfg, nil)
+
+	createBody, _ := json.Marshal(map[string]any{
+		"menuItemId": "house-highball", "tableNumber": "T-01", "requestNote": "얼음 적게",
+		"optionChoices": []map[string]any{{"optionId": "7", "optionChoiceId": "9", "quantity": 1}},
+	})
+	created := doRequest(t, handler, http.MethodPost, "/api/v1/orders", createBody, map[string]string{
+		"Authorization": "Bearer " + cfg.PaymentAPIToken,
+	})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", created.Code, created.Body.String())
+	}
+	var createdOrder struct {
+		OrderID       string `json:"orderId"`
+		POSSyncStatus string `json:"posSyncStatus"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &createdOrder); err != nil {
+		t.Fatalf("decode created order: %v", err)
+	}
+	if createdOrder.POSSyncStatus != "PENDING" || openAPICalls.Load() != 0 {
+		t.Fatalf("created order = %+v, Open API calls = %d", createdOrder, openAPICalls.Load())
+	}
+
+	unauthorized := doRequest(t, handler, http.MethodPost, "/api/v1/pos-plugin/orders/claim", nil, nil)
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized claim status = %d", unauthorized.Code)
+	}
+
+	pluginHeaders := map[string]string{"Authorization": "Bearer " + cfg.POSPluginAPIToken}
+	claimed := doRequest(t, handler, http.MethodPost, "/api/v1/pos-plugin/orders/claim", nil, pluginHeaders)
+	if claimed.Code != http.StatusOK {
+		t.Fatalf("claim status = %d, body = %s", claimed.Code, claimed.Body.String())
+	}
+	var claim struct {
+		ClaimToken string `json:"claimToken"`
+		Order      struct {
+			OrderID       string `json:"orderId"`
+			TableNumber   string `json:"tableNumber"`
+			CatalogItemID string `json:"catalogItemId"`
+			Amount        int64  `json:"amount"`
+			BaseAmount    int64  `json:"baseAmount"`
+			OptionChoices []struct {
+				OptionID       string `json:"optionId"`
+				OptionChoiceID string `json:"optionChoiceId"`
+				Quantity       int64  `json:"quantity"`
+			} `json:"optionChoices"`
+		} `json:"order"`
+	}
+	if err := json.Unmarshal(claimed.Body.Bytes(), &claim); err != nil {
+		t.Fatalf("decode claim: %v", err)
+	}
+	if claim.ClaimToken == "" || claim.Order.OrderID != createdOrder.OrderID || claim.Order.TableNumber != "T-01" || claim.Order.CatalogItemID != "42" {
+		t.Fatalf("claim = %+v", claim)
+	}
+	if claim.Order.Amount != 10500 || claim.Order.BaseAmount != 10000 || len(claim.Order.OptionChoices) != 1 || claim.Order.OptionChoices[0].OptionID != "7" || claim.Order.OptionChoices[0].OptionChoiceID != "9" || claim.Order.OptionChoices[0].Quantity != 1 {
+		t.Fatalf("claimed order payload = %+v", claim.Order)
+	}
+
+	secondClaim := doRequest(t, handler, http.MethodPost, "/api/v1/pos-plugin/orders/claim", nil, pluginHeaders)
+	if secondClaim.Code != http.StatusNoContent {
+		t.Fatalf("second claim status = %d, body = %s", secondClaim.Code, secondClaim.Body.String())
+	}
+
+	completeBody, _ := json.Marshal(map[string]string{
+		"claimToken": claim.ClaimToken,
+		"posOrderId": "pos-table-order-1",
+	})
+	wrongCompleteBody, _ := json.Marshal(map[string]string{
+		"claimToken": "wrong-claim-token",
+		"posOrderId": "pos-table-order-1",
+	})
+	wrongComplete := doRequest(t, handler, http.MethodPost, "/api/v1/pos-plugin/orders/"+createdOrder.OrderID+"/complete", wrongCompleteBody, pluginHeaders)
+	if wrongComplete.Code != http.StatusBadRequest {
+		t.Fatalf("wrong claim completion status = %d, body = %s", wrongComplete.Code, wrongComplete.Body.String())
+	}
+	completed := doRequest(t, handler, http.MethodPost, "/api/v1/pos-plugin/orders/"+createdOrder.OrderID+"/complete", completeBody, pluginHeaders)
+	if completed.Code != http.StatusOK {
+		t.Fatalf("complete status = %d, body = %s", completed.Code, completed.Body.String())
+	}
+	stored, err := testRepo.GetPaymentOrder(t.Context(), createdOrder.OrderID)
+	if err != nil {
+		t.Fatalf("get completed order: %v", err)
+	}
+	if stored.POSSyncStatus != "SUCCEEDED" || stored.POSOrderID != "pos-table-order-1" {
+		t.Fatalf("stored order = %+v", stored)
+	}
+
+	createdAgain := doRequest(t, handler, http.MethodPost, "/api/v1/orders", createBody, map[string]string{
+		"Authorization": "Bearer " + cfg.PaymentAPIToken,
+	})
+	if createdAgain.Code != http.StatusCreated {
+		t.Fatalf("second create status = %d, body = %s", createdAgain.Code, createdAgain.Body.String())
+	}
+	claimedAgain := doRequest(t, handler, http.MethodPost, "/api/v1/pos-plugin/orders/claim", nil, pluginHeaders)
+	if claimedAgain.Code != http.StatusOK {
+		t.Fatalf("second order claim status = %d, body = %s", claimedAgain.Code, claimedAgain.Body.String())
+	}
+	var retryClaim struct {
+		ClaimToken string `json:"claimToken"`
+		Order      struct {
+			OrderID string `json:"orderId"`
+		} `json:"order"`
+	}
+	if err := json.Unmarshal(claimedAgain.Body.Bytes(), &retryClaim); err != nil {
+		t.Fatalf("decode second claim: %v", err)
+	}
+	failBody, _ := json.Marshal(map[string]string{
+		"claimToken": retryClaim.ClaimToken,
+		"error":      "POS table not found",
+	})
+	failed := doRequest(t, handler, http.MethodPost, "/api/v1/pos-plugin/orders/"+retryClaim.Order.OrderID+"/fail", failBody, pluginHeaders)
+	if failed.Code != http.StatusOK {
+		t.Fatalf("fail status = %d, body = %s", failed.Code, failed.Body.String())
+	}
+	backedOff := doRequest(t, handler, http.MethodPost, "/api/v1/pos-plugin/orders/claim", nil, pluginHeaders)
+	if backedOff.Code != http.StatusNoContent {
+		t.Fatalf("backoff claim status = %d, body = %s", backedOff.Code, backedOff.Body.String())
+	}
+	failedOrder, err := testRepo.GetPaymentOrder(t.Context(), retryClaim.Order.OrderID)
+	if err != nil {
+		t.Fatalf("get failed order: %v", err)
+	}
+	if failedOrder.POSSyncStatus != "PENDING" || failedOrder.POSSyncError != "POS table not found" {
+		t.Fatalf("failed order = %+v", failedOrder)
+	}
+}
+
+func TestRouter_OpenAPIProviderDoesNotLeaseQueuedPluginOrders(t *testing.T) {
+	resetServer(t)
+	if _, err := testPool.Exec(t.Context(), `
+		INSERT INTO payment_orders (
+			id, toss_catalog_item_id, menu_item_name, category_name, table_number,
+			amount, pos_sync_status, pos_claim_ready
+		) VALUES ('queued-order', '42', '하우스 하이볼', '하이볼', 'T-01', 10000, 'PENDING', TRUE)
+	`); err != nil {
+		t.Fatalf("seed queued order: %v", err)
+	}
+
+	cfg := testCfg
+	cfg.POSOrderProvider = "open-api"
+	cfg.POSPluginAPIToken = "plugin-token"
+	handler := NewMux(testRepo, cfg, nil)
+	claimed := doRequest(t, handler, http.MethodPost, "/api/v1/pos-plugin/orders/claim", nil, map[string]string{
+		"Authorization": "Bearer " + cfg.POSPluginAPIToken,
+	})
+
+	if claimed.Code != http.StatusNoContent {
+		t.Fatalf("claim status = %d, body = %s", claimed.Code, claimed.Body.String())
+	}
+	stored, err := testRepo.GetPaymentOrder(t.Context(), "queued-order")
+	if err != nil {
+		t.Fatalf("get queued order: %v", err)
+	}
+	if stored.POSSyncStatus != "PENDING" {
+		t.Fatalf("POS sync status = %q, want PENDING", stored.POSSyncStatus)
+	}
+}
+
 // TestRouter_PaymentConfirm_SendsNewOrderBroadcast wires the router to a
 // fake Supabase broadcast endpoint (resetServer's shared testCfg leaves
 // Supabase unconfigured on purpose, so every other payment test exercises

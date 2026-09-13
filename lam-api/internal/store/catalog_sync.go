@@ -15,6 +15,7 @@ type TossCatalogItem struct {
 	Name        string
 	Description string
 	ImageURL    string
+	Badge       string
 	CategoryID  string
 	Price       int64
 	IsVisible   bool
@@ -68,10 +69,11 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 		label string
 		order int
 	}{
-		{id: "highball", label: "하이볼", order: 1},
-		{id: "whisky", label: "위스키", order: 2},
-		{id: "cocktail", label: "칵테일", order: 3},
-		{id: "non-alcohol", label: "논알콜", order: 4},
+		{id: "signature", label: "시그니처", order: 1},
+		{id: "highball", label: "하이볼", order: 2},
+		{id: "whisky", label: "위스키", order: 3},
+		{id: "cocktail", label: "칵테일", order: 4},
+		{id: "non-alcohol", label: "논알콜", order: 5},
 	}
 	for _, category := range categories {
 		if _, err := tx.Exec(ctx, `
@@ -121,6 +123,7 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 	for _, item := range items {
 		item.ID = strings.TrimSpace(item.ID)
 		item.Name = strings.TrimSpace(item.Name)
+		item.Badge = strings.TrimSpace(item.Badge)
 		item.CategoryID = strings.TrimSpace(item.CategoryID)
 		if item.ID == "" || item.Name == "" || item.CategoryID == "" || item.Price < 0 {
 			return TossCatalogSyncResult{}, ErrInvalidInput
@@ -135,9 +138,10 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 				price = $4,
 				is_visible = $5,
 				sort_order = $6,
-				toss_image_url = $7
+				toss_image_url = $7,
+				badge = COALESCE(NULLIF($8, ''), badge)
 			WHERE toss_catalog_item_id = $1
-		`, item.ID, item.CategoryID, item.Name, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL))
+		`, item.ID, item.CategoryID, item.Name, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL), item.Badge)
 		if err != nil {
 			return TossCatalogSyncResult{}, classifyError(err)
 		}
@@ -155,9 +159,10 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 					price = $5,
 					is_visible = $6,
 					sort_order = $7,
-					toss_image_url = $8
+					toss_image_url = $8,
+					badge = COALESCE(NULLIF($9, ''), badge)
 				WHERE id = $1
-			`, localID, item.ID, item.CategoryID, item.Name, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL)); err != nil {
+			`, localID, item.ID, item.CategoryID, item.Name, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL), item.Badge); err != nil {
 				return TossCatalogSyncResult{}, classifyError(err)
 			}
 			localMenuItemID = localID
@@ -167,17 +172,18 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 			localMenuItemID = "toss-" + item.ID
 			if _, err := tx.Exec(ctx, `
 			INSERT INTO menu_items (
-				id, category_id, name, description, price, is_visible, sort_order, toss_catalog_item_id, toss_image_url
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+				id, category_id, badge, name, description, price, is_visible, sort_order, toss_catalog_item_id, toss_image_url
+			) VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, $9, $10)
 			ON CONFLICT (id) DO UPDATE
 			SET category_id = EXCLUDED.category_id,
+				badge = COALESCE(EXCLUDED.badge, menu_items.badge),
 				name = EXCLUDED.name,
 				price = EXCLUDED.price,
 				is_visible = EXCLUDED.is_visible,
 				sort_order = EXCLUDED.sort_order,
 				toss_catalog_item_id = EXCLUDED.toss_catalog_item_id,
 				toss_image_url = EXCLUDED.toss_image_url
-		`, localMenuItemID, item.CategoryID, item.Name, strings.TrimSpace(item.Description), price, item.IsVisible, item.SortOrder, item.ID, strings.TrimSpace(item.ImageURL)); err != nil {
+		`, localMenuItemID, item.CategoryID, item.Badge, item.Name, strings.TrimSpace(item.Description), price, item.IsVisible, item.SortOrder, item.ID, strings.TrimSpace(item.ImageURL)); err != nil {
 				return TossCatalogSyncResult{}, classifyError(err)
 			}
 			result.Created++

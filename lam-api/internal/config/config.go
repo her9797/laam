@@ -19,6 +19,8 @@ type Config struct {
 	TossPlaceSecretKey     string
 	TossPlaceMerchantID    string
 	TossPlaceAPIBaseURL    string
+	POSOrderProvider       string
+	POSPluginAPIToken      string
 	YouTubeAPIKey          string
 	YouTubeAPIBaseURL      string
 	// SupabaseURL and SupabaseBroadcastKey configure the best-effort
@@ -83,6 +85,10 @@ func Load() Config {
 	if tossPlaceAPIBaseURL == "" {
 		tossPlaceAPIBaseURL = "https://open-api.tossplace.com"
 	}
+	posOrderProvider := strings.TrimSpace(os.Getenv("POS_ORDER_PROVIDER"))
+	if posOrderProvider == "" {
+		posOrderProvider = "open-api"
+	}
 	youTubeAPIBaseURL := os.Getenv("YOUTUBE_API_BASE_URL")
 	if youTubeAPIBaseURL == "" {
 		youTubeAPIBaseURL = "https://www.googleapis.com/youtube/v3"
@@ -100,6 +106,8 @@ func Load() Config {
 		TossPlaceSecretKey:     os.Getenv("TOSS_PLACE_SECRET_KEY"),
 		TossPlaceMerchantID:    os.Getenv("TOSS_PLACE_MERCHANT_ID"),
 		TossPlaceAPIBaseURL:    tossPlaceAPIBaseURL,
+		POSOrderProvider:       posOrderProvider,
+		POSPluginAPIToken:      os.Getenv("POS_PLUGIN_API_TOKEN"),
 		YouTubeAPIKey:          os.Getenv("YOUTUBE_API_KEY"),
 		YouTubeAPIBaseURL:      youTubeAPIBaseURL,
 		SupabaseURL:            os.Getenv("SUPABASE_URL"),
@@ -117,6 +125,8 @@ var localEnvKeys = map[string]struct{}{
 	"DATABASE_URL":               {},
 	"PAYMENT_API_TOKEN":          {},
 	"PORT":                       {},
+	"POS_ORDER_PROVIDER":         {},
+	"POS_PLUGIN_API_TOKEN":       {},
 	"SUPABASE_BROADCAST_KEY":     {},
 	"SUPABASE_URL":               {},
 	"TOSS_PAYMENTS_API_BASE_URL": {},

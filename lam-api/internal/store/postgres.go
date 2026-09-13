@@ -166,6 +166,9 @@ CREATE TABLE IF NOT EXISTS payment_orders (
   pos_sync_status TEXT NOT NULL DEFAULT 'PENDING',
   pos_order_id TEXT,
   pos_sync_error TEXT,
+  pos_claim_ready BOOLEAN NOT NULL DEFAULT FALSE,
+  pos_claim_token TEXT,
+  pos_claimed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -249,6 +252,9 @@ ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS supplied_amount BIGINT NOT N
 ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS tax_free_amount BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS toss_catalog_item_id TEXT;
 ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS request_note TEXT NOT NULL DEFAULT '';
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS pos_claim_ready BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS pos_claim_token TEXT;
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS pos_claimed_at TIMESTAMPTZ;
 ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS recipe_ingredients TEXT NOT NULL DEFAULT '';
 ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS recipe_instructions TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_customer_requests_created_at ON customer_requests (created_at DESC, id DESC);

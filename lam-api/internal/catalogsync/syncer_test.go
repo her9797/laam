@@ -34,6 +34,7 @@ func TestSyncMapsPOSCategoriesToCustomerCategories(t *testing.T) {
 		{ID: "2", Title: "제임슨", Category: tossplace.CatalogCategory{Title: "블렌디드 위스키"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 9000}, State: "ON_SALE", Enabled: true},
 		{ID: "3", Title: "셜리템플", Category: tossplace.CatalogCategory{Title: "논알콜"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 0}, State: "ON_SALE", Enabled: true},
 		{ID: "4", Title: "진토닉", Category: tossplace.CatalogCategory{Title: "8%~19%"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 10000}, State: "SOLD_OUT", Enabled: true},
+		{ID: "5", Title: "라암 스페셜", Labels: []string{"추천", "신규"}, Category: tossplace.CatalogCategory{Title: "시그니처"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 15000}, State: "ON_SALE", Enabled: true},
 	}}, repository)
 
 	if _, err := syncer.Sync(context.Background()); err != nil {
@@ -53,6 +54,9 @@ func TestSyncMapsPOSCategoriesToCustomerCategories(t *testing.T) {
 	}
 	if got := repository.items[3].CategoryID; got != "cocktail" || repository.items[3].IsVisible {
 		t.Fatalf("cocktail mapping = %+v", repository.items[3])
+	}
+	if got := repository.items[4].CategoryID; got != "signature" || repository.items[4].Badge != "추천" {
+		t.Fatalf("signature label mapping = %+v", repository.items[4])
 	}
 }
 

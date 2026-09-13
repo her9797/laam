@@ -35,6 +35,8 @@ services:
       TOSS_PLACE_ACCESS_KEY: "${TOSS_PLACE_ACCESS_KEY:-}"
       TOSS_PLACE_SECRET_KEY: "${TOSS_PLACE_SECRET_KEY:-}"
       TOSS_PLACE_MERCHANT_ID: "${TOSS_PLACE_MERCHANT_ID:-}"
+      POS_ORDER_PROVIDER: "${POS_ORDER_PROVIDER:-open-api}"
+      POS_PLUGIN_API_TOKEN: "${POS_PLUGIN_API_TOKEN:-}"
       # TossPlace 주문 웹훅(POST /api/v1/webhooks/tossplace/orders)의 서명 검증
       # 키. 위 TOSS_PLACE_SECRET_KEY(우리가 보내는 API 호출용)와는 다른 값이며,
       # TossPlace 개발자센터에서 웹훅을 등록할 때 발급된다. 이 엔드포인트의
