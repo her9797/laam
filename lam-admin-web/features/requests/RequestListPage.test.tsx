@@ -433,6 +433,31 @@ describe("RequestListPage", () => {
     expect(buttons[0]).toBeDisabled();
   });
 
+  it("colors the status text so pending stands out and completed reads as done", () => {
+    mockQuery({
+      data: pageFixture([
+        { ...ITEMS[0], id: "p1", status: "pending" },
+        { ...ITEMS[0], id: "p2", status: "checked" },
+        { ...ITEMS[0], id: "p3", status: "completed" },
+      ]),
+    });
+
+    render(<RequestListPage kind="general" />);
+
+    expect(screen.getByText("미처리", { selector: "td" })).toHaveClass("text-warning");
+    const checkedStatusCell = screen.getByText("확인", { selector: "td" });
+    expect(checkedStatusCell).not.toHaveClass("text-warning");
+    expect(checkedStatusCell).not.toHaveClass("text-success");
+    expect(screen.getByText("처리완료", { selector: "td" })).toHaveClass("text-success");
+  });
+
+  it("caps the content column's width instead of letting it consume all remaining space", () => {
+    render(<RequestListPage kind="general" />);
+
+    const header = screen.getByRole("columnheader", { name: "내용" });
+    expect(header.className).toMatch(/w-\[\d+%\]/);
+  });
+
   it("navigates to the next page via Pagination, keeping the other query params", () => {
     currentSearchParams = new URLSearchParams(`${DATED_SEARCH_PARAMS}&status=pending`);
     mockQuery({ data: pageFixture(ITEMS, { page: 1, total: 45 }) });

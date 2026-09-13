@@ -467,6 +467,16 @@ describe("SpecialRequestPage", () => {
     vi.useRealTimers();
   });
 
+  it("caps the name column's width and keeps the full name reachable via a title attribute", () => {
+    render(<SpecialRequestPage />);
+
+    const header = screen.getByRole("columnheader", { name: "이름" });
+    expect(header.className).toMatch(/w-\[\d+%\]/);
+
+    const nameCell = screen.getByText("홍길동");
+    expect(nameCell.closest("td")).toHaveAttribute("title", "홍길동");
+  });
+
   it("moves to the next page via Pagination", () => {
     mockQuery({ data: pageFixture(ITEMS, { page: 1, total: 45 }) });
 

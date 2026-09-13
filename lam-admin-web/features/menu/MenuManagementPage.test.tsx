@@ -469,6 +469,31 @@ describe("MenuManagementPage", () => {
     expect(within(menuRow).getByRole("button", { name: "공개" })).toBeDisabled();
   });
 
+  // The visible/hidden toggle button used to render identically in both
+  // states, so a hidden item couldn't be spotted while scanning the list.
+  it("styles the visibility toggle differently for a hidden item than a visible one", () => {
+    mockBootstrap({
+      data: {
+        ...FIXTURE,
+        items: [
+          FIXTURE.items[0],
+          { ...FIXTURE.items[0], id: "menu-hidden", name: "숨김메뉴", isVisible: false },
+        ],
+      },
+    });
+
+    render(<MenuManagementPage />);
+
+    const visibleRow = screen.getByText("아메리카노").closest("tr") as HTMLElement;
+    const hiddenRow = screen.getByText("숨김메뉴").closest("tr") as HTMLElement;
+    const visibleButton = within(visibleRow).getByRole("button", { name: "공개" });
+    const hiddenButton = within(hiddenRow).getByRole("button", { name: "숨김" });
+
+    expect(hiddenButton.className).not.toBe(visibleButton.className);
+    expect(hiddenButton).toHaveClass("border-dashed");
+    expect(hiddenButton).not.toBeDisabled();
+  });
+
   it("does not show a delete action in the list (removed from this screen's UI)", () => {
     render(<MenuManagementPage />);
 

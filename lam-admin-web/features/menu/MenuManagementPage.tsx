@@ -288,6 +288,11 @@ export function MenuManagementPage() {
                       type="button"
                       size="sm"
                       variant="outline"
+                      className={
+                        item.isVisible
+                          ? "text-success"
+                          : "border-dashed text-muted-foreground"
+                      }
                       disabled={isVisibilityPending(item.id)}
                       onClick={() =>
                         visibilityMutation.mutate({ id: item.id, isVisible: !item.isVisible })

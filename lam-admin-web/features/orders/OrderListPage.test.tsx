@@ -82,6 +82,21 @@ const ORDERS: PaymentOrder[] = [
   },
 ];
 
+const LONG_NAME_ORDER: PaymentOrder = {
+  orderId: "order-4",
+  menuItemName: "시그니처 마가리타 스페셜 에디션",
+  categoryName: "칵테일",
+  tableNumber: "8",
+  requestNote: "",
+  amount: 15000,
+  vat: 1364,
+  suppliedAmount: 13636,
+  taxFreeAmount: 0,
+  status: "ACKNOWLEDGED",
+  posSyncStatus: "FAILED",
+  createdAt: "2026-01-10T15:00:00Z",
+};
+
 function pageFixture(items: PaymentOrder[], overrides: Partial<OrderPageResult> = {}): OrderPageResult {
   return { items, page: 1, pageSize: 20, total: items.length, ...overrides };
 }
@@ -391,6 +406,44 @@ describe("OrderListPage", () => {
     render(<OrderListPage />);
 
     expect(screen.getByRole("button", { name: "주문확인" })).toBeDisabled();
+  });
+
+  // Payment status and POS sync status used to render as identical grey
+  // text, so an operator scanning the list couldn't tell a failure from a
+  // success without reading every word. Each status now carries its own
+  // text color class on top of the unchanged Korean label.
+  it("colors the payment status text by status", () => {
+    mockQuery({ data: pageFixture([...ORDERS, LONG_NAME_ORDER]) });
+    render(<OrderListPage />);
+
+    expect(screen.getByText("결제완료")).toHaveClass("text-success");
+    expect(screen.getByText("주문접수")).toHaveClass("text-warning");
+    expect(screen.getByText("취소됨")).toHaveClass("text-muted-foreground");
+    const acknowledgedRow = screen
+      .getByRole("link", { name: "시그니처 마가리타 스페셜 에디션" })
+      .closest("tr") as HTMLElement;
+    expect(within(acknowledgedRow).getByText("주문확인")).toHaveClass("text-foreground");
+  });
+
+  it("colors the POS sync status text by status, with failure most prominent", () => {
+    mockQuery({ data: pageFixture([...ORDERS, LONG_NAME_ORDER]) });
+    render(<OrderListPage />);
+
+    expect(screen.getByText("성공")).toHaveClass("text-success");
+    expect(screen.getByText("실패")).toHaveClass("text-destructive");
+    expect(screen.getByText("대기")).toHaveClass("text-muted-foreground");
+    expect(screen.getByText("미설정")).toHaveClass("text-muted-foreground");
+  });
+
+  // The menu column has no title attribute today, so a name truncated by
+  // the table's ellipsis has no way to be read in full.
+  it("exposes the full menu item name and category via a title attribute", () => {
+    mockQuery({ data: pageFixture([...ORDERS, LONG_NAME_ORDER]) });
+    render(<OrderListPage />);
+
+    const link = screen.getByRole("link", { name: "시그니처 마가리타 스페셜 에디션" });
+    const cell = link.closest("td") as HTMLElement;
+    expect(cell).toHaveAttribute("title", "시그니처 마가리타 스페셜 에디션 (칵테일)");
   });
 
   it("defaults to requesting no status filter (via the URL query parser's own default)", () => {

@@ -337,7 +337,7 @@ export function SpecialRequestPage() {
               <TableRow>
                 <TableHead className="w-40">{t("common:columnCreatedAt")}</TableHead>
                 <TableHead className="w-20">{t("common:columnTable")}</TableHead>
-                <TableHead>{t("common:columnName")}</TableHead>
+                <TableHead className="w-[45%]">{t("common:columnName")}</TableHead>
                 <TableHead className="w-20">{t("columnGender")}</TableHead>
                 <TableHead className="w-24">{t("columnAge")}</TableHead>
                 <TableHead className="w-32">{t("columnResidence")}</TableHead>
@@ -349,7 +349,7 @@ export function SpecialRequestPage() {
                 <TableRow key={request.id}>
                   <TableCell>{formatDateTime(request.createdAt, i18n.language)}</TableCell>
                   <TableCell>{request.tableNumber || "-"}</TableCell>
-                  <TableCell>{request.name}</TableCell>
+                  <TableCell title={request.name}>{request.name}</TableCell>
                   <TableCell>{GENDER_ROW_LABELS[request.gender] ?? request.gender}</TableCell>
                   <TableCell>{request.age || "-"}</TableCell>
                   <TableCell>{request.residence || "-"}</TableCell>
