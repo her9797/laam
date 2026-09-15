@@ -95,11 +95,13 @@ http://localhost:3000/test/enter?key=로컬에서만_사용할_긴_임의값&tab
 
 `CUSTOMER_TEST_ENTRY_TOKEN`을 비워 두면 테스트 진입은 비활성화됩니다. 실제 운영 환경에는 이 값을 설정하지 않는 것을 권장합니다.
 
-메뉴 주문을 토스 POS에 등록하려면 `lam-web/.env.local`에 API가 공유할 내부 토큰을 설정합니다.
+메뉴 주문 및 일반·특별 요청 접수에는 `lam-web/.env.local`에 API가 공유할 내부 토큰을 설정합니다.
 
 ```bash
 PAYMENT_API_TOKEN=lam-api와_동일한_긴_임의값
 ```
+
+`POST /api/customer-requests`와 `POST /api/special-requests`는 유효한 QR 세션이 없으면 `401`을 반환합니다. 인증된 요청만 서버 전용 `PAYMENT_API_TOKEN`을 붙여 각각의 Go API로 전달합니다. 이 토큰을 브라우저에 노출하지 마세요.
 
 토스플레이스 키는 반드시 `lam-api`에서만 관리합니다. 메뉴의 주문 버튼은 결제창을 열지 않고 후불 주문을 POS에 등록하며, 결제는 매장에서 진행합니다.
 
