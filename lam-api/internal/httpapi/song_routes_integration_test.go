@@ -33,7 +33,7 @@ func TestRouter_SongApprovalAndPlaybackQueue(t *testing.T) {
 		"tableNumber": "T-02",
 		"text":        "[노래 신청] Ditto - NewJeans",
 	})
-	rec := doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", requestBody, nil)
+	rec := doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", requestBody, requestHeaders())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create request status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -103,7 +103,7 @@ func TestRouter_SongApprovalRequiresYouTubeConfiguration(t *testing.T) {
 		"tableNumber": "T-02",
 		"text":        "[노래 신청] Ditto - NewJeans",
 	})
-	_ = doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", requestBody, nil)
+	_ = doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", requestBody, requestHeaders())
 	rec := doRequest(t, handler, http.MethodGet, "/api/v1/admin/customer-requests?kind=song", nil, adminHeaders())
 	var page lamdata.CustomerRequestPage
 	_ = json.Unmarshal(rec.Body.Bytes(), &page)

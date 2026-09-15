@@ -9,7 +9,7 @@ import (
 func createCustomerRequestViaAPI(t *testing.T, handler http.Handler, tableNumber string, text string) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"tableNumber": tableNumber, "text": text})
-	rec := doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", body, nil)
+	rec := doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", body, requestHeaders())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create customer request status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
 	}
@@ -83,7 +83,7 @@ func createSpecialRequestViaAPI(t *testing.T, handler http.Handler, tableNumber 
 		"text":        "hi",
 	}
 	body, _ := json.Marshal(payload)
-	rec := doRequest(t, handler, http.MethodPost, "/api/v1/special-requests", body, nil)
+	rec := doRequest(t, handler, http.MethodPost, "/api/v1/special-requests", body, requestHeaders())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create special request status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
 	}

@@ -66,6 +66,9 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 	}))
 
 	mux.HandleFunc("/api/v1/customer-requests", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
+		if !requirePaymentAuth(w, r, cfg.PaymentAPIToken) {
+			return
+		}
 		if r.Method != http.MethodPost {
 			writeMethodNotAllowed(w)
 			return
@@ -91,6 +94,9 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 	}))
 
 	mux.HandleFunc("/api/v1/special-requests", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
+		if !requirePaymentAuth(w, r, cfg.PaymentAPIToken) {
+			return
+		}
 		if r.Method != http.MethodPost {
 			writeMethodNotAllowed(w)
 			return

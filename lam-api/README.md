@@ -26,6 +26,8 @@ lam-api
 
 - `GET /health`
 - `GET /api/v1/menu`
+- `POST /api/v1/customer-requests`
+- `POST /api/v1/special-requests`
 - `POST /api/v1/orders`
 - `POST /api/v1/payments/orders`
 - `GET /api/v1/payments/orders/{orderId}`
@@ -68,6 +70,8 @@ TOSS_PLACE_MERCHANT_ID=토스플레이스_가맹점_ID
 ```
 
 `POST /api/v1/orders`는 결제 내역 없이 후불 주문을 토스 POS에 생성합니다. 손님은 매장에서 별도로 결제합니다. 토스페이먼츠 결제 기능을 별도로 사용할 때만 `TOSS_PAYMENTS_SECRET_KEY`가 필요합니다.
+
+일반·특별 요청 접수(`POST /api/v1/customer-requests`, `POST /api/v1/special-requests`)도 `Authorization: Bearer <PAYMENT_API_TOKEN>`이 필요합니다. 토큰이 없거나 일치하지 않으면 `401`을 반환합니다. 브라우저는 QR 세션을 검사하는 `lam-web`의 각 요청 API를 통해 접수하며, 일반·특별 요청 저장 흐름은 분리되어 있습니다. 운영에서는 개발용 기본값 대신 웹과 API에 동일한 비밀 토큰을 설정하세요. 기존 웹과 호환되도록 인증 헤더를 보내는 웹 버전을 먼저 배포한 뒤 API를 배포합니다.
 
 기본 `POS_ORDER_PROVIDER=open-api`는 토스플레이스 Open API 주문을 생성합니다. 이 방식의 주문은 POS 주문 목록에는 들어가지만 내부 `tableId`를 지정할 수 없어 POS 테이블 카드에 연결되지 않습니다. 매장 POS의 테이블에 직접 주문을 붙이려면 `lam-pos-plugin`을 먼저 설치·설정한 뒤 API를 다음처럼 전환합니다.
 

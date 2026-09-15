@@ -82,16 +82,16 @@ func TestRouter_Bootstrap(t *testing.T) {
 func TestRouter_CustomerRequests_CreateAndAdminFlow(t *testing.T) {
 	handler := resetServer(t)
 
-	t.Run("public create requires valid payload", func(t *testing.T) {
+	t.Run("authenticated create requires valid payload", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]string{"tableNumber": "", "text": "help"})
-		rec := doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", body, nil)
+		rec := doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", body, requestHeaders())
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 		}
 	})
 
 	body, _ := json.Marshal(map[string]string{"tableNumber": "T-01", "text": "napkins please"})
-	rec := doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", body, nil)
+	rec := doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", body, requestHeaders())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
 	}
@@ -159,7 +159,7 @@ func TestRouter_CustomerRequests_BulkStatusUpdate(t *testing.T) {
 
 	for _, table := range []string{"T-01", "T-02"} {
 		body, _ := json.Marshal(map[string]string{"tableNumber": table, "text": "help"})
-		rec := doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", body, nil)
+		rec := doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", body, requestHeaders())
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("create status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
 		}
@@ -251,7 +251,7 @@ func TestRouter_CustomerRequests_SendsBroadcastOnCreate(t *testing.T) {
 
 	t.Run("general request creation sends a broadcast", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]string{"tableNumber": "T-01", "text": "napkins"})
-		rec := doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", body, nil)
+		rec := doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests", body, requestHeaders())
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
 		}
@@ -271,7 +271,7 @@ func TestRouter_CustomerRequests_SendsBroadcastOnCreate(t *testing.T) {
 			"tableNumber": "T-02", "gender": "female", "name": "n", "age": "20",
 			"residence": "r", "instagram": "i", "idealType": "t", "text": "hello",
 		})
-		rec := doRequest(t, handler, http.MethodPost, "/api/v1/special-requests", body, nil)
+		rec := doRequest(t, handler, http.MethodPost, "/api/v1/special-requests", body, requestHeaders())
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
 		}
@@ -299,7 +299,7 @@ func TestRouter_SpecialRequests_Create(t *testing.T) {
 		"text":        "hi",
 	}
 	body, _ := json.Marshal(valid)
-	rec := doRequest(t, handler, http.MethodPost, "/api/v1/special-requests", body, nil)
+	rec := doRequest(t, handler, http.MethodPost, "/api/v1/special-requests", body, requestHeaders())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
 	}
@@ -311,7 +311,7 @@ func TestRouter_SpecialRequests_Create(t *testing.T) {
 		}
 		invalid["gender"] = "unspecified"
 		body, _ := json.Marshal(invalid)
-		rec := doRequest(t, handler, http.MethodPost, "/api/v1/special-requests", body, nil)
+		rec := doRequest(t, handler, http.MethodPost, "/api/v1/special-requests", body, requestHeaders())
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 		}
