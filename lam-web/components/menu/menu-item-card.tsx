@@ -19,6 +19,7 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
   const [isOrdering, setIsOrdering] = useState(false);
   const [orderError, setOrderError] = useState("");
   const [isOrderComplete, setIsOrderComplete] = useState(false);
+  const [isConfirmingOrder, setIsConfirmingOrder] = useState(false);
   const [requestNote, setRequestNote] = useState("");
   const [selectedChoices, setSelectedChoices] = useState<MenuOptionSelection>({});
   const titleId = useId();
@@ -61,15 +62,19 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
     };
   }, [isOpen]);
 
-  async function handleOrder() {
-    setIsOrdering(true);
+  function requestOrderConfirmation() {
     setOrderError("");
     const validationError = validateMenuOptionSelection(options, selectedChoices);
     if (validationError) {
       setOrderError(validationError);
-      setIsOrdering(false);
       return;
     }
+    setIsConfirmingOrder(true);
+  }
+
+  async function submitOrder() {
+    setIsOrdering(true);
+    setOrderError("");
     try {
       await createOrder({
         menuItemId: item.id,
@@ -88,6 +93,7 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
       setIsOrderComplete(true);
     } catch (error) {
       setOrderError(error instanceof Error ? error.message : "주문을 시작하지 못했습니다.");
+      setIsConfirmingOrder(false);
     } finally {
       setIsOrdering(false);
     }
@@ -96,12 +102,23 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
   function openDetail() {
     setOrderError("");
     setIsOrderComplete(false);
+    setIsConfirmingOrder(false);
     setRequestNote("");
     setSelectedChoices({});
     setIsOpen(true);
   }
 
+  // Editing the order after tapping 주문 backs out of the confirmation step
+  // instead of leaving a stale "정말 주문하시겠어요?" prompt over changed
+  // choices/notes — the customer would otherwise confirm a total that no
+  // longer matches what they just edited.
+  function updateRequestNote(value: string) {
+    setRequestNote(value);
+    setIsConfirmingOrder(false);
+  }
+
   function selectChoice(optionId: string, choiceId: string, maxChoices: number, checked: boolean) {
+    setIsConfirmingOrder(false);
     setSelectedChoices((current) => {
       const next = { ...current };
       const option = options.find((candidate) => candidate.id === optionId);
@@ -279,7 +296,7 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
                   maxLength={200}
                   placeholder="예: 얼음은 적게 주세요"
                   disabled={isOrdering}
-                  onChange={(event) => setRequestNote(event.target.value)}
+                  onChange={(event) => updateRequestNote(event.target.value)}
                 />
               </label>
             ) : null}
@@ -288,26 +305,53 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
                 주문이 접수됐어요. 매장에서 결제해 주세요.
               </p>
             ) : null}
+            {isConfirmingOrder && !isOrderComplete ? (
+              <p className="menu-detail-order-confirm" role="alertdialog" aria-label="주문 확인">
+                정말 주문하시겠어요?
+              </p>
+            ) : null}
             {orderError ? <p className="table-session-error">{orderError}</p> : null}
             <div className="menu-detail-actions">
-              {!isOrderComplete ? (
+              {!isOrderComplete && isConfirmingOrder ? (
+                <>
+                  <button
+                    className="table-session-modal-close menu-detail-order-cancel-button"
+                    type="button"
+                    disabled={isOrdering}
+                    onClick={() => setIsConfirmingOrder(false)}
+                  >
+                    취소
+                  </button>
+                  <button
+                    className="request-compose-button menu-detail-order-button"
+                    type="button"
+                    disabled={isOrdering}
+                    onClick={submitOrder}
+                  >
+                    {isOrdering ? "주문 등록 중..." : "네, 주문할게요"}
+                  </button>
+                </>
+              ) : null}
+              {!isOrderComplete && !isConfirmingOrder ? (
                 <button
                   className="request-compose-button menu-detail-order-button"
                   type="button"
                   disabled={isOrdering}
-                  onClick={handleOrder}
+                  onClick={requestOrderConfirmation}
                 >
-                  {isOrdering ? "주문 등록 중..." : "주문"}
+                  주문
                 </button>
               ) : null}
-              <button
-                className="table-session-modal-close menu-detail-close-button"
-                type="button"
-                autoFocus
-                onClick={() => setIsOpen(false)}
-              >
-                닫기
-              </button>
+              {!isConfirmingOrder ? (
+                <button
+                  className="table-session-modal-close menu-detail-close-button"
+                  type="button"
+                  autoFocus
+                  onClick={() => setIsOpen(false)}
+                >
+                  닫기
+                </button>
+              ) : null}
             </div>
           </div>
         </div>,
