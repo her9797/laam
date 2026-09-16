@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "QR 입장이 필요합니다." }, { status: 401 });
   }
 
-  const token = process.env.PAYMENT_API_TOKEN ?? "lam-payment-api-token";
+  const token = process.env.PAYMENT_API_TOKEN ?? "laam-payment-api-token";
   const bodyBuffer = await request.arrayBuffer();
   const response = await fetch(`${API_BASE_URL}/api/v1/customer-requests`, {
     method: "POST",

@@ -65,9 +65,9 @@ func TestMain(m *testing.M) {
 
 func startPostgresContainer(ctx context.Context) (containerID string, hostPort string, err error) {
 	runCmd := exec.CommandContext(ctx, "docker", "run", "-d", "--rm",
-		"-e", "POSTGRES_USER=lam",
-		"-e", "POSTGRES_PASSWORD=lam",
-		"-e", "POSTGRES_DB=lam_test",
+		"-e", "POSTGRES_USER=laam",
+		"-e", "POSTGRES_PASSWORD=laam",
+		"-e", "POSTGRES_DB=laam_test",
 		"-p", "127.0.0.1::5432",
 		"postgres:16-alpine",
 	)
@@ -101,7 +101,7 @@ func stopPostgresContainer(containerID string) {
 }
 
 func connectWithRetry(ctx context.Context, hostPort string) (*pgxpool.Pool, error) {
-	dsn := fmt.Sprintf("postgres://lam:lam@127.0.0.1:%s/lam_test?sslmode=disable", hostPort)
+	dsn := fmt.Sprintf("postgres://laam:laam@127.0.0.1:%s/laam_test?sslmode=disable", hostPort)
 
 	deadline := time.Now().Add(30 * time.Second)
 	var lastErr error

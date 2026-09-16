@@ -12,7 +12,7 @@ export function hasPaymentSession(request: NextRequest) {
 }
 
 export async function proxyPaymentRequest(request: NextRequest, path: string) {
-  const token = process.env.PAYMENT_API_TOKEN ?? "lam-payment-api-token";
+  const token = process.env.PAYMENT_API_TOKEN ?? "laam-payment-api-token";
   const body = request.method === "GET" ? undefined : await request.arrayBuffer();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: request.method,
