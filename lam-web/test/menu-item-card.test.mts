@@ -17,6 +17,24 @@ test("메뉴 뱃지는 금액 영역 위에 있고 없는 메뉴도 빈 슬롯�
   assert.ok(priceIndex > badgeIndex);
 });
 
+test("메뉴 목록 카드는 라벨을 색상과 함께 태그로 표시하고, 라벨이 없으면 아무것도 렌더링하지 않는다", async () => {
+  const source = await readFile(
+    new URL("../components/menu/menu-item-card.tsx", import.meta.url),
+    "utf8",
+  );
+
+  const copyIndex = source.indexOf('className="menu-copy"');
+  const labelsIndex = source.indexOf('className="menu-labels"');
+  const mapIndex = source.indexOf("item.labels.map(");
+  const colorAttrIndex = source.indexOf("data-label-color");
+  const sideIndex = source.indexOf('className="menu-side"');
+
+  assert.ok(copyIndex >= 0);
+  assert.ok(labelsIndex > copyIndex && labelsIndex < sideIndex);
+  assert.ok(mapIndex > copyIndex && mapIndex < sideIndex);
+  assert.ok(colorAttrIndex > copyIndex && colorAttrIndex < sideIndex);
+});
+
 test("메뉴 상세 모달은 기존 정보 오른쪽 위에 같은 메뉴 사진을 표시한다", async () => {
   const source = await readFile(
     new URL("../components/menu/menu-item-card.tsx", import.meta.url),

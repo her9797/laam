@@ -142,6 +142,19 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
         <div className="menu-copy">
           <h3>{item.name}</h3>
           <p>{item.description}</p>
+          {item.labels?.length ? (
+            <div className="menu-labels">
+              {item.labels.map((label, index) => (
+                <span
+                  key={`${label.text}-${index}`}
+                  className="menu-label-tag"
+                  data-label-color={label.color || "green"}
+                >
+                  #{label.text}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="menu-side">
           <span

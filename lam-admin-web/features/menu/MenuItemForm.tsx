@@ -44,8 +44,9 @@ type MenuItemFormState = {
 // Mirrors the fixed badge-color palette already in use for the customer
 // menu (`lam-web/components/screens/admin-screen.tsx`'s `badgeColorOptions`)
 // — `badgeColor` is a free-form string on the wire, but the operator picks
-// from this known set rather than typing a raw value.
-const BADGE_COLOR_OPTIONS = [
+// from this known set rather than typing a raw value. Exported: also used
+// by `MenuManagementPage`'s per-label color pickers, the same palette.
+export const BADGE_COLOR_OPTIONS = [
   { value: "", labelKey: "badgeNone" },
   { value: "green", labelKey: "badgeGreen" },
   { value: "amber", labelKey: "badgeAmber" },

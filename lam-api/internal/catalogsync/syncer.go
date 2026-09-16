@@ -11,10 +11,12 @@ import (
 )
 
 // ErrSyncInProgress is returned by Sync when another call is already in
-// flight on the same Syncer — the admin web's manual "다시 동기화" button
-// and the 5-minute background ticker share one Syncer instance
-// (cmd/server/main.go), so this also prevents an operator's button click
-// from overlapping the scheduled poll, not just two button clicks.
+// flight on the same Syncer — cmd/server/main.go's one-time startup sync
+// and the admin web's manual "다시 동기화" button share one Syncer instance,
+// so this also prevents an operator's button click from overlapping the
+// startup sync, not just two button clicks. There is no periodic
+// background sync: cmd/server/main.go's startTossCatalogSync runs once at
+// startup and leaves every later sync to that manual button.
 var ErrSyncInProgress = errors.New("catalog sync already in progress")
 
 type catalogClient interface {
@@ -71,6 +73,7 @@ func (s *Syncer) Sync(ctx context.Context) (store.TossCatalogSyncResult, error) 
 			Description: item.Description,
 			ImageURL:    item.ImageURL,
 			Badge:       firstCatalogLabel(item.Labels),
+			Labels:      trimmedCatalogLabels(item.Labels),
 			CategoryID:  customerCategoryID(item),
 			Price:       item.Price.Value,
 			IsVisible:   item.Enabled && item.State == "ON_SALE" && item.Price.Type == "FIXED" && item.Price.Value > 0,
@@ -105,4 +108,18 @@ func firstCatalogLabel(labels []string) string {
 		}
 	}
 	return ""
+}
+
+// trimmedCatalogLabels keeps every non-blank label in order, unlike
+// firstCatalogLabel which only keeps the first — the customer menu list
+// renders all of them as tags, while Badge stays limited to the first for
+// backward compatibility with the single-badge chip.
+func trimmedCatalogLabels(labels []string) []string {
+	trimmed := make([]string, 0, len(labels))
+	for _, label := range labels {
+		if value := strings.TrimSpace(label); value != "" {
+			trimmed = append(trimmed, value)
+		}
+	}
+	return trimmed
 }

@@ -36,10 +36,10 @@ import { applyListQuery } from "@/lib/list/apply-list-query";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 
 import { CatalogResyncButton } from "./CatalogResyncButton";
-import { MenuItemForm } from "./MenuItemForm";
+import { BADGE_COLOR_OPTIONS, MenuItemForm } from "./MenuItemForm";
 import { buildMenuListSearchParams, parseMenuListQuery, type MenuListQuery } from "./list-query-url";
 import { filterItemsByCategory, getMenuItemDisplayImage } from "./model";
-import { useUpdateMenuItemVisibilityMutation } from "./queries";
+import { useUpdateMenuItemLabelColorsMutation, useUpdateMenuItemVisibilityMutation } from "./queries";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -50,6 +50,7 @@ export function MenuManagementPage() {
   const searchParams = useSearchParams();
   const bootstrapQuery = useBootstrapQuery();
   const visibilityMutation = useUpdateMenuItemVisibilityMutation();
+  const labelColorsMutation = useUpdateMenuItemLabelColorsMutation();
 
   // Search/category/sort/pagination applies only to this table's own
   // rendering — never to the `items` passed to `MenuItemForm` below, which
@@ -129,6 +130,18 @@ export function MenuManagementPage() {
 
   function isVisibilityPending(id: string): boolean {
     return visibilityMutation.isPending && visibilityMutation.variables?.id === id;
+  }
+
+  // colors[0] pairs with item.labels[0], colors[1] with item.labels[1], and
+  // so on — same position order the bootstrap response and
+  // `UpdateMenuItemLabelColors` both use. Only the picked index changes;
+  // every other label keeps its already-saved color (defaulting to "" for
+  // one that was never colored).
+  function changeLabelColor(item: MenuItem, index: number, color: string) {
+    const colors = (item.labels ?? []).map((label, labelIndex) =>
+      labelIndex === index ? color : label.color ?? "",
+    );
+    labelColorsMutation.mutate({ id: item.id, colors });
   }
 
   return (
@@ -224,6 +237,7 @@ export function MenuManagementPage() {
               <TableHead className="w-32">{t("columnCategory")}</TableHead>
               <TableHead className="w-24">{t("columnPrice")}</TableHead>
               <TableHead className="w-44">{t("columnOptions")}</TableHead>
+              <TableHead className="w-44">{t("columnLabels")}</TableHead>
               <TableHead className="w-24">{t("common:columnVisibility")}</TableHead>
             </TableRow>
           </TableHeader>
@@ -281,6 +295,31 @@ export function MenuManagementPage() {
                       </div>
                     ) : (
                       <span className="text-sm text-muted-foreground">{t("noOptions")}</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {item.labels?.length ? (
+                      <div className="flex min-w-0 flex-col gap-1">
+                        {item.labels.map((label, index) => (
+                          <div key={`${label.text}-${index}`} className="flex items-center gap-1">
+                            <span className="truncate text-xs text-foreground">{label.text}</span>
+                            <select
+                              aria-label={t("itemLabelColorAria", { text: label.text })}
+                              className="h-7 rounded-3xl border border-transparent bg-input/50 px-2 text-xs text-foreground"
+                              value={label.color ?? ""}
+                              onChange={(event) => changeLabelColor(item, index, event.target.value)}
+                            >
+                              {BADGE_COLOR_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {t(option.labelKey)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">{t("noLabels")}</span>
                     )}
                   </TableCell>
                   <TableCell>

@@ -16,17 +16,26 @@ type MenuCategory struct {
 }
 
 type MenuItem struct {
-	ID          string       `json:"id"`
-	CategoryID  string       `json:"categoryId"`
-	Badge       string       `json:"badge,omitempty"`
-	BadgeColor  string       `json:"badgeColor,omitempty"`
-	Name        string       `json:"name"`
-	Description string       `json:"description"`
-	Price       string       `json:"price"`
-	ImageURL    string       `json:"imageUrl,omitempty"`
-	IsVisible   bool         `json:"isVisible"`
-	Images      []MenuImage  `json:"images,omitempty"`
-	Options     []MenuOption `json:"options,omitempty"`
+	ID          string          `json:"id"`
+	CategoryID  string          `json:"categoryId"`
+	Badge       string          `json:"badge,omitempty"`
+	BadgeColor  string          `json:"badgeColor,omitempty"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Price       string          `json:"price"`
+	ImageURL    string          `json:"imageUrl,omitempty"`
+	IsVisible   bool            `json:"isVisible"`
+	Images      []MenuImage     `json:"images,omitempty"`
+	Options     []MenuOption    `json:"options,omitempty"`
+	Labels      []MenuItemLabel `json:"labels,omitempty"`
+}
+
+// MenuItemLabel pairs a Toss Place catalog label (in the order Toss gives
+// it) with the color an operator assigned to that position. Text always
+// comes from Toss; Color is admin-set and empty until they pick one.
+type MenuItemLabel struct {
+	Text  string `json:"text"`
+	Color string `json:"color,omitempty"`
 }
 
 type MenuOption struct {
@@ -254,11 +263,13 @@ type MenuData struct {
 }
 
 // CatalogSyncResponse is the response for
-// POST /api/v1/admin/catalog-sync — the manual counterpart of
-// cmd/server/main.go's 5-minute background poll. `Data` is the refreshed
-// bootstrap snapshot (mirroring every other admin mutation endpoint's
-// "return the full state" contract) so the admin web can update its menu
-// list in the same round trip that reports the sync counts.
+// POST /api/v1/admin/catalog-sync — the manual sync an operator triggers
+// to get the latest Toss Place data without restarting the server (which
+// is otherwise the only time cmd/server/main.go syncs the catalog).
+// `Data` is the refreshed bootstrap snapshot (mirroring every other admin
+// mutation endpoint's "return the full state" contract) so the admin web
+// can update its menu list in the same round trip that reports the sync
+// counts.
 type CatalogSyncResponse struct {
 	Created int           `json:"created"`
 	Linked  int           `json:"linked"`

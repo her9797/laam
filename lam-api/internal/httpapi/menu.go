@@ -50,6 +50,10 @@ type updateMenuItemRecipeRequest struct {
 	Instructions string `json:"instructions"`
 }
 
+type updateMenuItemLabelColorsRequest struct {
+	Colors []string `json:"colors"`
+}
+
 type updateCustomerRequestStatusRequest struct {
 	Status string `json:"status"`
 }

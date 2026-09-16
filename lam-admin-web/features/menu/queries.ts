@@ -11,6 +11,7 @@ import {
   getMenuItemRecipe,
   resyncCatalog,
   updateCategoryVisibility,
+  updateMenuItemLabelColors,
   updateMenuItemRecipe,
   updateMenuItemVisibility,
   uploadMenuItemImage,
@@ -73,6 +74,15 @@ export function useUpdateMenuItemVisibilityMutation() {
   return useMutation({
     mutationFn: ({ id, isVisible }: { id: string; isVisible: boolean }) =>
       updateMenuItemVisibility(id, isVisible),
+    onSuccess: applyBootstrapUpdate,
+  });
+}
+
+export function useUpdateMenuItemLabelColorsMutation() {
+  const applyBootstrapUpdate = useApplyBootstrapUpdate();
+  return useMutation({
+    mutationFn: ({ id, colors }: { id: string; colors: string[] }) =>
+      updateMenuItemLabelColors(id, colors),
     onSuccess: applyBootstrapUpdate,
   });
 }

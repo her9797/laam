@@ -16,6 +16,12 @@ export type MenuItem = {
   isVisible?: boolean;
   images?: MenuImage[];
   options?: MenuOption[];
+  labels?: MenuItemLabel[];
+};
+
+export type MenuItemLabel = {
+  text: string;
+  color?: string;
 };
 
 export type MenuOption = {
