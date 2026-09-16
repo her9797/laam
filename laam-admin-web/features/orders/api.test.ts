@@ -70,6 +70,30 @@ describe("fetchOrdersPage", () => {
     expect(url.searchParams.get("to")).toBeTruthy();
   });
 
+  it("omits include by default so the full envelope is returned", async () => {
+    await fetchOrdersPage(BASE_QUERY);
+
+    const [path] = vi.mocked(fetchJson).mock.calls[0];
+    const url = new URL(String(path), "http://localhost");
+    expect(url.searchParams.has("include")).toBe(false);
+  });
+
+  it("sends include=items when only items are needed", async () => {
+    await fetchOrdersPage(BASE_QUERY, { include: "items" });
+
+    const [path] = vi.mocked(fetchJson).mock.calls[0];
+    const url = new URL(String(path), "http://localhost");
+    expect(url.searchParams.get("include")).toBe("items");
+  });
+
+  it("sends include=total when only the total is needed", async () => {
+    await fetchOrdersPage(BASE_QUERY, { include: "total" });
+
+    const [path] = vi.mocked(fetchJson).mock.calls[0];
+    const url = new URL(String(path), "http://localhost");
+    expect(url.searchParams.get("include")).toBe("total");
+  });
+
   it("sends no from/to when dateFrom/dateTo are blank", async () => {
     await fetchOrdersPage(BASE_QUERY);
 

@@ -62,3 +62,6 @@ export type OrderPageResult = {
   pageSize: number;
   total: number;
 };
+
+/** `GET /payment-orders?include=items` response: the envelope without `total`. */
+export type OrderItemsResult = Omit<OrderPageResult, "total">;

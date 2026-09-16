@@ -23,7 +23,7 @@ import type { OrderNotification } from "./model";
  * completed order, and the fallback keeps sorting total rather than
  * leaving a row with no timestamp to order by.
  */
-export function toOrderNotifications(page: OrderPageResult): OrderNotification[] {
+export function toOrderNotifications(page: Pick<OrderPageResult, "items">): OrderNotification[] {
   return page.items
     .filter((order) => order.status === "DONE")
     .map((order) => ({

@@ -16,7 +16,7 @@ vi.mock("@tanstack/react-query", async () => {
 });
 
 import type { OrderListQuery, OrderPageResult } from "./model";
-import { useOrderCountQuery, useOrdersPageQuery } from "./queries";
+import { useOrderCountQuery, useOrderNotificationsQuery, useOrdersPageQuery } from "./queries";
 
 vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
@@ -97,9 +97,13 @@ describe("useOrderCountQuery", () => {
     const { result } = renderHook(() => useOrderCountQuery(), { wrapper: Wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(fetchOrdersPage).toHaveBeenCalledWith(expect.objectContaining({ status: "READY" }));
+    expect(fetchOrdersPage).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "READY" }),
+      expect.anything(),
+    );
     expect(fetchOrdersPage).toHaveBeenCalledWith(
       expect.objectContaining({ status: "ACKNOWLEDGED" }),
+      expect.anything(),
     );
   });
 
@@ -113,5 +117,39 @@ describe("useOrderCountQuery", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(result.current.data?.total).toBe(5);
+  });
+
+  // The card reads only `total`, so the server can skip the list query.
+  it("asks the server for the total only", async () => {
+    vi.mocked(fetchOrdersPage).mockClear().mockResolvedValue(fixture);
+    const { Wrapper } = createWrapper();
+
+    const { result } = renderHook(() => useOrderCountQuery(), { wrapper: Wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(vi.mocked(fetchOrdersPage).mock.calls).not.toHaveLength(0);
+    for (const call of vi.mocked(fetchOrdersPage).mock.calls) {
+      expect(call[1]).toEqual({ include: "total" });
+    }
+  });
+});
+
+describe("useOrderNotificationsQuery", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // The bell reads only `items`, so the server can skip the COUNT query.
+  it("asks the server for the items only", async () => {
+    vi.mocked(fetchOrdersPage).mockResolvedValue(fixture);
+    const { Wrapper } = createWrapper();
+
+    const { result } = renderHook(() => useOrderNotificationsQuery(), { wrapper: Wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(fetchOrdersPage).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "DONE" }),
+      { include: "items" },
+    );
   });
 });

@@ -560,7 +560,10 @@ func TestRouter_MenuImageUploadAndPublicContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create form file: %v", err)
 	}
-	if _, err := part.Write([]byte("fake-png-bytes")); err != nil {
+	// The upload handler sniffs the bytes, so the fixture needs a real PNG
+	// signature in front of its placeholder payload.
+	imageBytes := string(pngSignature) + "fake-png-bytes"
+	if _, err := part.Write([]byte(imageBytes)); err != nil {
 		t.Fatalf("write form file: %v", err)
 	}
 	_ = writer.WriteField("isPrimary", "true")
@@ -602,8 +605,8 @@ func TestRouter_MenuImageUploadAndPublicContent(t *testing.T) {
 	if contentRec.Code != http.StatusOK {
 		t.Fatalf("content status = %d, want %d", contentRec.Code, http.StatusOK)
 	}
-	if contentRec.Body.String() != "fake-png-bytes" {
-		t.Errorf("content body = %q, want %q", contentRec.Body.String(), "fake-png-bytes")
+	if contentRec.Body.String() != imageBytes {
+		t.Errorf("content body = %q, want %q", contentRec.Body.String(), imageBytes)
 	}
 	if got := contentRec.Header().Get("Content-Type"); got == "" {
 		t.Errorf("Content-Type header is empty")
