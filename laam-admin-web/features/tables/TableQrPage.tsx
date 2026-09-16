@@ -79,19 +79,19 @@ function TableQrCard({ table }: { table: AdminTable }) {
       {qrDataUrl ? (
         <button
           type="button"
-          className="size-32 cursor-pointer print:pointer-events-none"
+          className="w-32 max-w-full cursor-pointer print:pointer-events-none"
           title={t("copyLink")}
           onClick={handleCopyLink}
         >
           {/* eslint-disable-next-line @next/next/no-img-element -- client-generated data: URL, not an optimizable remote asset */}
-          <img src={qrDataUrl} alt={tableLabel} className="size-32" />
+          <img src={qrDataUrl} alt={tableLabel} className="aspect-square w-full" />
         </button>
       ) : (
-        <div className="flex size-32 items-center justify-center rounded bg-muted text-xs text-muted-foreground">
+        <div className="flex aspect-square w-32 max-w-full items-center justify-center rounded bg-muted text-xs text-muted-foreground">
           {previewFailed ? t("downloadPngFailed") : null}
         </div>
       )}
-      <div className="flex gap-2 print:hidden">
+      <div className="flex flex-wrap justify-center gap-2 print:hidden">
         <Button type="button" size="sm" variant="outline" onClick={handleDownloadPng}>
           {t("downloadPng")}
         </Button>
@@ -159,9 +159,9 @@ export function TableQrPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-3 print:hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <h1 className="text-lg font-semibold text-foreground">{t("title")}</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" onClick={handleDownloadAllZip} disabled={isZipping}>
             {t("downloadAllZip")}
           </Button>
@@ -185,7 +185,10 @@ export function TableQrPage() {
             <h2 className="text-sm font-semibold text-muted-foreground print:text-foreground">
               {t(AREA_LABEL_KEY[group.area])}
             </h2>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5 print:grid-cols-3">
+            {/* Five columns only from `xl`: from `md` on the desktop sidebar takes
+                its width, and five columns under ~1200px are narrower than a
+                card's full-size QR preview and PNG/SVG row. */}
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5 print:grid-cols-3">
               {group.tables.map((table) => (
                 <TableQrCard key={table.id} table={table} />
               ))}
