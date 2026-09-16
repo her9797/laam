@@ -380,6 +380,51 @@ func TestRouter_AdminMenuItems_CreateUpdateDelete(t *testing.T) {
 		}
 	})
 
+	t.Run("label-colors PATCH", func(t *testing.T) {
+		if _, err := testPool.Exec(t.Context(), `UPDATE menu_items SET toss_labels = $2 WHERE id = $1`, itemID, []string{"추천", "인기"}); err != nil {
+			t.Fatalf("seed toss_labels: %v", err)
+		}
+
+		t.Run("without auth is rejected", func(t *testing.T) {
+			body, _ := json.Marshal(map[string]any{"colors": []string{"green"}})
+			rec := doRequest(t, handler, http.MethodPatch, "/api/v1/admin/menu-items/"+itemID+"/label-colors", body, nil)
+			if rec.Code != http.StatusUnauthorized {
+				t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+			}
+		})
+
+		body, _ := json.Marshal(map[string]any{"colors": []string{"green", "amber"}})
+		rec := doRequest(t, handler, http.MethodPatch, "/api/v1/admin/menu-items/"+itemID+"/label-colors", body, adminHeaders())
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+		}
+
+		var updated struct {
+			Items []struct {
+				ID     string `json:"id"`
+				Labels []struct {
+					Text  string `json:"text"`
+					Color string `json:"color"`
+				} `json:"labels"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+			t.Fatalf("decode bootstrap: %v", err)
+		}
+		if len(updated.Items) != 1 || len(updated.Items[0].Labels) != 2 ||
+			updated.Items[0].Labels[0].Text != "추천" || updated.Items[0].Labels[0].Color != "green" ||
+			updated.Items[0].Labels[1].Text != "인기" || updated.Items[0].Labels[1].Color != "amber" {
+			t.Fatalf("labels after color update = %+v", updated.Items[0].Labels)
+		}
+
+		t.Run("unknown id is not found", func(t *testing.T) {
+			rec := doRequest(t, handler, http.MethodPatch, "/api/v1/admin/menu-items/missing/label-colors", body, adminHeaders())
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+			}
+		})
+	})
+
 	t.Run("DELETE", func(t *testing.T) {
 		rec := doRequest(t, handler, http.MethodDelete, "/api/v1/admin/menu-items/"+itemID, nil, adminHeaders())
 		if rec.Code != http.StatusOK {

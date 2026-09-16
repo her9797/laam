@@ -64,6 +64,20 @@ export function deleteMenuItem(id: string): Promise<AppData> {
 }
 
 /**
+ * `colors[0]` is the operator's color for the item's first Toss label,
+ * `colors[1]` for its second, and so on — matching `MenuItem.labels`'
+ * position order. It never sends label text: that always comes from Toss's
+ * own catalog sync (see `lam-api`'s `UpdateMenuItemLabelColors`).
+ */
+export function updateMenuItemLabelColors(id: string, colors: string[]): Promise<AppData> {
+  return fetchJson<AppData>(`${MENU_ITEMS_PATH}/${id}/label-colors`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ colors }),
+  });
+}
+
+/**
  * Multipart upload to `POST /api/v1/admin/menu-items/{id}/images`. The
  * field names (`image`, `isPrimary`, `displayArea`, `focusX`, `focusY`)
  * match that handler's `r.FormFile("image")`/`r.FormValue(...)` calls
@@ -108,8 +122,9 @@ export function updateMenuItemRecipe(
 }
 
 /**
- * Manually triggers `lam-api`'s Toss Place catalog sync (the same one the
- * server already runs on its own 5-minute poll) instead of waiting for it.
+ * Manually triggers `lam-api`'s Toss Place catalog sync — the server only
+ * otherwise runs this once, at startup, so this is how an operator gets
+ * the latest POS data without restarting it.
  * Unlike every other call in this module, the response isn't `AppData`
  * directly — it's `{ created, linked, updated, data }`, so the operator's
  * "다시 동기화" button can show the counts alongside refreshing the list

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -302,6 +303,62 @@ func TestRepository_DeleteMenuItem(t *testing.T) {
 	t.Run("unknown id is not found", func(t *testing.T) {
 		if err := repo.DeleteMenuItem(ctx, itemID); !errors.Is(err, ErrNotFound) {
 			t.Errorf("DeleteMenuItem(already deleted id) error = %v, want ErrNotFound", err)
+		}
+	})
+}
+
+func TestRepository_MenuItemLabelColors(t *testing.T) {
+	repo := resetDB(t)
+	ctx := context.Background()
+
+	if err := repo.CreateCategory(ctx, "food", "Food", true); err != nil {
+		t.Fatalf("CreateCategory() error = %v", err)
+	}
+	if err := repo.CreateMenuItem(ctx, CreateMenuItemInput{CategoryID: "food", Name: "Fries", Description: "d", Price: "1"}); err != nil {
+		t.Fatalf("CreateMenuItem() error = %v", err)
+	}
+	data, err := repo.GetBootstrapData(ctx)
+	if err != nil {
+		t.Fatalf("GetBootstrapData() error = %v", err)
+	}
+	itemID := data.Items[0].ID
+	if len(data.Items[0].Labels) != 0 {
+		t.Fatalf("Labels before any Toss labels exist = %+v, want none", data.Items[0].Labels)
+	}
+
+	if _, err := testPool.Exec(ctx, `UPDATE menu_items SET toss_labels = $2 WHERE id = $1`, itemID, []string{"추천", "인기", "신규"}); err != nil {
+		t.Fatalf("seed toss_labels: %v", err)
+	}
+
+	t.Run("colors default to empty until an operator sets them", func(t *testing.T) {
+		data, err := repo.GetBootstrapData(ctx)
+		if err != nil {
+			t.Fatalf("GetBootstrapData() error = %v", err)
+		}
+		want := []lamdata.MenuItemLabel{{Text: "추천"}, {Text: "인기"}, {Text: "신규"}}
+		if !reflect.DeepEqual(data.Items[0].Labels, want) {
+			t.Fatalf("Labels = %+v, want %+v", data.Items[0].Labels, want)
+		}
+	})
+
+	t.Run("UpdateMenuItemLabelColors sets a color per position", func(t *testing.T) {
+		if err := repo.UpdateMenuItemLabelColors(ctx, itemID, []string{"green", "amber"}); err != nil {
+			t.Fatalf("UpdateMenuItemLabelColors() error = %v", err)
+		}
+
+		data, err := repo.GetBootstrapData(ctx)
+		if err != nil {
+			t.Fatalf("GetBootstrapData() error = %v", err)
+		}
+		want := []lamdata.MenuItemLabel{{Text: "추천", Color: "green"}, {Text: "인기", Color: "amber"}, {Text: "신규"}}
+		if !reflect.DeepEqual(data.Items[0].Labels, want) {
+			t.Fatalf("Labels after color update = %+v, want %+v", data.Items[0].Labels, want)
+		}
+	})
+
+	t.Run("unknown id is not found", func(t *testing.T) {
+		if err := repo.UpdateMenuItemLabelColors(ctx, "does-not-exist", []string{"green"}); !errors.Is(err, ErrNotFound) {
+			t.Errorf("UpdateMenuItemLabelColors(unknown id) error = %v, want ErrNotFound", err)
 		}
 	})
 }

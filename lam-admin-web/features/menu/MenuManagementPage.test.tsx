@@ -23,6 +23,7 @@ vi.mock("@/features/bootstrap/queries", () => ({
 
 const createMenuItemMutate = vi.fn();
 const updateMenuItemVisibilityMutate = vi.fn();
+const updateMenuItemLabelColorsMutate = vi.fn();
 const uploadMenuItemImageMutate = vi.fn();
 
 function idleMutation(mutate: ReturnType<typeof vi.fn>) {
@@ -31,6 +32,7 @@ function idleMutation(mutate: ReturnType<typeof vi.fn>) {
 
 const createMenuItemMutationState = { current: idleMutation(createMenuItemMutate) };
 const updateMenuItemVisibilityMutationState = { current: idleMutation(updateMenuItemVisibilityMutate) };
+const updateMenuItemLabelColorsMutationState = { current: idleMutation(updateMenuItemLabelColorsMutate) };
 const uploadMenuItemImageMutationState = { current: idleMutation(uploadMenuItemImageMutate) };
 // CatalogResyncButton reads this too — not under test here, just needs a
 // non-throwing default so this page's own tests keep exercising menu item
@@ -41,6 +43,7 @@ const resyncCatalogMutationState = { current: idleMutation(resyncCatalogMutate) 
 vi.mock("./queries", () => ({
   useCreateMenuItemMutation: () => createMenuItemMutationState.current,
   useUpdateMenuItemVisibilityMutation: () => updateMenuItemVisibilityMutationState.current,
+  useUpdateMenuItemLabelColorsMutation: () => updateMenuItemLabelColorsMutationState.current,
   useUploadMenuItemImageMutation: () => uploadMenuItemImageMutationState.current,
   useResyncCatalogMutation: () => resyncCatalogMutationState.current,
 }));
@@ -135,6 +138,7 @@ function mockBootstrap(overrides: Partial<ReturnType<typeof defaultBootstrapResu
 beforeEach(() => {
   createMenuItemMutate.mockClear();
   updateMenuItemVisibilityMutate.mockClear();
+  updateMenuItemLabelColorsMutate.mockClear();
   uploadMenuItemImageMutate.mockClear();
   refetchMock.mockClear();
   replaceMock.mockClear();
@@ -146,6 +150,7 @@ beforeEach(() => {
 
   createMenuItemMutationState.current = idleMutation(createMenuItemMutate);
   updateMenuItemVisibilityMutationState.current = idleMutation(updateMenuItemVisibilityMutate);
+  updateMenuItemLabelColorsMutationState.current = idleMutation(updateMenuItemLabelColorsMutate);
   uploadMenuItemImageMutationState.current = idleMutation(uploadMenuItemImageMutate);
 
   mockBootstrap();
@@ -209,6 +214,7 @@ describe("POS catalog fields", () => {
       "카테고리",
       "가격",
       "옵션",
+      "라벨",
       "공개 여부",
     ]);
     expect(screen.getByRole("img", { name: "아메리카노 상품 이미지" })).toHaveAttribute(
@@ -492,6 +498,63 @@ describe("MenuManagementPage", () => {
     expect(hiddenButton.className).not.toBe(visibleButton.className);
     expect(hiddenButton).toHaveClass("border-dashed");
     expect(hiddenButton).not.toBeDisabled();
+  });
+
+  it("shows every Toss label as a tag with a color picker defaulted to its saved color", () => {
+    mockBootstrap({
+      data: {
+        ...FIXTURE,
+        items: [
+          {
+            ...FIXTURE.items[0],
+            labels: [{ text: "추천" }, { text: "인기", color: "amber" }],
+          },
+        ],
+      },
+    });
+
+    render(<MenuManagementPage />);
+
+    const menuRow = screen.getByText("아메리카노").closest("tr") as HTMLElement;
+    expect(within(menuRow).getByText("추천")).toBeInTheDocument();
+    expect(within(menuRow).getByText("인기")).toBeInTheDocument();
+
+    const selects = within(menuRow).getAllByRole("combobox");
+    expect(selects).toHaveLength(2);
+    expect(selects[0]).toHaveValue("");
+    expect(selects[1]).toHaveValue("amber");
+  });
+
+  it("shows a no-labels placeholder when the item has no Toss labels", () => {
+    render(<MenuManagementPage />);
+
+    const menuRow = screen.getByText("아메리카노").closest("tr") as HTMLElement;
+    expect(within(menuRow).getByText("라벨 없음")).toBeInTheDocument();
+  });
+
+  it("changes only the picked label's color and keeps the rest, in position order", () => {
+    mockBootstrap({
+      data: {
+        ...FIXTURE,
+        items: [
+          {
+            ...FIXTURE.items[0],
+            labels: [{ text: "추천" }, { text: "인기", color: "amber" }],
+          },
+        ],
+      },
+    });
+
+    render(<MenuManagementPage />);
+
+    const menuRow = screen.getByText("아메리카노").closest("tr") as HTMLElement;
+    const selects = within(menuRow).getAllByRole("combobox");
+    fireEvent.change(selects[0], { target: { value: "green" } });
+
+    expect(updateMenuItemLabelColorsMutate).toHaveBeenCalledWith({
+      id: "menu-1",
+      colors: ["green", "amber"],
+    });
   });
 
   it("does not show a delete action in the list (removed from this screen's UI)", () => {

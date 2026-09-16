@@ -319,6 +319,8 @@ CREATE TABLE IF NOT EXISTS system_error_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_system_error_logs_created_at ON system_error_logs (created_at DESC, id DESC);
+ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS toss_labels TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS label_colors TEXT[] NOT NULL DEFAULT '{}';
 `)
 	return err
 }
@@ -594,7 +596,7 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		categories = append(categories, item)
 	}
 
-	menuRows, err := r.pool.Query(ctx, `SELECT id, category_id, COALESCE(badge, ''), COALESCE(badge_color, ''), name, description, price, COALESCE(toss_image_url, ''), is_visible FROM menu_items ORDER BY sort_order, id`)
+	menuRows, err := r.pool.Query(ctx, `SELECT id, category_id, COALESCE(badge, ''), COALESCE(badge_color, ''), name, description, price, COALESCE(toss_image_url, ''), is_visible, toss_labels, label_colors FROM menu_items ORDER BY sort_order, id`)
 	if err != nil {
 		return lamdata.BootstrapData{}, err
 	}
@@ -603,8 +605,16 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 	items := make([]lamdata.MenuItem, 0)
 	for menuRows.Next() {
 		var item lamdata.MenuItem
-		if err := menuRows.Scan(&item.ID, &item.CategoryID, &item.Badge, &item.BadgeColor, &item.Name, &item.Description, &item.Price, &item.ImageURL, &item.IsVisible); err != nil {
+		var tossLabels, labelColors []string
+		if err := menuRows.Scan(&item.ID, &item.CategoryID, &item.Badge, &item.BadgeColor, &item.Name, &item.Description, &item.Price, &item.ImageURL, &item.IsVisible, &tossLabels, &labelColors); err != nil {
 			return lamdata.BootstrapData{}, err
+		}
+		for index, text := range tossLabels {
+			label := lamdata.MenuItemLabel{Text: text}
+			if index < len(labelColors) {
+				label.Color = labelColors[index]
+			}
+			item.Labels = append(item.Labels, label)
 		}
 		items = append(items, item)
 	}
@@ -1613,6 +1623,22 @@ func (r *Repository) UpdateCategoryVisibility(ctx context.Context, id string, is
 
 func (r *Repository) UpdateMenuItemVisibility(ctx context.Context, id string, isVisible bool) error {
 	tag, err := r.pool.Exec(ctx, `UPDATE menu_items SET is_visible = $2 WHERE id = $1`, id, isVisible)
+	if err != nil {
+		return classifyError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateMenuItemLabelColors sets the operator-chosen color for each Toss
+// label position (colors[0] for the item's first label, colors[1] for its
+// second, ...). It never touches toss_labels itself — the labels' text is
+// only ever written by SyncTossCatalog — so a color survives the next sync
+// even if that sync temporarily drops the label it was set for.
+func (r *Repository) UpdateMenuItemLabelColors(ctx context.Context, id string, colors []string) error {
+	tag, err := r.pool.Exec(ctx, `UPDATE menu_items SET label_colors = $2 WHERE id = $1`, id, coalesceCatalogLabels(colors))
 	if err != nil {
 		return classifyError(err)
 	}

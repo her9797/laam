@@ -12,11 +12,12 @@ import type { CatalogSyncResponse } from "./model";
 import { useResyncCatalogMutation } from "./queries";
 
 /**
- * Manual counterpart of `lam-api`'s 5-minute background Toss Place catalog
- * poll (`cmd/server/main.go`'s `startTossCatalogSync`) — shared on both the
- * menu list and category list pages (`MenuManagementPage`/`CategoryPanel`),
- * since either screen is a reasonable place for an operator to want the
- * latest POS data without waiting.
+ * Triggers `lam-api`'s Toss Place catalog sync (`cmd/server/main.go`'s
+ * `startTossCatalogSync`, which otherwise only runs once at server
+ * startup) so an operator can pull the latest POS data without restarting
+ * the server. Shared on both the menu list and category list pages
+ * (`MenuManagementPage`/`CategoryPanel`), since either screen is a
+ * reasonable place to want that.
  */
 export function CatalogResyncButton() {
   const { t } = useTranslation("menu");

@@ -358,6 +358,35 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 			return
 		}
 
+		if strings.HasSuffix(path, "/label-colors") {
+			menuItemID := strings.TrimSuffix(path, "/label-colors")
+			menuItemID = strings.Trim(menuItemID, "/")
+			if menuItemID == "" || r.Method != http.MethodPatch {
+				http.NotFound(w, r)
+				return
+			}
+
+			var payload updateMenuItemLabelColorsRequest
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+
+			if err := repository.UpdateMenuItemLabelColors(r.Context(), menuItemID, payload.Colors); err != nil {
+				writeStoreError(w, err)
+				return
+			}
+
+			bootstrap, err := repository.GetBootstrapData(r.Context())
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			writeJSON(w, http.StatusCreated, bootstrap)
+			return
+		}
+
 		if r.Method == http.MethodGet {
 			http.NotFound(w, r)
 			return
