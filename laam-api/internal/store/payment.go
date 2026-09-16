@@ -946,6 +946,11 @@ func determineTrendUnit(from time.Time, to time.Time) string {
 	}
 }
 
+// paymentOrderStatsAfterSummaryHook is a test seam run right after the
+// summary query, letting integration tests commit a concurrent write
+// between the stats queries. Always nil in production.
+var paymentOrderStatsAfterSummaryHook func()
+
 // GetPaymentOrderStats aggregates DONE orders approved within [from, to)
 // for the admin sales-stats screen: a summary (total revenue, order count,
 // average order value), a trend broken into day/week/month buckets (picked
@@ -977,15 +982,27 @@ func determineTrendUnit(from time.Time, to time.Time) string {
 func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, to time.Time, businessDayBasis bool) (lamdata.PaymentOrderStats, error) {
 	var stats lamdata.PaymentOrderStats
 
+	// All six queries run in one read-only REPEATABLE READ transaction so
+	// they share a snapshot: an order confirmed mid-request cannot make the
+	// summary disagree with the trend and breakdown totals.
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return lamdata.PaymentOrderStats{}, err
+	}
+	defer tx.Rollback(ctx)
+
 	var totalRevenue int64
 	var orderCount int
 	summarySQL := "SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM payment_orders" + paymentOrderStatsFilterWhere
-	if err := r.pool.QueryRow(ctx, summarySQL, from, to).Scan(&totalRevenue, &orderCount); err != nil {
+	if err := tx.QueryRow(ctx, summarySQL, from, to).Scan(&totalRevenue, &orderCount); err != nil {
 		return lamdata.PaymentOrderStats{}, classifyError(err)
 	}
 	stats.Summary = lamdata.PaymentOrderStatsSummary{
 		TotalRevenue: totalRevenue,
 		OrderCount:   orderCount,
+	}
+	if paymentOrderStatsAfterSummaryHook != nil {
+		paymentOrderStatsAfterSummaryHook()
 	}
 	if orderCount > 0 {
 		stats.Summary.AverageOrderValue = int64(math.Round(float64(totalRevenue) / float64(orderCount)))
@@ -1009,7 +1026,7 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 		GROUP BY bucket
 		ORDER BY bucket ASC
 	`
-	trendRows, err := r.pool.Query(ctx, trendSQL, from, to, unit, businessDayBasis)
+	trendRows, err := tx.Query(ctx, trendSQL, from, to, unit, businessDayBasis)
 	if err != nil {
 		return lamdata.PaymentOrderStats{}, classifyError(err)
 	}
@@ -1035,7 +1052,7 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 		GROUP BY category_name
 		ORDER BY SUM(amount) DESC
 	`
-	categoryRows, err := r.pool.Query(ctx, categorySQL, from, to)
+	categoryRows, err := tx.Query(ctx, categorySQL, from, to)
 	if err != nil {
 		return lamdata.PaymentOrderStats{}, classifyError(err)
 	}
@@ -1060,7 +1077,7 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 		GROUP BY payment_method
 		ORDER BY SUM(amount) DESC
 	`
-	paymentMethodRows, err := r.pool.Query(ctx, paymentMethodSQL, from, to)
+	paymentMethodRows, err := tx.Query(ctx, paymentMethodSQL, from, to)
 	if err != nil {
 		return lamdata.PaymentOrderStats{}, classifyError(err)
 	}
@@ -1085,7 +1102,7 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 		GROUP BY table_number
 		ORDER BY SUM(amount) DESC
 	`
-	tableRows, err := r.pool.Query(ctx, tableSQL, from, to)
+	tableRows, err := tx.Query(ctx, tableSQL, from, to)
 	if err != nil {
 		return lamdata.PaymentOrderStats{}, classifyError(err)
 	}
@@ -1110,7 +1127,7 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 		GROUP BY menu_item_name
 		ORDER BY SUM(amount) DESC
 	`
-	menuItemRows, err := r.pool.Query(ctx, menuItemSQL, from, to)
+	menuItemRows, err := tx.Query(ctx, menuItemSQL, from, to)
 	if err != nil {
 		return lamdata.PaymentOrderStats{}, classifyError(err)
 	}
@@ -1125,6 +1142,10 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 	}
 	menuItemRows.Close()
 	if err := menuItemRows.Err(); err != nil {
+		return lamdata.PaymentOrderStats{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		return lamdata.PaymentOrderStats{}, err
 	}
 

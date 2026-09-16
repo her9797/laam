@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoad_ReadsRepositoryDotEnvWhenRunningFromLaamAPI(t *testing.T) {
@@ -231,5 +232,30 @@ func TestLoad_ReadsOverridesFromEnv(t *testing.T) {
 	}
 	if cfg.YouTubeAPIKey != "youtube-key" || cfg.YouTubeAPIBaseURL != "https://youtube.example.com/v3" {
 		t.Error("YouTube environment overrides were not loaded")
+	}
+}
+
+func TestLoad_DBStatementTimeout(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  time.Duration
+	}{
+		{name: "default when unset", value: "", want: 15 * time.Second},
+		{name: "go duration", value: "5s", want: 5 * time.Second},
+		{name: "zero disables", value: "0", want: 0},
+		{name: "invalid falls back to default", value: "fifteen", want: 15 * time.Second},
+		{name: "negative falls back to default", value: "-1s", want: 15 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DB_STATEMENT_TIMEOUT", tt.value)
+
+			cfg := Load()
+
+			if cfg.DBStatementTimeout != tt.want {
+				t.Errorf("DBStatementTimeout = %v, want %v", cfg.DBStatementTimeout, tt.want)
+			}
+		})
 	}
 }

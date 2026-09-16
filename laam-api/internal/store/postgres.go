@@ -321,6 +321,7 @@ CREATE TABLE IF NOT EXISTS system_error_logs (
 CREATE INDEX IF NOT EXISTS idx_system_error_logs_created_at ON system_error_logs (created_at DESC, id DESC);
 ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS toss_labels TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS label_colors TEXT[] NOT NULL DEFAULT '{}';
+CREATE INDEX IF NOT EXISTS idx_payment_orders_done_approved_at ON payment_orders (approved_at) WHERE status = 'DONE';
 `)
 	return err
 }
