@@ -367,7 +367,7 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
             <EmptyState title={t(copyKeys.emptyTitle)} description={t(copyKeys.emptyDescription)} />
           )
         ) : (
-          <Table>
+          <Table className="min-w-[52rem]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-40">{t("common:columnCreatedAt")}</TableHead>

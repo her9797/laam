@@ -86,7 +86,7 @@ export function SystemLogPage() {
         {logs.length === 0 ? (
           <EmptyState title={t("emptyTitle")} description={t("emptyDescription")} />
         ) : (
-          <Table>
+          <Table className="min-w-[45rem]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-40">{t("common:columnCreatedAt")}</TableHead>

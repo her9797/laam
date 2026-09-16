@@ -1,8 +1,10 @@
 import { expect, type Page } from "@playwright/test";
 
 import type { AppData } from "@/features/bootstrap/model";
+import type { PaymentOrder } from "@/features/orders/model";
 import type { CustomerRequest } from "@/features/requests/model";
 import type { SpecialRequest } from "@/features/special-requests/model";
+import type { SystemLog } from "@/features/system-logs/model";
 
 /**
  * Matches this suite's Playwright `webServer.env` (`playwright.config.ts`)
@@ -371,4 +373,67 @@ export async function loginAsAdmin(page: Page): Promise<void> {
   await page.getByLabel("비밀번호").fill(ADMIN_PASSWORD);
   await page.getByRole("button", { name: "로그인" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
+}
+
+/**
+ * Fresh `PaymentOrder[]` each call — field names/shapes match
+ * `features/orders/model.ts`'s `PaymentOrder` (mirrors `laam-api`).
+ */
+export function buildPaymentOrders(): PaymentOrder[] {
+  return [
+    {
+      orderId: "order-1",
+      menuItemId: "menu-1",
+      menuItemName: "아메리카노",
+      categoryName: "음료",
+      tableNumber: "3",
+      requestNote: "얼음 적게 주세요",
+      amount: 4000,
+      vat: 364,
+      suppliedAmount: 3636,
+      taxFreeAmount: 0,
+      status: "READY",
+      paymentMethod: "CARD",
+      approvedAt: "2026-09-03T10:00:00Z",
+      posSyncStatus: "SUCCEEDED",
+      createdAt: "2026-09-03T10:00:00Z",
+    },
+  ];
+}
+
+/**
+ * Mocks the paginated order list route (`GET /api/admin/payment-orders?...`)
+ * with real rows, for `/orders`. Same path-regardless-of-query-string match
+ * as `mockPaymentOrdersList`; register it after `mockDashboardData` so it
+ * takes precedence (Playwright matches most-recently-registered first).
+ */
+export async function mockPaymentOrdersPage(page: Page, orders: PaymentOrder[]): Promise<void> {
+  await page.route("**/api/admin/payment-orders?**", async (route) => {
+    await route.fulfill({
+      json: { items: orders, page: 1, pageSize: 20, total: orders.length },
+    });
+  });
+}
+
+/** Fresh `SystemLog[]` each call — shape matches `features/system-logs/model.ts`. */
+export function buildSystemLogs(): SystemLog[] {
+  return [
+    {
+      id: "log-1",
+      method: "GET",
+      path: "/api/v1/admin/payment-orders",
+      status: 502,
+      message: "upstream POS request failed",
+      createdAt: "2026-09-03T10:00:00Z",
+    },
+  ];
+}
+
+/** Mocks the paged system log route (`GET /api/admin/system-logs?...`). */
+export async function mockSystemLogsPage(page: Page, logs: SystemLog[]): Promise<void> {
+  await page.route("**/api/admin/system-logs?**", async (route) => {
+    await route.fulfill({
+      json: { items: logs, page: 1, pageSize: 20, total: logs.length },
+    });
+  });
 }

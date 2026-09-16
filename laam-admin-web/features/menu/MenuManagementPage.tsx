@@ -229,7 +229,7 @@ export function MenuManagementPage() {
           description={t("common:listNoResultsDescription")}
         />
       ) : (
-        <Table>
+        <Table className="min-w-[60rem]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-20">{t("columnImage")}</TableHead>
