@@ -905,6 +905,14 @@ body:has(.menu-detail-modal) .content-card {
   line-height: 1.55;
 }
 
+.menu-detail-order-confirm {
+  margin: 16px 0 0;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
 .menu-detail-modal:has(.menu-detail-order-success) .menu-detail-actions {
   grid-template-columns: 1fr;
 }
