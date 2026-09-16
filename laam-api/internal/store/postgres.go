@@ -1210,6 +1210,98 @@ func clampListPageSize(pageSize int) int {
 	return pageSize
 }
 
+// listWhereBuilder assembles a list query's WHERE clause from fixed,
+// code-owned SQL fragments, adding a predicate only for filters the caller
+// actually set. Every filter value goes through bind as a positional
+// parameter — never into the SQL text.
+//
+// This replaces the earlier "$1 is empty OR status = $1" catch-all style:
+// with those predicates, PostgreSQL's generic plan for a prepared statement
+// (pgx caches statements per connection) has to handle both branches and
+// can't use the status/created_at indexes.
+type listWhereBuilder struct {
+	conditions []string
+	args       []any
+}
+
+// bind appends value as the next positional parameter and returns its
+// placeholder ("$1", "$2", ...).
+func (b *listWhereBuilder) bind(value any) string {
+	b.args = append(b.args, value)
+	return fmt.Sprintf("$%d", len(b.args))
+}
+
+func (b *listWhereBuilder) add(condition string) {
+	b.conditions = append(b.conditions, condition)
+}
+
+// addTimeRange adds the shared inclusive-from / exclusive-to created_at bounds.
+func (b *listWhereBuilder) addTimeRange(from *time.Time, to *time.Time) {
+	if from != nil {
+		b.add("created_at >= " + b.bind(from))
+	}
+	if to != nil {
+		b.add("created_at < " + b.bind(to))
+	}
+}
+
+// clause returns the WHERE clause (empty when no filter applies) and its
+// arguments, in placeholder order.
+func (b *listWhereBuilder) clause() (string, []any) {
+	if len(b.conditions) == 0 {
+		return "", b.args
+	}
+	return "\n\tWHERE " + strings.Join(b.conditions, "\n\t  AND ") + "\n", b.args
+}
+
+// listPageArgs appends LIMIT/OFFSET values after a WHERE clause's arguments,
+// returning the extended argument list and the matching LIMIT/OFFSET SQL.
+func listPageArgs(args []any, pageSize int, offset int) ([]any, string) {
+	pageArgs := append(append(make([]any, 0, len(args)+2), args...), pageSize, offset)
+	return pageArgs, fmt.Sprintf("LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+}
+
+func customerRequestFilterWhereClause(filter CustomerRequestFilter) (string, []any, error) {
+	var b listWhereBuilder
+	if filter.Status != "" {
+		b.add("status = " + b.bind(filter.Status))
+	}
+	switch filter.Kind {
+	case "", "all":
+	case "song":
+		b.add("starts_with(text, " + b.bind(songRequestPrefix) + ")")
+	case "general":
+		b.add("NOT starts_with(text, " + b.bind(songRequestPrefix) + ")")
+	default:
+		return "", nil, fmt.Errorf("%w: kind %q", ErrInvalidInput, filter.Kind)
+	}
+	if pattern := searchPatternOrEmpty(filter.Search); pattern != "" {
+		placeholder := b.bind(pattern)
+		b.add("(text ILIKE " + placeholder + ` ESCAPE '\' OR table_number ILIKE ` + placeholder + ` ESCAPE '\')`)
+	}
+	b.addTimeRange(filter.From, filter.To)
+	where, args := b.clause()
+	return where, args, nil
+}
+
+func specialRequestFilterWhereClause(filter SpecialRequestFilter) (string, []any) {
+	var b listWhereBuilder
+	if filter.Gender != "" {
+		b.add("gender = " + b.bind(filter.Gender))
+	}
+	if pattern := searchPatternOrEmpty(filter.Search); pattern != "" {
+		placeholder := b.bind(pattern)
+		columns := []string{"name", "table_number", "instagram", "residence", "text"}
+		matches := make([]string, 0, len(columns))
+		for _, column := range columns {
+			matches = append(matches, column+" ILIKE "+placeholder+` ESCAPE '\'`)
+		}
+		b.add("(" + strings.Join(matches, " OR ") + ")")
+	}
+	b.addTimeRange(filter.From, filter.To)
+	return b.clause()
+}
+
 func customerRequestOrderByClause(sort string, order string) (string, error) {
 	direction := "DESC"
 	if order == "asc" {
@@ -1248,18 +1340,6 @@ func specialRequestOrderByClause(sort string, order string) (string, error) {
 	}
 }
 
-const customerRequestFilterWhere = `
-	WHERE ($1 = '' OR status = $1)
-	  AND (
-	    $2 = 'all' OR $2 = ''
-	    OR ($2 = 'song' AND starts_with(text, $3))
-	    OR ($2 = 'general' AND NOT starts_with(text, $3))
-	  )
-	  AND ($4 = '' OR text ILIKE $4 ESCAPE '\' OR table_number ILIKE $4 ESCAPE '\')
-	  AND ($5::timestamptz IS NULL OR created_at >= $5)
-	  AND ($6::timestamptz IS NULL OR created_at < $6)
-`
-
 // ListCustomerRequestsPage applies filter/search/sort/pagination server-side
 // and reports the total matching row count alongside the current page, so
 // callers can render page controls without a second round trip. Unlike
@@ -1272,25 +1352,30 @@ func (r *Repository) ListCustomerRequestsPage(ctx context.Context, filter Custom
 		return nil, 0, err
 	}
 
-	page := clampListPage(filter.Page)
-	pageSize := clampListPageSize(filter.PageSize)
-	searchPattern := searchPatternOrEmpty(filter.Search)
-
-	var total int
-	countSQL := "SELECT COUNT(*) FROM customer_requests" + customerRequestFilterWhere
-	if err := r.pool.QueryRow(ctx, countSQL, filter.Status, filter.Kind, songRequestPrefix, searchPattern, filter.From, filter.To).Scan(&total); err != nil {
+	where, whereArgs, err := customerRequestFilterWhereClause(filter)
+	if err != nil {
 		return nil, 0, err
 	}
 
+	page := clampListPage(filter.Page)
+	pageSize := clampListPageSize(filter.PageSize)
+
+	var total int
+	countSQL := "SELECT COUNT(*) FROM customer_requests" + where
+	if err := r.pool.QueryRow(ctx, countSQL, whereArgs...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+	listArgs, limitOffset := listPageArgs(whereArgs, pageSize, offset)
 	listSQL := `
 		SELECT id, COALESCE(table_number, ''), COALESCE(text, ''), status, created_at, handled_at
 		FROM customer_requests
-	` + customerRequestFilterWhere + `
+	` + where + `
 		ORDER BY ` + orderBy + `
-		LIMIT $7 OFFSET $8
+		` + limitOffset + `
 	`
-	offset := (page - 1) * pageSize
-	rows, err := r.pool.Query(ctx, listSQL, filter.Status, filter.Kind, songRequestPrefix, searchPattern, filter.From, filter.To, pageSize, offset)
+	rows, err := r.pool.Query(ctx, listSQL, listArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1324,20 +1409,6 @@ func (r *Repository) ListCustomerRequestsPage(ctx context.Context, filter Custom
 	return requests, total, nil
 }
 
-const specialRequestFilterWhere = `
-	WHERE ($1 = '' OR gender = $1)
-	  AND (
-	    $2 = ''
-	    OR name ILIKE $2 ESCAPE '\'
-	    OR table_number ILIKE $2 ESCAPE '\'
-	    OR instagram ILIKE $2 ESCAPE '\'
-	    OR residence ILIKE $2 ESCAPE '\'
-	    OR text ILIKE $2 ESCAPE '\'
-	  )
-	  AND ($3::timestamptz IS NULL OR created_at >= $3)
-	  AND ($4::timestamptz IS NULL OR created_at < $4)
-`
-
 // ListSpecialRequestsPage is the special_requests equivalent of
 // ListCustomerRequestsPage. See that method's doc comment for the
 // legacy-array-vs-envelope split this only ever serves the envelope side of.
@@ -1349,23 +1420,24 @@ func (r *Repository) ListSpecialRequestsPage(ctx context.Context, filter Special
 
 	page := clampListPage(filter.Page)
 	pageSize := clampListPageSize(filter.PageSize)
-	searchPattern := searchPatternOrEmpty(filter.Search)
+	where, whereArgs := specialRequestFilterWhereClause(filter)
 
 	var total int
-	countSQL := "SELECT COUNT(*) FROM special_requests" + specialRequestFilterWhere
-	if err := r.pool.QueryRow(ctx, countSQL, filter.Gender, searchPattern, filter.From, filter.To).Scan(&total); err != nil {
+	countSQL := "SELECT COUNT(*) FROM special_requests" + where
+	if err := r.pool.QueryRow(ctx, countSQL, whereArgs...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
+	offset := (page - 1) * pageSize
+	listArgs, limitOffset := listPageArgs(whereArgs, pageSize, offset)
 	listSQL := `
 		SELECT id, COALESCE(table_number, ''), gender, name, age, residence, instagram, ideal_type, text, created_at
 		FROM special_requests
-	` + specialRequestFilterWhere + `
+	` + where + `
 		ORDER BY ` + orderBy + `
-		LIMIT $5 OFFSET $6
+		` + limitOffset + `
 	`
-	offset := (page - 1) * pageSize
-	rows, err := r.pool.Query(ctx, listSQL, filter.Gender, searchPattern, filter.From, filter.To, pageSize, offset)
+	rows, err := r.pool.Query(ctx, listSQL, listArgs...)
 	if err != nil {
 		return nil, 0, err
 	}

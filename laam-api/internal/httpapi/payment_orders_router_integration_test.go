@@ -177,3 +177,75 @@ func TestRouter_AdminPaymentOrderDetail_UnknownIDReturnsNotFound(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 }
+
+// include=items (the order bell) skips the COUNT query and so omits "total";
+// include=total (the dashboard card) skips the list query and returns an
+// empty items array. Without include the envelope is unchanged.
+func TestRouter_AdminPaymentOrders_IncludeItemsOmitsTotal(t *testing.T) {
+	handler := resetServer(t)
+	base := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
+	seedPaymentOrderViaSQL(t, "order-1", "T-01", "DONE", "SUCCEEDED", 8000, base)
+	seedPaymentOrderViaSQL(t, "order-2", "T-02", "DONE", "SUCCEEDED", 5000, base.Add(time.Hour))
+
+	rec := doRequest(t, handler, http.MethodGet, "/api/v1/admin/payment-orders?status=DONE&pageSize=20&include=items", nil, adminHeaders())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode envelope: %v (body = %s)", err, rec.Body.String())
+	}
+	if _, ok := envelope["total"]; ok {
+		t.Errorf("envelope has total, want it omitted: %s", rec.Body.String())
+	}
+	var items []struct {
+		OrderID string `json:"orderId"`
+	}
+	if err := json.Unmarshal(envelope["items"], &items); err != nil {
+		t.Fatalf("decode items: %v", err)
+	}
+	if len(items) != 2 || items[0].OrderID != "order-2" {
+		t.Fatalf("items = %+v, want order-2 then order-1", items)
+	}
+	if string(envelope["page"]) != "1" || string(envelope["pageSize"]) != "20" {
+		t.Errorf("page/pageSize = %s/%s, want 1/20", envelope["page"], envelope["pageSize"])
+	}
+}
+
+func TestRouter_AdminPaymentOrders_IncludeTotalReturnsEmptyItems(t *testing.T) {
+	handler := resetServer(t)
+	base := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
+	seedPaymentOrderViaSQL(t, "order-1", "T-01", "READY", "PENDING", 8000, base)
+	seedPaymentOrderViaSQL(t, "order-2", "T-02", "READY", "PENDING", 5000, base.Add(time.Hour))
+
+	rec := doRequest(t, handler, http.MethodGet, "/api/v1/admin/payment-orders?status=READY&pageSize=1&include=total", nil, adminHeaders())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var envelope struct {
+		Items []json.RawMessage `json:"items"`
+		Total *int              `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode envelope: %v (body = %s)", err, rec.Body.String())
+	}
+	if envelope.Items == nil || len(envelope.Items) != 0 {
+		t.Errorf("items = %v, want an empty array (body = %s)", envelope.Items, rec.Body.String())
+	}
+	if envelope.Total == nil || *envelope.Total != 2 {
+		t.Errorf("total = %v, want 2 (body = %s)", envelope.Total, rec.Body.String())
+	}
+}
+
+func TestRouter_AdminPaymentOrders_RejectsUnknownInclude(t *testing.T) {
+	handler := resetServer(t)
+
+	for _, include := range []string{"all", "items,total", "ITEMS"} {
+		rec := doRequest(t, handler, http.MethodGet, "/api/v1/admin/payment-orders?include="+include, nil, adminHeaders())
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("include=%s: status = %d, want %d, body = %s", include, rec.Code, http.StatusBadRequest, rec.Body.String())
+		}
+	}
+}

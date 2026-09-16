@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -133,7 +134,7 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 		price := formatWon(item.Price)
 		labels := coalesceCatalogLabels(item.Labels)
 		localMenuItemID := ""
-		tag, err := tx.Exec(ctx, `
+		err := tx.QueryRow(ctx, `
 			UPDATE menu_items
 			SET category_id = $2,
 				name = $3,
@@ -144,14 +145,12 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 				badge = COALESCE(NULLIF($8, ''), badge),
 				toss_labels = $9
 			WHERE toss_catalog_item_id = $1
-		`, item.ID, item.CategoryID, item.Name, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL), item.Badge, labels)
-		if err != nil {
+			RETURNING id
+		`, item.ID, item.CategoryID, item.Name, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL), item.Badge, labels).Scan(&localMenuItemID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return TossCatalogSyncResult{}, classifyError(err)
 		}
-		if tag.RowsAffected() > 0 {
-			if err := tx.QueryRow(ctx, `SELECT id FROM menu_items WHERE toss_catalog_item_id = $1`, item.ID).Scan(&localMenuItemID); err != nil {
-				return TossCatalogSyncResult{}, classifyError(err)
-			}
+		if err == nil {
 			result.Updated++
 		} else if localID, ok := unlinkedByName[normalizeCatalogItemName(item.Name)]; ok {
 			if _, err := tx.Exec(ctx, `
@@ -205,12 +204,16 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 	return result, nil
 }
 
+// syncTossCatalogOptions sends one menu item's option, item-option link and
+// choice upserts as a single pgx.Batch round trip, in the same order they
+// were previously executed one by one (option before its link and choices).
 func syncTossCatalogOptions(ctx context.Context, tx pgx.Tx, menuItemID string, options []TossCatalogOption) error {
+	batch := &pgx.Batch{}
 	for _, option := range options {
 		if !option.Enabled || strings.TrimSpace(option.ID) == "" || strings.TrimSpace(option.Title) == "" {
 			continue
 		}
-		if _, err := tx.Exec(ctx, `
+		batch.Queue(`
 			INSERT INTO menu_options (id, title, is_enabled, is_required, min_choices, max_choices, sort_order)
 			VALUES ($1, $2, $3, $4, $5, $6, $7)
 			ON CONFLICT (id) DO UPDATE SET
@@ -220,21 +223,17 @@ func syncTossCatalogOptions(ctx context.Context, tx pgx.Tx, menuItemID string, o
 				min_choices = EXCLUDED.min_choices,
 				max_choices = EXCLUDED.max_choices,
 				sort_order = EXCLUDED.sort_order
-		`, option.ID, strings.TrimSpace(option.Title), option.Enabled, option.Required, option.MinChoices, option.MaxChoices, option.SortOrder); err != nil {
-			return classifyError(err)
-		}
-		if _, err := tx.Exec(ctx, `
+		`, option.ID, strings.TrimSpace(option.Title), option.Enabled, option.Required, option.MinChoices, option.MaxChoices, option.SortOrder)
+		batch.Queue(`
 			INSERT INTO menu_item_options (menu_item_id, option_id, sort_order)
 			VALUES ($1, $2, $3)
 			ON CONFLICT (menu_item_id, option_id) DO UPDATE SET sort_order = EXCLUDED.sort_order
-		`, menuItemID, option.ID, option.SortOrder); err != nil {
-			return classifyError(err)
-		}
+		`, menuItemID, option.ID, option.SortOrder)
 		for _, choice := range option.Choices {
 			if strings.TrimSpace(choice.ID) == "" || strings.TrimSpace(choice.Title) == "" {
 				continue
 			}
-			if _, err := tx.Exec(ctx, `
+			batch.Queue(`
 				INSERT INTO menu_option_choices (
 					id, option_id, title, price_value, image_url, is_enabled, state,
 					quantity_enabled, min_quantity, max_quantity, sort_order
@@ -252,10 +251,16 @@ func syncTossCatalogOptions(ctx context.Context, tx pgx.Tx, menuItemID string, o
 					sort_order = EXCLUDED.sort_order
 			`, choice.ID, option.ID, strings.TrimSpace(choice.Title), choice.PriceValue,
 				strings.TrimSpace(choice.ImageURL), choice.Enabled, choice.State,
-				choice.QuantityEnabled, choice.MinQuantity, choice.MaxQuantity, choice.SortOrder); err != nil {
-				return classifyError(err)
-			}
+				choice.QuantityEnabled, choice.MinQuantity, choice.MaxQuantity, choice.SortOrder)
 		}
+	}
+	if batch.Len() == 0 {
+		return nil
+	}
+	// Close reads every queued result and returns the first failure, so an
+	// error still aborts the surrounding transaction as before.
+	if err := tx.SendBatch(ctx, batch).Close(); err != nil {
+		return classifyError(err)
 	}
 	return nil
 }

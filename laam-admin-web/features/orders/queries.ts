@@ -88,7 +88,8 @@ const NOTIFICATION_QUERY: OrderListQuery = {
 export function useOrderNotificationsQuery() {
   return useQuery({
     queryKey: orderKeys.notifications,
-    queryFn: () => fetchOrdersPage(NOTIFICATION_QUERY),
+    // Only `items` is read, so the server skips its COUNT query.
+    queryFn: () => fetchOrdersPage(NOTIFICATION_QUERY, { include: "items" }),
     refetchInterval: SAFETY_NET_POLL_INTERVAL_MS,
     // Stop polling once the tab is hidden, like the request-side query —
     // the global `refetchOnWindowFocus` catches the operator up when they
@@ -133,7 +134,7 @@ export function useOrderCountQuery() {
     queryFn: async () => {
       const pages = await Promise.all(
         DASHBOARD_UNPAID_STATUSES.map((status) =>
-          fetchOrdersPage(buildDashboardOrderCountQuery(status)),
+          fetchOrdersPage(buildDashboardOrderCountQuery(status), { include: "total" }),
         ),
       );
       return { total: pages.reduce((sum, page) => sum + page.total, 0) };
