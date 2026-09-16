@@ -335,7 +335,7 @@ API_BASE_URL=http://localhost:9090 docker compose up -d --build laam-admin-web
 bash scripts/deploy-cloud-run.sh
 ```
 
-손님용 `laam-web`은 커스텀 도메인 매핑을 지원하는 `asia-northeast1`에 배포되며, 기본 도메인은 `www.barlaam.store`입니다. 배포 스크립트는 기존 매핑이 `lam-web`(아직 이름을 바꾸지 않은 실제 Cloud Run 서비스명)을 향하는지 확인하고, 매핑이 없으면 생성합니다. 도메인 소유권 검증과 DNS 레코드 등록은 사전에 완료되어 있어야 합니다.
+손님용 `laam-web`은 커스텀 도메인 매핑을 지원하는 `asia-northeast1`에 배포되며, 기본 도메인은 `www.barlaam.store`입니다. 배포 스크립트는 기존 매핑이 `laam-web`을 향하는지 확인하고, 매핑이 없으면 생성합니다. 도메인 소유권 검증과 DNS 레코드 등록은 사전에 완료되어 있어야 합니다.
 
 다른 프로젝트, 리전 또는 도메인을 사용할 때는 실행 전에 아래 값을 덮어쓸 수 있습니다. `CLOUD_RUN_WEB_DOMAIN`을 빈 문자열로 지정하면 도메인 매핑 확인과 생성을 생략합니다.
 
