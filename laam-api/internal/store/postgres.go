@@ -322,6 +322,7 @@ CREATE INDEX IF NOT EXISTS idx_system_error_logs_created_at ON system_error_logs
 ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS toss_labels TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS label_colors TEXT[] NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS idx_payment_orders_done_approved_at ON payment_orders (approved_at) WHERE status = 'DONE';
+CREATE INDEX IF NOT EXISTS idx_customer_requests_pending_created_at ON customer_requests (created_at DESC, id DESC) WHERE status = 'pending';
 `)
 	return err
 }
@@ -1423,6 +1424,60 @@ func (r *Repository) ListCustomerRequestsPage(ctx context.Context, filter Custom
 	}
 
 	return requests, total, nil
+}
+
+// GetCustomerRequestPendingSummary returns the pending general/song counts
+// over every pending row plus at most limit newest pending rows, so the
+// admin notification bell and dashboard never read the whole table.
+// General vs. song uses the same songRequestPrefix rule as
+// ListCustomerRequestsPage's kind filter.
+func (r *Repository) GetCustomerRequestPendingSummary(ctx context.Context, limit int) (lamdata.CustomerRequestPendingSummary, error) {
+	summary := lamdata.CustomerRequestPendingSummary{Items: make([]lamdata.CustomerRequest, 0)}
+
+	if err := r.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE NOT starts_with(COALESCE(text, ''), $1)),
+			COUNT(*) FILTER (WHERE starts_with(COALESCE(text, ''), $1))
+		FROM customer_requests
+		WHERE status = 'pending'
+	`, songRequestPrefix).Scan(&summary.PendingGeneralCount, &summary.PendingSongCount); err != nil {
+		return summary, err
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, COALESCE(table_number, ''), COALESCE(text, ''), status, created_at, handled_at
+		FROM customer_requests
+		WHERE status = 'pending'
+		ORDER BY created_at DESC, id DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return summary, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var item lamdata.CustomerRequest
+		var createdAt time.Time
+		var handledAt *time.Time
+		if err := rows.Scan(
+			&item.ID,
+			&item.TableNumber,
+			&item.Text,
+			&item.Status,
+			&createdAt,
+			&handledAt,
+		); err != nil {
+			return summary, err
+		}
+		item.CreatedAt = formatTimestamp(createdAt)
+		if handledAt != nil {
+			item.HandledAt = formatTimestamp(*handledAt)
+		}
+		summary.Items = append(summary.Items, item)
+	}
+
+	return summary, rows.Err()
 }
 
 // ListSpecialRequestsPage is the special_requests equivalent of

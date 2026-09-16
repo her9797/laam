@@ -41,9 +41,9 @@ test.describe("관리자 MVP 핵심 흐름", () => {
     await mockDashboardData(page);
     await loginAsAdmin(page);
 
-    // `/requests` reads the paged envelope, not the bare array the
+    // `/requests` reads the paged envelope, not the pending summary the
     // notification bell reads (already mocked by `mockDashboardData`) — and
-    // the PATCH below invalidates rather than seeds that query, so the list
+    // the PATCH below answers 204 and invalidates that query, so the list
     // refetches afterwards and the mock has to move with it.
     const listState = { requests: buildCustomerRequests() };
     await mockCustomerRequestsPage(page, listState);

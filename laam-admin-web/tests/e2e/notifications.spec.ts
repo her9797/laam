@@ -115,8 +115,7 @@ test.describe("관리자 알림", () => {
     await mockDashboardData(page, { requests });
     await loginAsAdmin(page);
 
-    const refreshedRequests = requests.map((request) => ({ ...request, status: "checked" as const }));
-    await mockCustomerRequestsBulkStatusUpdate(page, refreshedRequests);
+    await mockCustomerRequestsBulkStatusUpdate(page);
 
     await page.getByRole("button", { name: "새 알림 2건" }).click();
     await page.getByRole("button", { name: "모두 확인" }).click();
@@ -157,7 +156,7 @@ test.describe("관리자 알림", () => {
         return;
       }
       bulkPatchCalled = true;
-      await route.fulfill({ json: requests });
+      await route.fulfill({ status: 204 });
     });
 
     await page.getByRole("button", { name: "새 알림 2건" }).click();

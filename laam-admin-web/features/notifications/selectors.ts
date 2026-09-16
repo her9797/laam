@@ -21,7 +21,7 @@ function toNotification(
 }
 
 /**
- * Builds the alarm list from the full `customer_requests` snapshot: only
+ * Builds the alarm list from the pending summary's newest rows: only
  * `pending` rows become a notification (the confirmed requirement ties
  * "read" to the server's own status, so there is no separate seen/unseen
  * store), classified general vs. song through `features/dashboard/summary`'s

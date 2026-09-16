@@ -4,7 +4,7 @@ import { approveSongRequest } from "@/features/player/api";
 import { songQueueKeys } from "@/features/player/keys";
 
 import {
-  fetchCustomerRequests,
+  fetchCustomerRequestPendingSummary,
   fetchCustomerRequestsPage,
   updateCustomerRequestStatus,
   updateCustomerRequestStatuses,
@@ -16,13 +16,16 @@ import type { CustomerRequestListQuery, CustomerRequestStatus } from "./model";
  * separate from `bootstrapKeys` and `specialRequestKeys` — a status change
  * here must only ever touch keys under `requestsKeys.all`.
  *
- * `all` (no params) backs the dashboard's aggregate counts, which need
- * every request regardless of any list screen's current filter/page.
- * `list(query)` backs the paginated `/requests` and `/song-requests`
- * screens — one cache entry per distinct filter/sort/page combination.
+ * `all` is the shared prefix every mutation and the Realtime broadcast
+ * invalidate. `pendingSummary` backs the notification bell and the
+ * dashboard's pending counts (server-side counts plus the newest pending
+ * rows). `list(query)` backs the paginated `/requests` and
+ * `/song-requests` screens — one cache entry per distinct
+ * filter/sort/page combination.
  */
 export const requestsKeys = {
   all: ["requests"] as const,
+  pendingSummary: ["requests", "pending-summary"] as const,
   list: (query: CustomerRequestListQuery) => ["requests", "list", query] as const,
 };
 
@@ -31,16 +34,16 @@ export const requestsKeys = {
  * (`docs/plans/2026-09-04-admin-request-notifications.md` section 4.3):
  * Realtime Broadcast is the primary signal, but Broadcast delivery isn't
  * guaranteed, so this query still refetches on its own every 60s. Applied
- * only to `useCustomerRequestsQuery` (the unfiltered `all`-keyed query the
+ * only to `useCustomerRequestPendingSummaryQuery` (the query the
  * notification bell and dashboard both read) — `useCustomerRequestsPageQuery`
  * backs the filtered list screens and isn't part of the alarm data path.
  */
 const SAFETY_NET_POLL_INTERVAL_MS = 60_000;
 
-export function useCustomerRequestsQuery() {
+export function useCustomerRequestPendingSummaryQuery() {
   return useQuery({
-    queryKey: requestsKeys.all,
-    queryFn: fetchCustomerRequests,
+    queryKey: requestsKeys.pendingSummary,
+    queryFn: fetchCustomerRequestPendingSummary,
     refetchInterval: SAFETY_NET_POLL_INTERVAL_MS,
     // Stop polling once the tab is hidden — an admin who's tabbed away
     // doesn't need this running, and the counterpart focus refetch
@@ -64,8 +67,8 @@ export function useCustomerRequestsPageQuery(query: CustomerRequestListQuery, en
     queryFn: () => fetchCustomerRequestsPage(query),
     enabled,
     // A revisited page or a window-focus refetch shouldn't refire against
-    // the server for 30s. Only this list-screen query — the `all`-keyed
-    // notification query above keeps its own 60s safety-net poll untouched.
+    // the server for 30s. Only this list-screen query — the pending summary
+    // query above keeps its own 60s safety-net poll untouched.
     staleTime: 30_000,
     // See `features/orders/queries.ts`'s equivalent: paging changes the
     // cache key, and without a placeholder `RequestListPage` unmounts its
@@ -80,13 +83,10 @@ export function useUpdateCustomerRequestStatusMutation() {
   return useMutation({
     mutationFn: ({ id, status }: { id: string; status: CustomerRequestStatus }) =>
       updateCustomerRequestStatus(id, status),
-    // The endpoint still returns the full, unfiltered/unpaginated list (see
-    // `updateCustomerRequestStatus`'s doc comment) — that shape no longer
-    // matches every cache entry once list screens can be filtered, sorted,
-    // and paginated, so every `requestsKeys.all`-prefixed entry (the plain
-    // dashboard query and every `requestsKeys.list(query)` page) is
-    // invalidated and refetched under its own current condition instead of
-    // being overwritten with the response body.
+    // The endpoint answers 204 No Content, so every
+    // `requestsKeys.all`-prefixed entry (the pending summary and every
+    // `requestsKeys.list(query)` page) is invalidated and refetched under
+    // its own current condition.
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: requestsKeys.all });
     },
@@ -97,7 +97,7 @@ export function useUpdateCustomerRequestStatusMutation() {
  * Bulk counterpart used by the notification panel's "모두 확인" action
  * (`docs/plans/2026-09-04-admin-request-notifications.md` section 4.5) —
  * same cache-invalidation strategy as `useUpdateCustomerRequestStatusMutation`
- * above, since this endpoint also returns the full unfiltered list.
+ * above, since this endpoint also answers 204 No Content.
  */
 export function useUpdateCustomerRequestStatusesMutation() {
   const queryClient = useQueryClient();

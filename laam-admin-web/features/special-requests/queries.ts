@@ -71,11 +71,9 @@ export function useDeleteSpecialRequestMutation() {
 
   return useMutation({
     mutationFn: (id: string) => deleteSpecialRequest(id),
-    // See `features/requests/queries.ts`'s equivalent mutation for why this
-    // invalidates rather than writes the response body into the cache: the
-    // endpoint still returns the full, unpaginated list, which no longer
-    // matches a filtered/sorted/paginated `specialRequestKeys.list(query)`
-    // entry.
+    // The endpoint answers 204 No Content, so every
+    // `specialRequestKeys.all`-prefixed entry refetches under its own
+    // filter/sort/page instead.
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: specialRequestKeys.all });
     },
