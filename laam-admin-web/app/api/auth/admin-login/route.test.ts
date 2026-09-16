@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   IP_MAX_FAILURES,
@@ -126,6 +126,19 @@ describe("POST /api/auth/admin-login", () => {
 
       expect(response.status).toBe(429);
     });
+
+    it("counts whitespace-only passwords as failures", async () => {
+      for (let i = 0; i < IP_MAX_FAILURES; i += 1) {
+        const response = await POST(loginRequest("   ", attackerIp));
+        expect(response.status).toBe(401);
+      }
+
+      const response = await POST(
+        loginRequest(process.env.ADMIN_PASSWORD, attackerIp),
+      );
+
+      expect(response.status).toBe(429);
+    });
   });
 
   it("returns 401 for an incorrect password", async () => {
@@ -164,5 +177,43 @@ describe("POST /api/auth/admin-login", () => {
     const cookie = response.cookies.get("lam_admin_session");
     expect(cookie).toBeDefined();
     expect(isAdminSessionValid(cookie?.value)).toBe(true);
+  });
+
+  describe("compares the password as an opaque string", () => {
+    it("returns 401 for the correct password followed by a space", async () => {
+      const response = await POST(
+        loginRequest(`${process.env.ADMIN_PASSWORD} `),
+      );
+
+      expect(response.status).toBe(401);
+      expect(response.cookies.get("lam_admin_session")).toBeUndefined();
+    });
+
+    describe("when ADMIN_PASSWORD has surrounding whitespace", () => {
+      const paddedAdminPassword = "  padded-admin-password  ";
+
+      beforeEach(() => {
+        vi.stubEnv("ADMIN_PASSWORD", paddedAdminPassword);
+      });
+
+      afterEach(() => {
+        vi.unstubAllEnvs();
+      });
+
+      it("accepts the exact configured value, whitespace included", async () => {
+        const response = await POST(loginRequest(paddedAdminPassword));
+
+        expect(response.status).toBe(200);
+        const cookie = response.cookies.get("lam_admin_session");
+        expect(isAdminSessionValid(cookie?.value)).toBe(true);
+      });
+
+      it("returns 401 for the value without its surrounding whitespace", async () => {
+        const response = await POST(loginRequest(paddedAdminPassword.trim()));
+
+        expect(response.status).toBe(401);
+        expect(response.cookies.get("lam_admin_session")).toBeUndefined();
+      });
+    });
   });
 });

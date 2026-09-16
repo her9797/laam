@@ -41,7 +41,9 @@ import {
   SidebarMenuSubItem,
   SidebarProvider,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
+import { toast } from "@/components/ui/toast";
 import { NotificationBells } from "@/features/notifications/NotificationBells";
 import { LanguageMenu } from "@/features/settings/LanguageMenu";
 import { ThemeMenu } from "@/features/settings/ThemeMenu";
@@ -134,35 +136,81 @@ function findActiveItem(pathname: string | null): NavItem | undefined {
   )[0];
 }
 
+function findGroupKey(item: NavItem | undefined): string | null {
+  if (!item) {
+    return null;
+  }
+  const group = NAV_GROUPS.find((navGroup) =>
+    navGroup.items.some((groupItem) => groupItem.href === item.href),
+  );
+  return group?.labelKey ?? null;
+}
+
 function AdminShellContent({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const pathname = usePathname();
   const router = useRouter();
+  const { isMobile, setOpenMobile } = useSidebar();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  // Manual toggle only, keyed by group labelKey; whether a dropdown is
-  // actually shown also factors in the current route below, so landing
-  // directly on one of its routes (e.g. from the dashboard's shortcut card)
-  // reveals it without requiring a click first.
-  const [toggledOpenGroups, setToggledOpenGroups] = useState<Record<string, boolean>>({});
   const activeItem = findActiveItem(pathname);
+  const activeGroupKey = findGroupKey(activeItem);
+  // The one expanded dropdown (by group labelKey), if any — opening another
+  // collapses it. It starts as the group holding the current route, so
+  // landing directly on one of its routes (e.g. from the dashboard's shortcut
+  // card) reveals it without requiring a click first, and every navigation
+  // resets it to that, so a dropdown toggled open on the previous screen
+  // doesn't linger. Stored with the pathname it applies to, which is how a
+  // navigation is noticed during render without an effect.
+  const [expandedGroup, setExpandedGroup] = useState({ pathname, labelKey: activeGroupKey });
+  if (expandedGroup.pathname !== pathname) {
+    setExpandedGroup({ pathname, labelKey: activeGroupKey });
+  }
 
   function isGroupOpen(group: NavGroup) {
-    const isOnGroupRoute = group.items.some((item) => activeItem?.href === item.href);
-    return toggledOpenGroups[group.labelKey] || isOnGroupRoute;
+    return expandedGroup.labelKey === group.labelKey;
   }
 
   function toggleGroup(group: NavGroup) {
-    setToggledOpenGroups((open) => ({ ...open, [group.labelKey]: !open[group.labelKey] }));
+    setExpandedGroup((expanded) => ({
+      ...expanded,
+      labelKey: expanded.labelKey === group.labelKey ? null : group.labelKey,
+    }));
+  }
+
+  // Choosing a menu entry collapses every dropdown except the one the entry
+  // itself sits in (`groupKey`, null for a top-level link) right away rather
+  // than after the navigation, which re-selecting the current screen never
+  // triggers. Only the mobile sheet is closed; the desktop sidebar keeps the
+  // expanded/collapsed state the operator chose.
+  function handleNavLinkClick(groupKey: string | null) {
+    setExpandedGroup((expanded) => ({ ...expanded, labelKey: groupKey }));
+    if (isMobile) {
+      setOpenMobile(false);
+    }
   }
 
   async function handleLogout() {
     setIsLoggingOut(true);
+    // Only a 2xx means the route actually cleared the session cookie. After a
+    // network error or non-2xx the cookie may still be set, so redirecting
+    // would merely look logged out while `/dashboard` still lets the operator
+    // straight back in — stay here, say so, and re-enable the button instead.
+    let isLoggedOut = false;
     try {
-      await fetch("/api/auth/admin-logout", { method: "POST" });
-    } finally {
-      router.replace("/login");
-      router.refresh();
+      const response = await fetch("/api/auth/admin-logout", { method: "POST" });
+      isLoggedOut = response.ok;
+    } catch {
+      // A network failure is handled below exactly like a non-2xx response.
     }
+
+    if (!isLoggedOut) {
+      toast.add({ title: t("logoutFailed") });
+      setIsLoggingOut(false);
+      return;
+    }
+
+    router.replace("/login");
+    router.refresh();
   }
 
   function renderNavItem(item: NavItem) {
@@ -170,7 +218,11 @@ function AdminShellContent({ children }: { children: ReactNode }) {
     const isActive = activeItem?.href === item.href;
     return (
       <SidebarMenuItem key={item.href}>
-        <SidebarMenuButton isActive={isActive} render={<Link href={item.href} />}>
+        <SidebarMenuButton
+          isActive={isActive}
+          render={<Link href={item.href} />}
+          onClick={() => handleNavLinkClick(null)}
+        >
           <Icon className="size-4" />
           <span>{t(item.labelKey)}</span>
         </SidebarMenuButton>
@@ -179,7 +231,7 @@ function AdminShellContent({ children }: { children: ReactNode }) {
   }
 
   return (
-    <SidebarProvider>
+    <>
       <Sidebar collapsible="icon">
         <SidebarHeader>
           <span className="px-2 py-1 text-sm font-semibold text-sidebar-foreground">
@@ -215,7 +267,11 @@ function AdminShellContent({ children }: { children: ReactNode }) {
                               const isActive = activeItem?.href === item.href;
                               return (
                                 <SidebarMenuSubItem key={item.href}>
-                                  <SidebarMenuSubButton isActive={isActive} render={<Link href={item.href} />}>
+                                  <SidebarMenuSubButton
+                                    isActive={isActive}
+                                    render={<Link href={item.href} />}
+                                    onClick={() => handleNavLinkClick(group.labelKey)}
+                                  >
                                     <Icon className="size-4" />
                                     <span>{t(item.labelKey)}</span>
                                   </SidebarMenuSubButton>
@@ -276,14 +332,18 @@ function AdminShellContent({ children }: { children: ReactNode }) {
           {children}
         </main>
       </SidebarInset>
-    </SidebarProvider>
+    </>
   );
 }
 
 export function AdminShell({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
-      <AdminShellContent>{children}</AdminShellContent>
+      {/* Around the content rather than inside it, so the content can read
+          `useSidebar()` (to close the mobile sheet after choosing a link). */}
+      <SidebarProvider>
+        <AdminShellContent>{children}</AdminShellContent>
+      </SidebarProvider>
     </ThemeProvider>
   );
 }
