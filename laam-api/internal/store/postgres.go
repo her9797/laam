@@ -595,6 +595,9 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		}
 		categories = append(categories, item)
 	}
+	if err := categoriesRows.Err(); err != nil {
+		return lamdata.BootstrapData{}, err
+	}
 
 	menuRows, err := r.pool.Query(ctx, `SELECT id, category_id, COALESCE(badge, ''), COALESCE(badge_color, ''), name, description, price, COALESCE(toss_image_url, ''), is_visible, toss_labels, label_colors FROM menu_items ORDER BY sort_order, id`)
 	if err != nil {
@@ -618,6 +621,9 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		}
 		items = append(items, item)
 	}
+	if err := menuRows.Err(); err != nil {
+		return lamdata.BootstrapData{}, err
+	}
 
 	imageRows, err := r.pool.Query(ctx, `SELECT id, menu_item_id, filename, mime_type, size_bytes, is_primary, display_area, focus_x, focus_y, sort_order FROM menu_item_images ORDER BY menu_item_id, is_primary DESC, sort_order, id`)
 	if err != nil {
@@ -634,6 +640,9 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		}
 		image.ContentURL = fmt.Sprintf("/api/v1/menu-images/%s/content", image.ID)
 		imagesByMenuItem[menuItemID] = append(imagesByMenuItem[menuItemID], image)
+	}
+	if err := imageRows.Err(); err != nil {
+		return lamdata.BootstrapData{}, err
 	}
 
 	for index := range items {
@@ -728,6 +737,9 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		}
 		requestGuides = append(requestGuides, item)
 	}
+	if err := requestRows.Err(); err != nil {
+		return lamdata.BootstrapData{}, err
+	}
 
 	noticeRows, err := r.pool.Query(ctx, `SELECT id, text, is_visible FROM notices ORDER BY sort_order, id`)
 	if err != nil {
@@ -742,6 +754,9 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 			return lamdata.BootstrapData{}, err
 		}
 		notices = append(notices, item)
+	}
+	if err := noticeRows.Err(); err != nil {
+		return lamdata.BootstrapData{}, err
 	}
 
 	return lamdata.BootstrapData{
