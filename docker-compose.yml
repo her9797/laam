@@ -17,10 +17,10 @@ services:
       timeout: 5s
       retries: 20
 
-  lam-api:
+  laam-api:
     build:
-      context: ./lam-api
-    container_name: lam-api
+      context: ./laam-api
+    container_name: laam-api
     restart: unless-stopped
     depends_on:
       postgres:
@@ -51,56 +51,56 @@ services:
       # 아는 누구나 임의 테이블의 QR 서명을 위조해 손님 웹의 QR 게이트를 통과할 수
       # 있고, 빈 기본값을 두면 미설정 배포가 조용히 "모든 QR이 무효" 상태로 뜬다.
       # ADMIN_PASSWORD/SESSION_SECRET과 같은 이유로 required-variable 문법을 써서
-      # 미설정 시 즉시 실패하게 한다. lam-web에도 같은 변수를 같은 값으로 주입하며
-      # (아래 lam-web 서비스), 두 값이 다르면 발급된 QR이 전부 무효가 된다.
-      QR_SIGNING_SECRET: "${QR_SIGNING_SECRET:?QR_SIGNING_SECRET must be set and identical for lam-api and lam-web (no default; see README)}"
+      # 미설정 시 즉시 실패하게 한다. laam-web에도 같은 변수를 같은 값으로 주입하며
+      # (아래 laam-web 서비스), 두 값이 다르면 발급된 QR이 전부 무효가 된다.
+      QR_SIGNING_SECRET: "${QR_SIGNING_SECRET:?QR_SIGNING_SECRET must be set and identical for laam-api and laam-web (no default; see README)}"
       # QR에 인쇄되는 손님 웹 주소. 손님 휴대폰의 브라우저가 직접 여는 주소이므로
-      # Compose 내부 DNS 이름(http://lam-web:8080)을 쓰면 안 된다 — 컨테이너 밖에서는
-      # 풀리지 않아 스캔이 전부 실패한다(lam-admin-web의 API_BASE_URL 주석과 같은 함정).
-      # 기본값은 lam-web이 호스트에 게시된 주소이며, 배포 시에는 실제 도메인으로 덮어쓴다.
+      # Compose 내부 DNS 이름(http://laam-web:8080)을 쓰면 안 된다 — 컨테이너 밖에서는
+      # 풀리지 않아 스캔이 전부 실패한다(laam-admin-web의 API_BASE_URL 주석과 같은 함정).
+      # 기본값은 laam-web이 호스트에 게시된 주소이며, 배포 시에는 실제 도메인으로 덮어쓴다.
       CUSTOMER_WEB_BASE_URL: "${CUSTOMER_WEB_BASE_URL:-http://localhost:3000}"
     ports:
       - "9090:8080"
-    # lam-api의 런타임 이미지(gcr.io/distroless/base-debian12)에는 셸/curl/wget이 없어
-    # CMD-SHELL 기반 healthcheck를 구성할 수 없다. lam-web/lam-admin-web은 시작 순서만
+    # laam-api의 런타임 이미지(gcr.io/distroless/base-debian12)에는 셸/curl/wget이 없어
+    # CMD-SHELL 기반 healthcheck를 구성할 수 없다. laam-web/laam-admin-web은 시작 순서만
     # 보장받고(service_started), 준비 완료는 보장하지 않는다.
 
-  lam-web:
+  laam-web:
     build:
-      context: ./lam-web
-    container_name: lam-web
+      context: ./laam-web
+    container_name: laam-web
     restart: unless-stopped
     depends_on:
-      - lam-api
+      - laam-api
     environment:
       # 컨테이너 간 통신(서버 사이드 fetch)용 주소. Compose 내부 DNS 이름을 사용한다.
-      API_BASE_URL: "http://lam-api:8080"
+      API_BASE_URL: "http://laam-api:8080"
       STAFF_ENTRY_TOKEN: "${STAFF_ENTRY_TOKEN:-}"
       CUSTOMER_TEST_ENTRY_TOKEN: "${CUSTOMER_TEST_ENTRY_TOKEN:-}"
       PAYMENT_API_TOKEN: "${PAYMENT_API_TOKEN:-lam-payment-api-token}"
       NEXT_PUBLIC_TOSS_CLIENT_KEY: "${NEXT_PUBLIC_TOSS_CLIENT_KEY:-}"
-      # QR 진입(/qr/enter)의 서명 검증용. lam-api가 QR을 서명할 때 쓰는 값과
+      # QR 진입(/qr/enter)의 서명 검증용. laam-api가 QR을 서명할 때 쓰는 값과
       # 반드시 동일해야 하며, 다르거나 비어 있으면 스캔된 QR이 전부
       # /access-required로 튕긴다. 서버 전용 secret이라 NEXT_PUBLIC_으로 노출하지 않는다.
-      QR_SIGNING_SECRET: "${QR_SIGNING_SECRET:?QR_SIGNING_SECRET must be set and identical for lam-api and lam-web (no default; see README)}"
+      QR_SIGNING_SECRET: "${QR_SIGNING_SECRET:?QR_SIGNING_SECRET must be set and identical for laam-api and laam-web (no default; see README)}"
     ports:
       - "3000:8080"
 
-  lam-admin-web:
+  laam-admin-web:
     build:
-      context: ./lam-admin-web
-    container_name: lam-admin-web
+      context: ./laam-admin-web
+    container_name: laam-admin-web
     restart: unless-stopped
     depends_on:
-      - lam-api
+      - laam-api
     environment:
       # 컨테이너 간 통신(서버 사이드 fetch, /api/bootstrap·/api/admin/* BFF)용 주소.
       # 주의: 메뉴 이미지 contentUrl도 이 값을 그대로 사용해 절대경로로 만들어지므로,
       # 브라우저가 직접 이 주소로 이미지를 요청한다. Compose 내부 DNS 이름
-      # (http://lam-api:8080)은 컨테이너 사이에서만 풀리고 호스트의 브라우저에서는
+      # (http://laam-api:8080)은 컨테이너 사이에서만 풀리고 호스트의 브라우저에서는
       # 풀리지 않아 메뉴 이미지가 깨진다 — 알려진 제약이며 자세한 내용과 회피 방법은
       # 루트 README.md의 "Docker Compose 실행" 항목을 참고한다.
-      API_BASE_URL: "${API_BASE_URL:-http://lam-api:8080}"
+      API_BASE_URL: "${API_BASE_URL:-http://laam-api:8080}"
       ADMIN_API_TOKEN: "${ADMIN_API_TOKEN:-lam-admin-api-token}"
       # 로그인을 실제로 통과시키는 두 값에는 기본값을 두지 않는다. 기본값이 있으면
       # 환경변수를 설정하지 않은 배포가 커밋된 비밀번호로 조용히 로그인되므로,
