@@ -16,6 +16,7 @@ type TossCatalogItem struct {
 	Description string
 	ImageURL    string
 	Badge       string
+	Labels      []string
 	CategoryID  string
 	Price       int64
 	IsVisible   bool
@@ -130,6 +131,7 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 		}
 
 		price := formatWon(item.Price)
+		labels := coalesceCatalogLabels(item.Labels)
 		localMenuItemID := ""
 		tag, err := tx.Exec(ctx, `
 			UPDATE menu_items
@@ -139,9 +141,10 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 				is_visible = $5,
 				sort_order = $6,
 				toss_image_url = $7,
-				badge = COALESCE(NULLIF($8, ''), badge)
+				badge = COALESCE(NULLIF($8, ''), badge),
+				toss_labels = $9
 			WHERE toss_catalog_item_id = $1
-		`, item.ID, item.CategoryID, item.Name, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL), item.Badge)
+		`, item.ID, item.CategoryID, item.Name, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL), item.Badge, labels)
 		if err != nil {
 			return TossCatalogSyncResult{}, classifyError(err)
 		}
@@ -160,9 +163,10 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 					is_visible = $6,
 					sort_order = $7,
 					toss_image_url = $8,
-					badge = COALESCE(NULLIF($9, ''), badge)
+					badge = COALESCE(NULLIF($9, ''), badge),
+					toss_labels = $10
 				WHERE id = $1
-			`, localID, item.ID, item.CategoryID, item.Name, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL), item.Badge); err != nil {
+			`, localID, item.ID, item.CategoryID, item.Name, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL), item.Badge, labels); err != nil {
 				return TossCatalogSyncResult{}, classifyError(err)
 			}
 			localMenuItemID = localID
@@ -172,8 +176,8 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 			localMenuItemID = "toss-" + item.ID
 			if _, err := tx.Exec(ctx, `
 			INSERT INTO menu_items (
-				id, category_id, badge, name, description, price, is_visible, sort_order, toss_catalog_item_id, toss_image_url
-			) VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, $9, $10)
+				id, category_id, badge, name, description, price, is_visible, sort_order, toss_catalog_item_id, toss_image_url, toss_labels
+			) VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6, $7, $8, $9, $10, $11)
 			ON CONFLICT (id) DO UPDATE
 			SET category_id = EXCLUDED.category_id,
 				badge = COALESCE(EXCLUDED.badge, menu_items.badge),
@@ -182,8 +186,9 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 				is_visible = EXCLUDED.is_visible,
 				sort_order = EXCLUDED.sort_order,
 				toss_catalog_item_id = EXCLUDED.toss_catalog_item_id,
-				toss_image_url = EXCLUDED.toss_image_url
-		`, localMenuItemID, item.CategoryID, item.Badge, item.Name, strings.TrimSpace(item.Description), price, item.IsVisible, item.SortOrder, item.ID, strings.TrimSpace(item.ImageURL)); err != nil {
+				toss_image_url = EXCLUDED.toss_image_url,
+				toss_labels = EXCLUDED.toss_labels
+		`, localMenuItemID, item.CategoryID, item.Badge, item.Name, strings.TrimSpace(item.Description), price, item.IsVisible, item.SortOrder, item.ID, strings.TrimSpace(item.ImageURL), labels); err != nil {
 				return TossCatalogSyncResult{}, classifyError(err)
 			}
 			result.Created++
@@ -253,6 +258,16 @@ func syncTossCatalogOptions(ctx context.Context, tx pgx.Tx, menuItemID string, o
 		}
 	}
 	return nil
+}
+
+// coalesceCatalogLabels turns a nil slice into an empty one so pgx sends a
+// PostgreSQL empty array instead of NULL, matching toss_labels' NOT NULL
+// column.
+func coalesceCatalogLabels(labels []string) []string {
+	if labels == nil {
+		return []string{}
+	}
+	return labels
 }
 
 func normalizeCatalogItemName(value string) string {

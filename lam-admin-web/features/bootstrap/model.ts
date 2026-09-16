@@ -63,6 +63,15 @@ export type MenuItem = {
   isVisible: boolean;
   images?: MenuImage[];
   options?: MenuOption[];
+  labels?: MenuItemLabel[];
+};
+
+// `text`는 토스플레이스 카탈로그 라벨 그대로이며 동기화가 관리한다. `color`는
+// 운영자가 위치별로 지정하는 값으로, 동기화가 절대 건드리지 않는다
+// (lam-api의 `UpdateMenuItemLabelColors` 참고).
+export type MenuItemLabel = {
+  text: string;
+  color?: string;
 };
 
 export type NoticeItem = {

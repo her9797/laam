@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchJson } from "@/lib/api/fetch-json";
 
-import { getMenuItemRecipe, resyncCatalog, updateMenuItemRecipe } from "./api";
+import { getMenuItemRecipe, resyncCatalog, updateMenuItemLabelColors, updateMenuItemRecipe } from "./api";
 
 vi.mock("@/lib/api/fetch-json", () => ({ fetchJson: vi.fn() }));
 
@@ -51,6 +51,24 @@ describe("updateMenuItemRecipe", () => {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ingredients: "a", instructions: "b" }),
+    });
+  });
+});
+
+describe("updateMenuItemLabelColors", () => {
+  beforeEach(() => {
+    vi.mocked(fetchJson)
+      .mockReset()
+      .mockResolvedValue({ store: {}, categories: [], items: [], requestGuides: [], notices: [] });
+  });
+
+  it("PATCHes the admin menu item label-colors endpoint with a color per position", async () => {
+    await updateMenuItemLabelColors("menu-1", ["green", "amber"]);
+
+    expect(fetchJson).toHaveBeenCalledWith("/api/admin/menu-items/menu-1/label-colors", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ colors: ["green", "amber"] }),
     });
   });
 });

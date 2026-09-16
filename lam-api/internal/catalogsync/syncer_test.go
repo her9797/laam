@@ -58,6 +58,9 @@ func TestSyncMapsPOSCategoriesToCustomerCategories(t *testing.T) {
 	if got := repository.items[4].CategoryID; got != "signature" || repository.items[4].Badge != "추천" {
 		t.Fatalf("signature label mapping = %+v", repository.items[4])
 	}
+	if got := repository.items[4].Labels; len(got) != 2 || got[0] != "추천" || got[1] != "신규" {
+		t.Fatalf("signature labels = %+v, want [추천 신규]", got)
+	}
 }
 
 // blockingCatalogClient lets a test hold ListCatalogItems open until it
