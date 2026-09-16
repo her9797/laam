@@ -38,17 +38,17 @@ describe("special-requests api", () => {
     expect(specialRequests[0]).toHaveProperty("idealType");
   });
 
-  it("sends delete to the resource path and returns the refreshed list", async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify([]), { status: 200 }));
+  it("sends delete to the resource path and resolves on 204", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     global.fetch = fetchMock as unknown as typeof fetch;
 
-    const specialRequests = await deleteSpecialRequest("special-1");
+    const result = await deleteSpecialRequest("special-1");
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/admin/special-requests/special-1",
       expect.objectContaining({ method: "DELETE" }),
     );
-    expect(specialRequests).toEqual([]);
+    expect(result).toBeUndefined();
   });
 
   it("rejects with the upstream status when the request fails", async () => {

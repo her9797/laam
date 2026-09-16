@@ -1,5 +1,5 @@
 import type { AppData } from "@/features/bootstrap/model";
-import type { CustomerRequest } from "@/features/requests/model";
+import type { CustomerRequest, CustomerRequestPendingSummary } from "@/features/requests/model";
 
 /**
  * `laam-web`'s `song-requests-screen.tsx` (customer side, creates the
@@ -52,14 +52,11 @@ export type DashboardSummary = {
   noticeCount: number;
 };
 
-function countPending(requests: CustomerRequest[]): number {
-  return requests.filter((request) => request.status === "pending").length;
-}
-
 /**
  * Aggregates the dashboard's shortcut-card counts from the already-separate
- * feature queries (`AppData` from `bootstrapKeys.all`, `CustomerRequest[]`
- * from `requestsKeys.all`, the `special_requests` total from
+ * feature queries (`AppData` from `bootstrapKeys.all`, the pending
+ * general/song counts from `requestsKeys.pendingSummary` (counted
+ * server-side with the same `[노래 신청]` prefix rule as `isSongRequest`), the `special_requests` total from
  * `specialRequestKeys.count`, and the `payment_orders` total from
  * `orderKeys.count`). Pure and synchronous — callers own fetching and
  * caching; this only ever combines already-loaded data, so it never merges
@@ -74,13 +71,13 @@ function countPending(requests: CustomerRequest[]): number {
  */
 export function buildDashboardSummary(
   appData: AppData,
-  requests: CustomerRequest[],
+  pendingSummary: CustomerRequestPendingSummary,
   specialRequestCount: number,
   orderCount: number,
 ): DashboardSummary {
   return {
-    pendingGeneralRequestCount: countPending(selectGeneralRequests(requests)),
-    pendingSongRequestCount: countPending(selectSongRequests(requests)),
+    pendingGeneralRequestCount: pendingSummary.pendingGeneralCount,
+    pendingSongRequestCount: pendingSummary.pendingSongCount,
     specialRequestCount,
     orderCount,
     menuItemCount: appData.items.length,

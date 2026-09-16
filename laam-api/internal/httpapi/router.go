@@ -543,13 +543,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 				return
 			}
 
-			requests, err := repository.ListCustomerRequests(r.Context())
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-
-			writeJSON(w, http.StatusOK, requests)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
@@ -770,6 +764,27 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 		writeJSON(w, http.StatusOK, stats)
 	}))
 
+	// Registered as an exact path so it wins over the "/customer-requests/"
+	// subtree handler below, which only serves per-id DELETE/PATCH.
+	mux.HandleFunc("/api/v1/admin/customer-requests/pending-summary", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
+		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
+			return
+		}
+
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowed(w)
+			return
+		}
+
+		summary, err := repository.GetCustomerRequestPendingSummary(r.Context(), pendingSummaryItemLimit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, summary)
+	}))
+
 	mux.HandleFunc("/api/v1/admin/customer-requests/", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
 		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
 			return
@@ -787,13 +802,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 				return
 			}
 
-			requests, err := repository.ListCustomerRequests(r.Context())
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-
-			writeJSON(w, http.StatusOK, requests)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
@@ -819,13 +828,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 			return
 		}
 
-		requests, err := repository.ListCustomerRequests(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, requests)
+		w.WriteHeader(http.StatusNoContent)
 	}))
 
 	mux.HandleFunc("/api/v1/admin/special-requests/", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
@@ -849,13 +852,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 			return
 		}
 
-		requests, err := repository.ListSpecialRequests(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, requests)
+		w.WriteHeader(http.StatusNoContent)
 	}))
 
 	mux.HandleFunc("/api/v1/admin/request-guides", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
@@ -1115,6 +1112,11 @@ func parseStatusResourceID(path string, prefix string) (string, bool) {
 
 	return resourceID, true
 }
+
+// pendingSummaryItemLimit caps the pending rows the notification panel
+// receives. It stays below store's bulk status update limit (200) so the
+// panel's "mark all" ids always fit in one bulk request.
+const pendingSummaryItemLimit = 100
 
 func storeInputSpecialRequest(payload createSpecialRequestRequest) lamdata.SpecialRequest {
 	return lamdata.SpecialRequest{

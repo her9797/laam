@@ -43,12 +43,11 @@ export function fetchSpecialRequestsPage(
 
 /**
  * `laam-api`'s `DELETE /api/v1/admin/special-requests/{id}` (proxied here as
- * `/api/admin/special-requests/{id}`) returns the full, refreshed list in
- * the same response — so callers can write that straight into the
- * `specialRequestKeys.all` cache entry instead of a second round trip.
+ * `/api/admin/special-requests/{id}`) answers 204 No Content; callers
+ * invalidate `specialRequestKeys.all` to refetch.
  */
-export function deleteSpecialRequest(id: string): Promise<SpecialRequest[]> {
-  return fetchJson<SpecialRequest[]>(`${SPECIAL_REQUESTS_PATH}/${id}`, {
+export function deleteSpecialRequest(id: string): Promise<void> {
+  return fetchJson<void>(`${SPECIAL_REQUESTS_PATH}/${id}`, {
     method: "DELETE",
   });
 }

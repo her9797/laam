@@ -122,10 +122,14 @@ func TestRouter_CustomerRequests_CreateAndAdminFlow(t *testing.T) {
 	t.Run("status update via /status suffix", func(t *testing.T) {
 		statusBody, _ := json.Marshal(map[string]string{"status": "completed"})
 		rec := doRequest(t, handler, http.MethodPatch, "/api/v1/admin/customer-requests/"+requestID+"/status", statusBody, adminHeaders())
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+		}
+		if rec.Body.Len() != 0 {
+			t.Errorf("body = %q, want empty", rec.Body.String())
 		}
 
+		rec = doRequest(t, handler, http.MethodGet, "/api/v1/admin/customer-requests", nil, adminHeaders())
 		var updated []struct {
 			ID     string `json:"id"`
 			Status string `json:"status"`
@@ -148,8 +152,11 @@ func TestRouter_CustomerRequests_CreateAndAdminFlow(t *testing.T) {
 
 	t.Run("delete", func(t *testing.T) {
 		rec := doRequest(t, handler, http.MethodDelete, "/api/v1/admin/customer-requests/"+requestID, nil, adminHeaders())
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+		}
+		if rec.Body.Len() != 0 {
+			t.Errorf("body = %q, want empty", rec.Body.String())
 		}
 	})
 }
@@ -197,13 +204,17 @@ func TestRouter_CustomerRequests_BulkStatusUpdate(t *testing.T) {
 		}
 	})
 
-	t.Run("bulk update ignores an unknown id and returns the refreshed list", func(t *testing.T) {
+	t.Run("bulk update ignores an unknown id and returns no content", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]any{"ids": []string{firstID, secondID, "missing"}, "status": "checked"})
 		rec := doRequest(t, handler, http.MethodPatch, "/api/v1/admin/customer-requests", body, adminHeaders())
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+		}
+		if rec.Body.Len() != 0 {
+			t.Errorf("body = %q, want empty", rec.Body.String())
 		}
 
+		rec = doRequest(t, handler, http.MethodGet, "/api/v1/admin/customer-requests", nil, adminHeaders())
 		var updated []struct {
 			ID     string `json:"id"`
 			Status string `json:"status"`

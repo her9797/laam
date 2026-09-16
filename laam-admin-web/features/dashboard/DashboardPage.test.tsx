@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AppData } from "@/features/bootstrap/model";
 import type { OrderPageResult } from "@/features/orders/model";
-import type { CustomerRequest } from "@/features/requests/model";
+import type { CustomerRequestPendingSummary } from "@/features/requests/model";
 
 const useBootstrapQueryMock = vi.fn();
-const useCustomerRequestsQueryMock = vi.fn();
+const useCustomerRequestPendingSummaryQueryMock = vi.fn();
 const useSpecialRequestCountQueryMock = vi.fn();
 const useOrderCountQueryMock = vi.fn();
 const bootstrapRefetchMock = vi.fn();
@@ -18,7 +18,7 @@ vi.mock("@/features/bootstrap/queries", () => ({
   useBootstrapQuery: () => useBootstrapQueryMock(),
 }));
 vi.mock("@/features/requests/queries", () => ({
-  useCustomerRequestsQuery: () => useCustomerRequestsQueryMock(),
+  useCustomerRequestPendingSummaryQuery: () => useCustomerRequestPendingSummaryQueryMock(),
 }));
 vi.mock("@/features/special-requests/queries", () => ({
   useSpecialRequestCountQuery: () => useSpecialRequestCountQueryMock(),
@@ -47,15 +47,25 @@ const NON_EMPTY_APP_DATA: AppData = {
   notices: [{ id: "n1", text: "이벤트 안내", isVisible: true }],
 };
 
-const NON_EMPTY_REQUESTS: CustomerRequest[] = [
-  {
-    id: "r1",
-    tableNumber: "1",
-    text: "물 좀 주세요",
-    status: "pending",
-    createdAt: "2026-09-03T10:00:00Z",
-  },
-];
+const NON_EMPTY_REQUESTS: CustomerRequestPendingSummary = {
+  pendingGeneralCount: 1,
+  pendingSongCount: 0,
+  items: [
+    {
+      id: "r1",
+      tableNumber: "1",
+      text: "물 좀 주세요",
+      status: "pending",
+      createdAt: "2026-09-03T10:00:00Z",
+    },
+  ],
+};
+
+const EMPTY_REQUESTS: CustomerRequestPendingSummary = {
+  pendingGeneralCount: 0,
+  pendingSongCount: 0,
+  items: [],
+};
 
 const EMPTY_APP_DATA: AppData = {
   ...NON_EMPTY_APP_DATA,
@@ -84,7 +94,7 @@ function defaultBootstrapResult() {
 }
 
 function mockRequests(overrides: Partial<ReturnType<typeof defaultRequestsResult>> = {}) {
-  useCustomerRequestsQueryMock.mockReturnValue({ ...defaultRequestsResult(), ...overrides });
+  useCustomerRequestPendingSummaryQueryMock.mockReturnValue({ ...defaultRequestsResult(), ...overrides });
 }
 
 function defaultRequestsResult() {
@@ -179,7 +189,7 @@ describe("DashboardPage", () => {
 
   it("shows the empty state when every aggregate count is genuinely zero", () => {
     mockBootstrap({ data: EMPTY_APP_DATA });
-    mockRequests({ data: [] });
+    mockRequests({ data: EMPTY_REQUESTS });
     mockSpecialRequestCount({ data: EMPTY_SPECIAL_REQUEST_COUNT });
     mockOrderCount({ data: EMPTY_ORDER_COUNT });
 

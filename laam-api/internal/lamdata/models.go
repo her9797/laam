@@ -222,6 +222,15 @@ type CustomerRequestPage struct {
 	Total    int               `json:"total"`
 }
 
+// CustomerRequestPendingSummary backs the admin notification bell and
+// dashboard: pending counts are over every pending row, while Items holds
+// only the newest pending rows up to the server-side limit.
+type CustomerRequestPendingSummary struct {
+	PendingGeneralCount int               `json:"pendingGeneralCount"`
+	PendingSongCount    int               `json:"pendingSongCount"`
+	Items               []CustomerRequest `json:"items"`
+}
+
 type SpecialRequestPage struct {
 	Items    []SpecialRequest `json:"items"`
 	Page     int              `json:"page"`

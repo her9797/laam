@@ -36,7 +36,7 @@ vi.mock(
   }),
 );
 
-// `NotificationBells` calls `useCustomerRequestsQuery()` (a real TanStack
+// `NotificationBells` calls `useCustomerRequestPendingSummaryQuery()` (a real TanStack
 // Query hook), which throws without a `QueryClientProvider` ancestor — one
 // this file's many `render(<AdminShell>...)` call sites don't have, since
 // nothing else here needs Query. Its own behavior (badge counts, panels,

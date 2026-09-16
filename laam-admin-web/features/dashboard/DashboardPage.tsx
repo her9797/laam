@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { EmptyState, ErrorState, LoadingState } from "@/components/states/PageStates";
 import { useBootstrapQuery } from "@/features/bootstrap/queries";
 import { useOrderCountQuery } from "@/features/orders/queries";
-import { useCustomerRequestsQuery } from "@/features/requests/queries";
+import { useCustomerRequestPendingSummaryQuery } from "@/features/requests/queries";
 import { useSpecialRequestCountQuery } from "@/features/special-requests/queries";
 
 import { buildDashboardSummary, type DashboardSummary } from "./summary";
@@ -79,7 +79,7 @@ function buildCards(summary: DashboardSummary): ShortcutCard[] {
 export function DashboardPage() {
   const { t } = useTranslation("dashboard");
   const bootstrapQuery = useBootstrapQuery();
-  const requestsQuery = useCustomerRequestsQuery();
+  const requestsQuery = useCustomerRequestPendingSummaryQuery();
   const specialRequestCountQuery = useSpecialRequestCountQuery();
   const orderCountQuery = useOrderCountQuery();
 
