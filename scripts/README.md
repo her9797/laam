@@ -7,7 +7,7 @@
 로컬에서 쓰려면:
 
 1. 테스트할 `payment_orders` 행을 하나 준비한다(실제 손님 주문 생성 플로우를 타거나, 로컬 Postgres에 직접 INSERT).
-2. 그 주문에 쓰인 `lam-api` 인스턴스와 **같은** `TOSS_PLACE_WEBHOOK_SECRET` 값을 환경변수로 넘겨 스크립트를 실행한다. Docker Compose로 띄웠다면 저장소 루트 `.env`의 값, `go run`으로 직접 띄웠다면 `lam-api/.env`(또는 `.env.local`)의 값이다(`lam-api`가 시작 시 자동으로 읽는다). 둘은 서로 다른 값일 수 있다.
+2. 그 주문에 쓰인 `lam-api` 인스턴스와 **같은** `TOSS_PLACE_WEBHOOK_SECRET` 값을 환경변수로 넘겨 스크립트를 실행한다. Docker Compose로 띄웠다면 저장소 루트 `.env`의 값, `go run`으로 직접 띄웠다면 `laam-api/.env`(또는 `.env.local`)의 값이다(`lam-api`가 시작 시 자동으로 읽는다). 둘은 서로 다른 값일 수 있다.
 3. 응답이 `200`이고 주문의 `status`가 바뀌었는지 확인한다(REST로는 관리자 주문 조회, 직접 확인하려면 `payment_orders` 테이블 조회).
 
 ## deploy-cloud-run.sh
@@ -117,7 +117,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST "$API/api/v1/webhooks/tossplace
 # 올바른 서명이면 200이어야 한다. 200이 나오면 Secret Manager의
 # lam-toss-place-webhook-secret이 실제로 주입됐고 HMAC 검증이 통과한다는 뜻이다.
 # 존재하지 않는 orderKey를 쓰므로 실제 주문 데이터는 건드리지 않는다.
-SECRET=$(grep '^TOSS_PLACE_WEBHOOK_SECRET=' ../lam-api/.env | cut -d= -f2- | tr -d '\r\n')
+SECRET=$(grep '^TOSS_PLACE_WEBHOOK_SECRET=' ../laam-api/.env | cut -d= -f2- | tr -d '\r\n')
 TS=$(date +%s)000
 BODY='{"id":"deploy-check","type":"order.order.completed.v1","data":{"orderKey":"nonexistent-deploy-check"}}'
 SIG="v1=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/.*= //')"
@@ -129,7 +129,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST "$API/api/v1/webhooks/tossplace
 
 ### 알려진 문제
 
-- **`lam-api` 배포는 됐는데 헬스체크 타임아웃으로 실패하는 경우**: `lam-api`는 HTTP 서버를 띄우기 전에 DB 커넥션과 스키마 마이그레이션을 먼저 수행한다([lam-api/cmd/server/main.go](../lam-api/cmd/server/main.go)). 이 단계가 실패하면 포트 리슨 전에 프로세스가 죽어서 Cloud Run이 "포트 리슨 실패"로 보고한다. 아래로 실제 원인(대부분 `lam-database-url` 시크릿의 DB 비밀번호 불일치)을 확인한다.
+- **`lam-api` 배포는 됐는데 헬스체크 타임아웃으로 실패하는 경우**: `lam-api`는 HTTP 서버를 띄우기 전에 DB 커넥션과 스키마 마이그레이션을 먼저 수행한다([laam-api/cmd/server/main.go](../laam-api/cmd/server/main.go)). 이 단계가 실패하면 포트 리슨 전에 프로세스가 죽어서 Cloud Run이 "포트 리슨 실패"로 보고한다. 아래로 실제 원인(대부분 `lam-database-url` 시크릿의 DB 비밀번호 불일치)을 확인한다.
   ```bash
   gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="lam-api"' --project=lam-production --limit=50 --format='value(timestamp,severity,textPayload)' --order=asc
   ```
@@ -139,7 +139,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST "$API/api/v1/webhooks/tossplace
   gcloud secrets get-iam-policy <시크릿 이름> --project=lam-production
   ```
 
-- **`gcloud crashed (PermissionError): '.next\dev\lock'`로 소스 업로드가 실패하는 경우**: `gcloud run deploy --source`는 `.dockerignore`가 아니라 `.gcloudignore`를 본다. `lam-admin-web/.gcloudignore`가 빠지거나 잘못되면 로컬 `.next`(1GB 이상)와 `node_modules`까지 업로드되고, 로컬 dev 서버가 떠 있으면 잠긴 파일에서 깨진다. `.gcloudignore`가 있는지 확인하고, 로컬에서 `next dev`나 `next start`를 띄워뒀다면 종료한 뒤 다시 배포한다. `.dockerignore`와 `.gcloudignore`는 같은 의도를 유지해야 하므로 한쪽만 고치지 않는다.
+- **`gcloud crashed (PermissionError): '.next\dev\lock'`로 소스 업로드가 실패하는 경우**: `gcloud run deploy --source`는 `.dockerignore`가 아니라 `.gcloudignore`를 본다. `laam-admin-web/.gcloudignore`가 빠지거나 잘못되면 로컬 `.next`(1GB 이상)와 `node_modules`까지 업로드되고, 로컬 dev 서버가 떠 있으면 잠긴 파일에서 깨진다. `.gcloudignore`가 있는지 확인하고, 로컬에서 `next dev`나 `next start`를 띄워뒀다면 종료한 뒤 다시 배포한다. `.dockerignore`와 `.gcloudignore`는 같은 의도를 유지해야 하므로 한쪽만 고치지 않는다.
 
 - **`Setting IAM policy failed ... --member=allUsers --role=roles/run.invoker` 경고**: 조직 정책이 `allUsers` 부여를 막을 때 나온다. 이미 공개로 배포된 기존 서비스는 권한이 유지되므로 이 경고만으로는 장애가 아니며, 배포 후 확인 절차에서 외부 요청이 200으로 응답하면 정상이다. 다만 **새 서비스를 처음 배포할 때는 실제로 공개되지 않으므로** 별도로 권한을 부여해야 한다.
 

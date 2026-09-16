@@ -58,6 +58,9 @@ case "${OSTYPE:-}" in
     ;;
 esac
 
+# 소스 디렉터리는 laam-api/laam-web/laam-admin-web로 이름이 바뀌었지만, 아래
+# GCP 프로젝트·Cloud Run 서비스명·Secret Manager 시크릿명은 아직 lam-* 그대로다
+# (저장소 코드 리네임과 별개로, 실제 운영 리소스 리네임은 뒤에 따로 진행한다).
 PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-lam-production}"
 API_REGION="${CLOUD_RUN_API_REGION:-asia-northeast3}"
 WEB_REGION="${CLOUD_RUN_WEB_REGION:-asia-northeast1}"
@@ -95,7 +98,7 @@ deploy_api() {
 
   "$GCLOUD" run deploy lam-api \
     --project="$PROJECT_ID" \
-    --source="$ROOT_DIR/lam-api" \
+    --source="$ROOT_DIR/laam-api" \
     --region="$API_REGION" \
     --service-account="$CLOUD_RUN_SERVICE_ACCOUNT" \
     --allow-unauthenticated \
@@ -124,7 +127,7 @@ deploy_web() {
   local api_base_url="$1"
   "$GCLOUD" run deploy lam-web \
     --project="$PROJECT_ID" \
-    --source="$ROOT_DIR/lam-web" \
+    --source="$ROOT_DIR/laam-web" \
     --region="$WEB_REGION" \
     --service-account="$CLOUD_RUN_SERVICE_ACCOUNT" \
     --allow-unauthenticated \
@@ -172,7 +175,7 @@ ensure_web_domain_mapping() {
   esac
 }
 
-# NEXT_PUBLIC_* 값은 lam-admin-web/Dockerfile의 ARG로 받아 `npm run build`
+# NEXT_PUBLIC_* 값은 laam-admin-web/Dockerfile의 ARG로 받아 `npm run build`
 # 시점에 클라이언트 번들에 그대로 박힌다 — 컨테이너 실행 시점 환경변수가 아니므로
 # --set-secrets로는 넣을 수 없고, --set-build-env-vars는 리터럴 값만 받는다.
 # 값 자체는 비밀이 아니다 — anon/publishable key는 브라우저에 공개되도록
@@ -188,7 +191,7 @@ deploy_admin() {
   local api_base_url="$1"
   "$GCLOUD" run deploy lam-admin-web \
     --project="$PROJECT_ID" \
-    --source="$ROOT_DIR/lam-admin-web" \
+    --source="$ROOT_DIR/laam-admin-web" \
     --region="$ADMIN_WEB_REGION" \
     --service-account="$CLOUD_RUN_SERVICE_ACCOUNT" \
     --allow-unauthenticated \

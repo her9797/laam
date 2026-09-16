@@ -6,27 +6,27 @@
 .env.local
 
 # Web
-lam-web/node_modules
-lam-web/.next
-lam-web/out
-lam-web/*.tsbuildinfo
+laam-web/node_modules
+laam-web/.next
+laam-web/out
+laam-web/*.tsbuildinfo
 
 # Admin Web
-lam-admin-web/node_modules
-lam-admin-web/.next
-lam-admin-web/out
-lam-admin-web/test-results
-lam-admin-web/playwright-report
-lam-admin-web/.env
-lam-admin-web/.env.local
-lam-admin-web/*.tsbuildinfo
+laam-admin-web/node_modules
+laam-admin-web/.next
+laam-admin-web/out
+laam-admin-web/test-results
+laam-admin-web/playwright-report
+laam-admin-web/.env
+laam-admin-web/.env.local
+laam-admin-web/*.tsbuildinfo
 
 # API
-lam-api/bin
-lam-api/.env
-lam-api/.env.local
+laam-api/bin
+laam-api/.env
+laam-api/.env.local
 
 # Toss POS worker plugin
-lam-pos-plugin/node_modules
-lam-pos-plugin/dist
-lam-pos-plugin/*.zip
+laam-pos-plugin/node_modules
+laam-pos-plugin/dist
+laam-pos-plugin/*.zip
