@@ -61,7 +61,7 @@ func Load() Config {
 
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		databaseURL = "postgres://lam:lam@127.0.0.1:5432/lam?sslmode=disable"
+		databaseURL = "postgres://laam:laam@127.0.0.1:5432/laam?sslmode=disable"
 	}
 
 	allowedOrigin := os.Getenv("ALLOWED_ORIGIN")
@@ -71,11 +71,11 @@ func Load() Config {
 
 	adminAPIToken := os.Getenv("ADMIN_API_TOKEN")
 	if adminAPIToken == "" {
-		adminAPIToken = "lam-admin-api-token"
+		adminAPIToken = "laam-admin-api-token"
 	}
 	paymentAPIToken := os.Getenv("PAYMENT_API_TOKEN")
 	if paymentAPIToken == "" {
-		paymentAPIToken = "lam-payment-api-token"
+		paymentAPIToken = "laam-payment-api-token"
 	}
 	tossPaymentsAPIBaseURL := os.Getenv("TOSS_PAYMENTS_API_BASE_URL")
 	if tossPaymentsAPIBaseURL == "" {

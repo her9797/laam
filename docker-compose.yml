@@ -1,18 +1,18 @@
 services:
   postgres:
     image: postgres:18.4
-    container_name: lam-postgres
+    container_name: laam-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: lam
-      POSTGRES_USER: lam
-      POSTGRES_PASSWORD: lam
+      POSTGRES_DB: laam
+      POSTGRES_USER: laam
+      POSTGRES_PASSWORD: laam
     ports:
       - "5432:5432"
     volumes:
-      - lam-postgres-data:/var/lib/postgresql
+      - laam-postgres-data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lam -d lam"]
+      test: ["CMD-SHELL", "pg_isready -U laam -d laam"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -27,10 +27,10 @@ services:
         condition: service_healthy
     environment:
       APP_ADDR: ":8080"
-      DATABASE_URL: "${DATABASE_URL:-postgres://lam:lam@postgres:5432/lam?sslmode=disable}"
+      DATABASE_URL: "${DATABASE_URL:-postgres://laam:laam@postgres:5432/laam?sslmode=disable}"
       ALLOWED_ORIGIN: "*"
-      ADMIN_API_TOKEN: "${ADMIN_API_TOKEN:-lam-admin-api-token}"
-      PAYMENT_API_TOKEN: "${PAYMENT_API_TOKEN:-lam-payment-api-token}"
+      ADMIN_API_TOKEN: "${ADMIN_API_TOKEN:-laam-admin-api-token}"
+      PAYMENT_API_TOKEN: "${PAYMENT_API_TOKEN:-laam-payment-api-token}"
       TOSS_PAYMENTS_SECRET_KEY: "${TOSS_PAYMENTS_SECRET_KEY:-}"
       TOSS_PLACE_ACCESS_KEY: "${TOSS_PLACE_ACCESS_KEY:-}"
       TOSS_PLACE_SECRET_KEY: "${TOSS_PLACE_SECRET_KEY:-}"
@@ -77,7 +77,7 @@ services:
       API_BASE_URL: "http://laam-api:8080"
       STAFF_ENTRY_TOKEN: "${STAFF_ENTRY_TOKEN:-}"
       CUSTOMER_TEST_ENTRY_TOKEN: "${CUSTOMER_TEST_ENTRY_TOKEN:-}"
-      PAYMENT_API_TOKEN: "${PAYMENT_API_TOKEN:-lam-payment-api-token}"
+      PAYMENT_API_TOKEN: "${PAYMENT_API_TOKEN:-laam-payment-api-token}"
       NEXT_PUBLIC_TOSS_CLIENT_KEY: "${NEXT_PUBLIC_TOSS_CLIENT_KEY:-}"
       # QR 진입(/qr/enter)의 서명 검증용. laam-api가 QR을 서명할 때 쓰는 값과
       # 반드시 동일해야 하며, 다르거나 비어 있으면 스캔된 QR이 전부
@@ -101,7 +101,7 @@ services:
       # 풀리지 않아 메뉴 이미지가 깨진다 — 알려진 제약이며 자세한 내용과 회피 방법은
       # 루트 README.md의 "Docker Compose 실행" 항목을 참고한다.
       API_BASE_URL: "${API_BASE_URL:-http://laam-api:8080}"
-      ADMIN_API_TOKEN: "${ADMIN_API_TOKEN:-lam-admin-api-token}"
+      ADMIN_API_TOKEN: "${ADMIN_API_TOKEN:-laam-admin-api-token}"
       # 로그인을 실제로 통과시키는 두 값에는 기본값을 두지 않는다. 기본값이 있으면
       # 환경변수를 설정하지 않은 배포가 커밋된 비밀번호로 조용히 로그인되므로,
       # Compose의 required-variable 문법으로 미설정 시 즉시 실패하게 한다.
@@ -111,4 +111,4 @@ services:
       - "3001:8080"
 
 volumes:
-  lam-postgres-data:
+  laam-postgres-data:
