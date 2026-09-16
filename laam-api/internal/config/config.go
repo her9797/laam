@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -44,7 +45,17 @@ type Config struct {
 	// default, like TossPlaceSecretKey, since local/dev environments may not
 	// have webhooks configured.
 	TossPlaceWebhookSecret string
+	// DBStatementTimeout is applied as Postgres statement_timeout on every
+	// pooled connection (DB_STATEMENT_TIMEOUT, Go duration syntax such as
+	// "15s"). "0" disables the limit; unset, invalid, or negative values
+	// fall back to defaultDBStatementTimeout.
+	DBStatementTimeout time.Duration
 }
+
+// defaultDBStatementTimeout bounds a single SQL statement. It stays well
+// under the HTTP server's WriteTimeout and leaves each statement of the 30s
+// catalog sync and an 8MB image insert ample headroom.
+const defaultDBStatementTimeout = 15 * time.Second
 
 func Load() Config {
 	loadLocalEnv()
@@ -94,6 +105,13 @@ func Load() Config {
 		youTubeAPIBaseURL = "https://www.googleapis.com/youtube/v3"
 	}
 
+	dbStatementTimeout := defaultDBStatementTimeout
+	if raw := strings.TrimSpace(os.Getenv("DB_STATEMENT_TIMEOUT")); raw != "" {
+		if parsed, err := time.ParseDuration(raw); err == nil && parsed >= 0 {
+			dbStatementTimeout = parsed
+		}
+	}
+
 	return Config{
 		Addr:                   addr,
 		DatabaseURL:            databaseURL,
@@ -115,6 +133,7 @@ func Load() Config {
 		QRSigningSecret:        os.Getenv("QR_SIGNING_SECRET"),
 		CustomerWebBaseURL:     os.Getenv("CUSTOMER_WEB_BASE_URL"),
 		TossPlaceWebhookSecret: os.Getenv("TOSS_PLACE_WEBHOOK_SECRET"),
+		DBStatementTimeout:     dbStatementTimeout,
 	}
 }
 

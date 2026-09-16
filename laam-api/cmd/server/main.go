@@ -11,7 +11,6 @@ import (
 	"github.com/her9797/laam/laam-api/internal/httpapi"
 	"github.com/her9797/laam/laam-api/internal/store"
 	"github.com/her9797/laam/laam-api/internal/tossplace"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -20,7 +19,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	pool, err := store.NewPool(ctx, cfg.DatabaseURL, cfg.DBStatementTimeout)
 	if err != nil {
 		log.Fatalf("unable to create postgres pool: %v", err)
 	}
@@ -35,15 +34,27 @@ func main() {
 	}
 	syncer := startTossCatalogSync(repository, cfg)
 
-	server := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           httpapi.NewMux(repository, cfg, syncer),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	server := newHTTPServer(cfg.Addr, httpapi.NewMux(repository, cfg, syncer))
 
 	log.Printf("laam-api listening on %s", cfg.Addr)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
+	}
+}
+
+// newHTTPServer bounds each connection so slow or stalled clients cannot
+// hold server resources indefinitely. ReadTimeout covers the whole request
+// including an 8MB admin image upload body. WriteTimeout is counted from the
+// end of the request headers, so it must exceed ReadTimeout plus the longest
+// handler (the manual catalog sync runs under a 30s context).
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 }
 
