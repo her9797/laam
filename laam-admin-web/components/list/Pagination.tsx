@@ -75,10 +75,12 @@ export function Pagination({
       {/* 320px of buttons still exceeds the ~288px of content width a 320px
           phone leaves (`body`'s `min-w-80`), so the scroll affordance stays
           as the narrow-screen fallback rather than clipping a button out of
-          reach. */}
+          reach. `overflow-x: auto` alone computes `overflow-y` to `auto`
+          too, and a pressed button's 1px `translate-y-px` would then flash
+          a vertical scrollbar, so the y axis is pinned to hidden. */}
       <nav
         aria-label={t("listPageNavigation")}
-        className="flex max-w-full items-center gap-1 overflow-x-auto"
+        className="flex max-w-full items-center gap-1 overflow-x-auto overflow-y-hidden"
       >
         <Button
           type="button"
