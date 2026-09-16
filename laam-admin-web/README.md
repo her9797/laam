@@ -60,9 +60,9 @@ docker build -t laam-admin-web:local .
 ```bash
 docker run --rm -p 3001:8080 \
   -e API_BASE_URL=http://host.docker.internal:9090 \
-  -e ADMIN_API_TOKEN=lam-admin-api-token \
-  -e ADMIN_PASSWORD=lam-admin-dev-password \
-  -e SESSION_SECRET=lam-admin-dev-session-secret-change-me \
+  -e ADMIN_API_TOKEN=laam-admin-api-token \
+  -e ADMIN_PASSWORD=laam-admin-dev-password \
+  -e SESSION_SECRET=laam-admin-dev-session-secret-change-me \
   laam-admin-web:local
 ```
 

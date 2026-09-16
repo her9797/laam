@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestLoad_ReadsRepositoryDotEnvWhenRunningFromLamAPI(t *testing.T) {
+func TestLoad_ReadsRepositoryDotEnvWhenRunningFromLaamAPI(t *testing.T) {
 	repositoryDir := t.TempDir()
 	apiDir := filepath.Join(repositoryDir, "laam-api")
 	if err := os.Mkdir(apiDir, 0o755); err != nil {
@@ -110,14 +110,14 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Addr != ":9090" {
 		t.Errorf("Addr = %q, want %q", cfg.Addr, ":9090")
 	}
-	if cfg.DatabaseURL != "postgres://lam:lam@127.0.0.1:5432/lam?sslmode=disable" {
+	if cfg.DatabaseURL != "postgres://laam:laam@127.0.0.1:5432/laam?sslmode=disable" {
 		t.Errorf("DatabaseURL = %q, want default local postgres URL", cfg.DatabaseURL)
 	}
 	if cfg.AllowedOrigin != "*" {
 		t.Errorf("AllowedOrigin = %q, want %q", cfg.AllowedOrigin, "*")
 	}
-	if cfg.AdminAPIToken != "lam-admin-api-token" {
-		t.Errorf("AdminAPIToken = %q, want %q", cfg.AdminAPIToken, "lam-admin-api-token")
+	if cfg.AdminAPIToken != "laam-admin-api-token" {
+		t.Errorf("AdminAPIToken = %q, want %q", cfg.AdminAPIToken, "laam-admin-api-token")
 	}
 	// Deliberately empty by default (not a fabricated placeholder like the
 	// other fields above): local docker-compose has no Supabase project,
@@ -130,7 +130,7 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.SupabaseBroadcastKey != "" {
 		t.Errorf("SupabaseBroadcastKey = %q, want empty default", cfg.SupabaseBroadcastKey)
 	}
-	if cfg.PaymentAPIToken != "lam-payment-api-token" {
+	if cfg.PaymentAPIToken != "laam-payment-api-token" {
 		t.Errorf("PaymentAPIToken = %q, want local default", cfg.PaymentAPIToken)
 	}
 	if cfg.TossPaymentsSecretKey != "" || cfg.TossPlaceAccessKey != "" || cfg.TossPlaceSecretKey != "" || cfg.TossPlaceMerchantID != "" {

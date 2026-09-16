@@ -141,10 +141,10 @@ http://localhost:9090
 환경변수와 로컬 `.env`에 값이 없을 때의 기본값:
 
 - `APP_ADDR=:9090`
-- `DATABASE_URL=postgres://lam:lam@127.0.0.1:5432/lam?sslmode=disable`
+- `DATABASE_URL=postgres://laam:laam@127.0.0.1:5432/laam?sslmode=disable`
 - `ALLOWED_ORIGIN=*`
-- `ADMIN_API_TOKEN=lam-admin-api-token`
-- `PAYMENT_API_TOKEN=lam-payment-api-token` (로컬 기본값, 운영에서는 반드시 교체)
+- `ADMIN_API_TOKEN=laam-admin-api-token`
+- `PAYMENT_API_TOKEN=laam-payment-api-token` (로컬 기본값, 운영에서는 반드시 교체)
 - `QR_SIGNING_SECRET`, `CUSTOMER_WEB_BASE_URL` (기본값 없음. 관리자 테이블 QR 화면에만 필요하며, 아래 [4. QR 서명 설정](#4-qr-서명-설정) 참고)
 
 저장소 루트 `.env` 또는 `laam-api/.env.local`에 설정한 `DATABASE_URL`, 토스플레이스, YouTube, Supabase Realtime 등의 API 환경변수는 `go run`으로 직접 실행한 `laam-api`가 자동으로 읽습니다. 셸이나 Cloud Run에서 주입한 값이 있으면 그 값이 우선하며, `DATABASE_URL`이 어디에도 없을 때만 로컬 PostgreSQL을 사용합니다.
@@ -261,7 +261,7 @@ Docker Compose로 실행할 때는 저장소 루트 `.env`의 `QR_SIGNING_SECRET
 
 ## Docker Compose 실행
 
-`docker-compose.yml`은 PostgreSQL, `laam-api`, `laam-web`, `laam-admin-web` 네 서비스를 함께 띄웁니다. 기존 PostgreSQL 설정과 `lam-postgres-data` volume은 그대로 유지됩니다.
+`docker-compose.yml`은 PostgreSQL, `laam-api`, `laam-web`, `laam-admin-web` 네 서비스를 함께 띄웁니다. 기존 PostgreSQL 설정과 `laam-postgres-data` volume은 그대로 유지됩니다.
 
 `laam-admin-web`의 `ADMIN_PASSWORD`·`SESSION_SECRET`과 `laam-api`·`laam-web`의 `QR_SIGNING_SECRET`에는 **기본값이 없습니다.** 세 값 중 하나라도 설정되어 있지 않으면 `docker compose config`/`docker compose up`이 즉시 실패합니다(fail-loud). 실행 전에 저장소 루트에 `.env` 파일을 만들거나 셸 환경변수로 내보내세요.
 
@@ -271,7 +271,7 @@ Docker Compose로 실행할 때는 저장소 루트 `.env`의 `QR_SIGNING_SECRET
 cat > .env <<'EOF'
 ADMIN_PASSWORD=로컬에서_사용할_비밀번호
 SESSION_SECRET=로컬에서_사용할_세션_서명키
-QR_SIGNING_SECRET=lam_api와_lam_web이_공유할_긴_임의값
+QR_SIGNING_SECRET=laam_api와_laam_web이_공유할_긴_임의값
 CUSTOMER_TEST_ENTRY_TOKEN=로컬에서만_사용할_긴_임의값
 PAYMENT_API_TOKEN=웹과_API가_공유할_긴_임의값
 NEXT_PUBLIC_TOSS_CLIENT_KEY=토스페이먼츠_클라이언트키
@@ -291,7 +291,7 @@ docker compose ps
 
 | 서비스 | 컨테이너 이름 | Host 포트 | 설명 |
 | --- | --- | --- | --- |
-| `postgres` | `lam-postgres` | `5432` | PostgreSQL |
+| `postgres` | `laam-postgres` | `5432` | PostgreSQL |
 | `laam-api` | `laam-api` | `9090` | API 서버 |
 | `laam-web` | `laam-web` | `3000` | 손님용 웹 |
 | `laam-admin-web` | `laam-admin-web` | `3001` | 관리자 웹, 로그인: `http://localhost:3001/login` |
