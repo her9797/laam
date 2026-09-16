@@ -98,11 +98,19 @@ describe("stripSongRequestPrefix", () => {
 
 describe("buildDashboardSummary", () => {
   it("aggregates pending general, pending song, special request, order, menu and notice counts", () => {
-    const summary = buildDashboardSummary(appDataFixture, requestsFixture, 1, 7);
+    // Pending counts come from the server-side pending summary totals, not
+    // from `items` — which is capped to the newest pending rows and would
+    // undercount once more requests are pending than the cap.
+    const summary = buildDashboardSummary(
+      appDataFixture,
+      { pendingGeneralCount: 150, pendingSongCount: 3, items: [] },
+      1,
+      7,
+    );
 
     expect(summary).toEqual({
-      pendingGeneralRequestCount: 1, // r1 only — r2 is completed
-      pendingSongRequestCount: 1, // r3 only — r4 is checked
+      pendingGeneralRequestCount: 150,
+      pendingSongRequestCount: 3,
       specialRequestCount: 1,
       orderCount: 7,
       menuItemCount: 2,
@@ -117,7 +125,12 @@ describe("buildDashboardSummary", () => {
       notices: [],
     };
 
-    const summary = buildDashboardSummary(emptyAppData, [], 0, 0);
+    const summary = buildDashboardSummary(
+      emptyAppData,
+      { pendingGeneralCount: 0, pendingSongCount: 0, items: [] },
+      0,
+      0,
+    );
 
     expect(summary).toEqual({
       pendingGeneralRequestCount: 0,

@@ -122,10 +122,14 @@ func TestRouter_CustomerRequests_CreateAndAdminFlow(t *testing.T) {
 	t.Run("status update via /status suffix", func(t *testing.T) {
 		statusBody, _ := json.Marshal(map[string]string{"status": "completed"})
 		rec := doRequest(t, handler, http.MethodPatch, "/api/v1/admin/customer-requests/"+requestID+"/status", statusBody, adminHeaders())
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+		}
+		if rec.Body.Len() != 0 {
+			t.Errorf("body = %q, want empty", rec.Body.String())
 		}
 
+		rec = doRequest(t, handler, http.MethodGet, "/api/v1/admin/customer-requests", nil, adminHeaders())
 		var updated []struct {
 			ID     string `json:"id"`
 			Status string `json:"status"`
@@ -148,8 +152,11 @@ func TestRouter_CustomerRequests_CreateAndAdminFlow(t *testing.T) {
 
 	t.Run("delete", func(t *testing.T) {
 		rec := doRequest(t, handler, http.MethodDelete, "/api/v1/admin/customer-requests/"+requestID, nil, adminHeaders())
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+		}
+		if rec.Body.Len() != 0 {
+			t.Errorf("body = %q, want empty", rec.Body.String())
 		}
 	})
 }
@@ -197,13 +204,17 @@ func TestRouter_CustomerRequests_BulkStatusUpdate(t *testing.T) {
 		}
 	})
 
-	t.Run("bulk update ignores an unknown id and returns the refreshed list", func(t *testing.T) {
+	t.Run("bulk update ignores an unknown id and returns no content", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]any{"ids": []string{firstID, secondID, "missing"}, "status": "checked"})
 		rec := doRequest(t, handler, http.MethodPatch, "/api/v1/admin/customer-requests", body, adminHeaders())
-		if rec.Code != http.StatusOK {
-			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+		}
+		if rec.Body.Len() != 0 {
+			t.Errorf("body = %q, want empty", rec.Body.String())
 		}
 
+		rec = doRequest(t, handler, http.MethodGet, "/api/v1/admin/customer-requests", nil, adminHeaders())
 		var updated []struct {
 			ID     string `json:"id"`
 			Status string `json:"status"`
@@ -560,7 +571,10 @@ func TestRouter_MenuImageUploadAndPublicContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create form file: %v", err)
 	}
-	if _, err := part.Write([]byte("fake-png-bytes")); err != nil {
+	// The upload handler sniffs the bytes, so the fixture needs a real PNG
+	// signature in front of its placeholder payload.
+	imageBytes := string(pngSignature) + "fake-png-bytes"
+	if _, err := part.Write([]byte(imageBytes)); err != nil {
 		t.Fatalf("write form file: %v", err)
 	}
 	_ = writer.WriteField("isPrimary", "true")
@@ -602,8 +616,8 @@ func TestRouter_MenuImageUploadAndPublicContent(t *testing.T) {
 	if contentRec.Code != http.StatusOK {
 		t.Fatalf("content status = %d, want %d", contentRec.Code, http.StatusOK)
 	}
-	if contentRec.Body.String() != "fake-png-bytes" {
-		t.Errorf("content body = %q, want %q", contentRec.Body.String(), "fake-png-bytes")
+	if contentRec.Body.String() != imageBytes {
+		t.Errorf("content body = %q, want %q", contentRec.Body.String(), imageBytes)
 	}
 	if got := contentRec.Header().Get("Content-Type"); got == "" {
 		t.Errorf("Content-Type header is empty")

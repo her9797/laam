@@ -525,33 +525,91 @@ func (r *Repository) CancelPaymentOrder(ctx context.Context, orderID string, can
 //
 // Returns the admin read shape (lamdata.PaymentOrder), matching
 // GetPaymentOrderForAdmin, since this is exclusively an admin-screen action.
+//
+// Runs as one statement: the CTE's UPDATE ... RETURNING yields the
+// acknowledged row, and only when it matched nothing does the second UNION
+// branch read the row as-is so its status decides the outcome.
 func (r *Repository) AcknowledgePaymentOrder(ctx context.Context, orderID string) (lamdata.PaymentOrder, error) {
-	order, err := r.GetPaymentOrderForAdmin(ctx, orderID)
-	if err != nil {
-		return lamdata.PaymentOrder{}, err
-	}
+	const columns = `
+		id,
+		COALESCE(menu_item_id, ''),
+		menu_item_name,
+		category_name,
+		table_number,
+		request_note,
+		amount,
+		vat,
+		supplied_amount,
+		tax_free_amount,
+		status,
+		COALESCE(payment_method, ''),
+		COALESCE(payment_key, ''),
+		approved_at,
+		pos_sync_status,
+		COALESCE(pos_order_id, ''),
+		COALESCE(pos_sync_error, ''),
+		created_at`
 
-	if order.Status == "ACKNOWLEDGED" {
-		return order, nil
-	}
-	if order.Status != "READY" {
-		return lamdata.PaymentOrder{}, ErrInvalidInput
-	}
-
-	tag, err := r.pool.Exec(ctx, `
-		UPDATE payment_orders
-		SET status = 'ACKNOWLEDGED',
-			updated_at = NOW()
-		WHERE id = $1 AND status = 'READY'
-	`, orderID)
+	var item lamdata.PaymentOrder
+	var acknowledged bool
+	var approvedAt *time.Time
+	var createdAt time.Time
+	err := r.pool.QueryRow(ctx, `
+		WITH acknowledged AS (
+			UPDATE payment_orders
+			SET status = 'ACKNOWLEDGED',
+				updated_at = NOW()
+			WHERE id = $1 AND status = 'READY'
+			RETURNING `+columns+`
+		)
+		SELECT TRUE, * FROM acknowledged
+		UNION ALL
+		SELECT FALSE, `+columns+`
+		FROM payment_orders
+		WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM acknowledged)
+	`, orderID).Scan(
+		&acknowledged,
+		&item.OrderID,
+		&item.MenuItemID,
+		&item.MenuItemName,
+		&item.CategoryName,
+		&item.TableNumber,
+		&item.RequestNote,
+		&item.Amount,
+		&item.VAT,
+		&item.SuppliedAmount,
+		&item.TaxFreeAmount,
+		&item.Status,
+		&item.PaymentMethod,
+		&item.PaymentKey,
+		&approvedAt,
+		&item.POSSyncStatus,
+		&item.POSOrderID,
+		&item.POSSyncError,
+		&createdAt,
+	)
 	if err != nil {
 		return lamdata.PaymentOrder{}, classifyError(err)
 	}
-	if tag.RowsAffected() == 0 {
-		return lamdata.PaymentOrder{}, ErrAlreadyExists
+
+	if !acknowledged {
+		switch item.Status {
+		case "ACKNOWLEDGED":
+			// Idempotent repeat click: return the order unchanged.
+		case "READY":
+			// Still READY yet the UPDATE matched nothing: a concurrent writer
+			// changed the row between snapshot and update.
+			return lamdata.PaymentOrder{}, ErrAlreadyExists
+		default:
+			return lamdata.PaymentOrder{}, ErrInvalidInput
+		}
 	}
 
-	return r.GetPaymentOrderForAdmin(ctx, orderID)
+	if approvedAt != nil {
+		item.ApprovedAt = formatTimestamp(*approvedAt)
+	}
+	item.CreatedAt = formatTimestamp(createdAt)
+	return item, nil
 }
 
 // PaymentOrderFilter is the parsed, validated filter/sort/page input for
@@ -567,6 +625,28 @@ type PaymentOrderFilter struct {
 	Order         string     // "asc" | "desc"
 	Page          int
 	PageSize      int
+	// SkipTotal skips the COUNT query for callers that only read items (the
+	// order bell); the returned total is then always 0 and meaningless.
+	SkipTotal bool
+	// SkipItems skips the list query for callers that only read the total
+	// (the dashboard card); the returned items are then always empty.
+	SkipItems bool
+}
+
+func paymentOrderFilterWhereClause(filter PaymentOrderFilter) (string, []any) {
+	var b listWhereBuilder
+	if filter.Status != "" {
+		b.add("status = " + b.bind(filter.Status))
+	}
+	if filter.PosSyncStatus != "" {
+		b.add("pos_sync_status = " + b.bind(filter.PosSyncStatus))
+	}
+	b.addTimeRange(filter.From, filter.To)
+	if pattern := searchPatternOrEmpty(filter.Search); pattern != "" {
+		placeholder := b.bind(pattern)
+		b.add("(table_number ILIKE " + placeholder + ` ESCAPE '\' OR menu_item_name ILIKE ` + placeholder + ` ESCAPE '\')`)
+	}
+	return b.clause()
 }
 
 func paymentOrderOrderByClause(sort string, order string) (string, error) {
@@ -587,14 +667,6 @@ func paymentOrderOrderByClause(sort string, order string) (string, error) {
 	}
 }
 
-const paymentOrderFilterWhere = `
-	WHERE ($1 = '' OR status = $1)
-	  AND ($2 = '' OR pos_sync_status = $2)
-	  AND ($3::timestamptz IS NULL OR created_at >= $3)
-	  AND ($4::timestamptz IS NULL OR created_at < $4)
-	  AND ($5 = '' OR table_number ILIKE $5 ESCAPE '\' OR menu_item_name ILIKE $5 ESCAPE '\')
-`
-
 // ListPaymentOrdersPage applies filter/search/sort/pagination server-side for
 // the admin order-history screen and reports the total matching row count
 // alongside the current page, mirroring ListCustomerRequestsPage/
@@ -607,16 +679,27 @@ func (r *Repository) ListPaymentOrdersPage(ctx context.Context, filter PaymentOr
 		return nil, 0, err
 	}
 
-	page := clampListPage(filter.Page)
-	pageSize := clampListPageSize(filter.PageSize)
-	searchPattern := searchPatternOrEmpty(filter.Search)
-
-	var total int
-	countSQL := "SELECT COUNT(*) FROM payment_orders" + paymentOrderFilterWhere
-	if err := r.pool.QueryRow(ctx, countSQL, filter.Status, filter.PosSyncStatus, filter.From, filter.To, searchPattern).Scan(&total); err != nil {
-		return nil, 0, err
+	if filter.SkipTotal && filter.SkipItems {
+		return nil, 0, fmt.Errorf("%w: cannot skip both items and total", ErrInvalidInput)
 	}
 
+	page := clampListPage(filter.Page)
+	pageSize := clampListPageSize(filter.PageSize)
+	where, whereArgs := paymentOrderFilterWhereClause(filter)
+
+	var total int
+	if !filter.SkipTotal {
+		countSQL := "SELECT COUNT(*) FROM payment_orders" + where
+		if err := r.pool.QueryRow(ctx, countSQL, whereArgs...).Scan(&total); err != nil {
+			return nil, 0, err
+		}
+	}
+	if filter.SkipItems {
+		return make([]lamdata.PaymentOrder, 0), total, nil
+	}
+
+	offset := (page - 1) * pageSize
+	listArgs, limitOffset := listPageArgs(whereArgs, pageSize, offset)
 	listSQL := `
 		SELECT
 			id,
@@ -638,12 +721,11 @@ func (r *Repository) ListPaymentOrdersPage(ctx context.Context, filter PaymentOr
 			COALESCE(pos_sync_error, ''),
 			created_at
 		FROM payment_orders
-	` + paymentOrderFilterWhere + `
+	` + where + `
 		ORDER BY ` + orderBy + `
-		LIMIT $6 OFFSET $7
+		` + limitOffset + `
 	`
-	offset := (page - 1) * pageSize
-	rows, err := r.pool.Query(ctx, listSQL, filter.Status, filter.PosSyncStatus, filter.From, filter.To, searchPattern, pageSize, offset)
+	rows, err := r.pool.Query(ctx, listSQL, listArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -946,6 +1028,11 @@ func determineTrendUnit(from time.Time, to time.Time) string {
 	}
 }
 
+// paymentOrderStatsAfterSummaryHook is a test seam run right after the
+// summary query, letting integration tests commit a concurrent write
+// between the stats queries. Always nil in production.
+var paymentOrderStatsAfterSummaryHook func()
+
 // GetPaymentOrderStats aggregates DONE orders approved within [from, to)
 // for the admin sales-stats screen: a summary (total revenue, order count,
 // average order value), a trend broken into day/week/month buckets (picked
@@ -977,15 +1064,27 @@ func determineTrendUnit(from time.Time, to time.Time) string {
 func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, to time.Time, businessDayBasis bool) (lamdata.PaymentOrderStats, error) {
 	var stats lamdata.PaymentOrderStats
 
+	// All six queries run in one read-only REPEATABLE READ transaction so
+	// they share a snapshot: an order confirmed mid-request cannot make the
+	// summary disagree with the trend and breakdown totals.
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return lamdata.PaymentOrderStats{}, err
+	}
+	defer tx.Rollback(ctx)
+
 	var totalRevenue int64
 	var orderCount int
 	summarySQL := "SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM payment_orders" + paymentOrderStatsFilterWhere
-	if err := r.pool.QueryRow(ctx, summarySQL, from, to).Scan(&totalRevenue, &orderCount); err != nil {
+	if err := tx.QueryRow(ctx, summarySQL, from, to).Scan(&totalRevenue, &orderCount); err != nil {
 		return lamdata.PaymentOrderStats{}, classifyError(err)
 	}
 	stats.Summary = lamdata.PaymentOrderStatsSummary{
 		TotalRevenue: totalRevenue,
 		OrderCount:   orderCount,
+	}
+	if paymentOrderStatsAfterSummaryHook != nil {
+		paymentOrderStatsAfterSummaryHook()
 	}
 	if orderCount > 0 {
 		stats.Summary.AverageOrderValue = int64(math.Round(float64(totalRevenue) / float64(orderCount)))
@@ -1009,7 +1108,7 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 		GROUP BY bucket
 		ORDER BY bucket ASC
 	`
-	trendRows, err := r.pool.Query(ctx, trendSQL, from, to, unit, businessDayBasis)
+	trendRows, err := tx.Query(ctx, trendSQL, from, to, unit, businessDayBasis)
 	if err != nil {
 		return lamdata.PaymentOrderStats{}, classifyError(err)
 	}
@@ -1035,7 +1134,7 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 		GROUP BY category_name
 		ORDER BY SUM(amount) DESC
 	`
-	categoryRows, err := r.pool.Query(ctx, categorySQL, from, to)
+	categoryRows, err := tx.Query(ctx, categorySQL, from, to)
 	if err != nil {
 		return lamdata.PaymentOrderStats{}, classifyError(err)
 	}
@@ -1060,7 +1159,7 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 		GROUP BY payment_method
 		ORDER BY SUM(amount) DESC
 	`
-	paymentMethodRows, err := r.pool.Query(ctx, paymentMethodSQL, from, to)
+	paymentMethodRows, err := tx.Query(ctx, paymentMethodSQL, from, to)
 	if err != nil {
 		return lamdata.PaymentOrderStats{}, classifyError(err)
 	}
@@ -1085,7 +1184,7 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 		GROUP BY table_number
 		ORDER BY SUM(amount) DESC
 	`
-	tableRows, err := r.pool.Query(ctx, tableSQL, from, to)
+	tableRows, err := tx.Query(ctx, tableSQL, from, to)
 	if err != nil {
 		return lamdata.PaymentOrderStats{}, classifyError(err)
 	}
@@ -1110,7 +1209,7 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 		GROUP BY menu_item_name
 		ORDER BY SUM(amount) DESC
 	`
-	menuItemRows, err := r.pool.Query(ctx, menuItemSQL, from, to)
+	menuItemRows, err := tx.Query(ctx, menuItemSQL, from, to)
 	if err != nil {
 		return lamdata.PaymentOrderStats{}, classifyError(err)
 	}
@@ -1125,6 +1224,10 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 	}
 	menuItemRows.Close()
 	if err := menuItemRows.Err(); err != nil {
+		return lamdata.PaymentOrderStats{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		return lamdata.PaymentOrderStats{}, err
 	}
 

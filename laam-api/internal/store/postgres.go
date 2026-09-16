@@ -321,6 +321,8 @@ CREATE TABLE IF NOT EXISTS system_error_logs (
 CREATE INDEX IF NOT EXISTS idx_system_error_logs_created_at ON system_error_logs (created_at DESC, id DESC);
 ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS toss_labels TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS label_colors TEXT[] NOT NULL DEFAULT '{}';
+CREATE INDEX IF NOT EXISTS idx_payment_orders_done_approved_at ON payment_orders (approved_at) WHERE status = 'DONE';
+CREATE INDEX IF NOT EXISTS idx_customer_requests_pending_created_at ON customer_requests (created_at DESC, id DESC) WHERE status = 'pending';
 `)
 	return err
 }
@@ -595,6 +597,9 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		}
 		categories = append(categories, item)
 	}
+	if err := categoriesRows.Err(); err != nil {
+		return lamdata.BootstrapData{}, err
+	}
 
 	menuRows, err := r.pool.Query(ctx, `SELECT id, category_id, COALESCE(badge, ''), COALESCE(badge_color, ''), name, description, price, COALESCE(toss_image_url, ''), is_visible, toss_labels, label_colors FROM menu_items ORDER BY sort_order, id`)
 	if err != nil {
@@ -618,6 +623,9 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		}
 		items = append(items, item)
 	}
+	if err := menuRows.Err(); err != nil {
+		return lamdata.BootstrapData{}, err
+	}
 
 	imageRows, err := r.pool.Query(ctx, `SELECT id, menu_item_id, filename, mime_type, size_bytes, is_primary, display_area, focus_x, focus_y, sort_order FROM menu_item_images ORDER BY menu_item_id, is_primary DESC, sort_order, id`)
 	if err != nil {
@@ -634,6 +642,9 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		}
 		image.ContentURL = fmt.Sprintf("/api/v1/menu-images/%s/content", image.ID)
 		imagesByMenuItem[menuItemID] = append(imagesByMenuItem[menuItemID], image)
+	}
+	if err := imageRows.Err(); err != nil {
+		return lamdata.BootstrapData{}, err
 	}
 
 	for index := range items {
@@ -728,6 +739,9 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		}
 		requestGuides = append(requestGuides, item)
 	}
+	if err := requestRows.Err(); err != nil {
+		return lamdata.BootstrapData{}, err
+	}
 
 	noticeRows, err := r.pool.Query(ctx, `SELECT id, text, is_visible FROM notices ORDER BY sort_order, id`)
 	if err != nil {
@@ -742,6 +756,9 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 			return lamdata.BootstrapData{}, err
 		}
 		notices = append(notices, item)
+	}
+	if err := noticeRows.Err(); err != nil {
+		return lamdata.BootstrapData{}, err
 	}
 
 	return lamdata.BootstrapData{
@@ -1210,6 +1227,98 @@ func clampListPageSize(pageSize int) int {
 	return pageSize
 }
 
+// listWhereBuilder assembles a list query's WHERE clause from fixed,
+// code-owned SQL fragments, adding a predicate only for filters the caller
+// actually set. Every filter value goes through bind as a positional
+// parameter — never into the SQL text.
+//
+// This replaces the earlier "$1 is empty OR status = $1" catch-all style:
+// with those predicates, PostgreSQL's generic plan for a prepared statement
+// (pgx caches statements per connection) has to handle both branches and
+// can't use the status/created_at indexes.
+type listWhereBuilder struct {
+	conditions []string
+	args       []any
+}
+
+// bind appends value as the next positional parameter and returns its
+// placeholder ("$1", "$2", ...).
+func (b *listWhereBuilder) bind(value any) string {
+	b.args = append(b.args, value)
+	return fmt.Sprintf("$%d", len(b.args))
+}
+
+func (b *listWhereBuilder) add(condition string) {
+	b.conditions = append(b.conditions, condition)
+}
+
+// addTimeRange adds the shared inclusive-from / exclusive-to created_at bounds.
+func (b *listWhereBuilder) addTimeRange(from *time.Time, to *time.Time) {
+	if from != nil {
+		b.add("created_at >= " + b.bind(from))
+	}
+	if to != nil {
+		b.add("created_at < " + b.bind(to))
+	}
+}
+
+// clause returns the WHERE clause (empty when no filter applies) and its
+// arguments, in placeholder order.
+func (b *listWhereBuilder) clause() (string, []any) {
+	if len(b.conditions) == 0 {
+		return "", b.args
+	}
+	return "\n\tWHERE " + strings.Join(b.conditions, "\n\t  AND ") + "\n", b.args
+}
+
+// listPageArgs appends LIMIT/OFFSET values after a WHERE clause's arguments,
+// returning the extended argument list and the matching LIMIT/OFFSET SQL.
+func listPageArgs(args []any, pageSize int, offset int) ([]any, string) {
+	pageArgs := append(append(make([]any, 0, len(args)+2), args...), pageSize, offset)
+	return pageArgs, fmt.Sprintf("LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+}
+
+func customerRequestFilterWhereClause(filter CustomerRequestFilter) (string, []any, error) {
+	var b listWhereBuilder
+	if filter.Status != "" {
+		b.add("status = " + b.bind(filter.Status))
+	}
+	switch filter.Kind {
+	case "", "all":
+	case "song":
+		b.add("starts_with(text, " + b.bind(songRequestPrefix) + ")")
+	case "general":
+		b.add("NOT starts_with(text, " + b.bind(songRequestPrefix) + ")")
+	default:
+		return "", nil, fmt.Errorf("%w: kind %q", ErrInvalidInput, filter.Kind)
+	}
+	if pattern := searchPatternOrEmpty(filter.Search); pattern != "" {
+		placeholder := b.bind(pattern)
+		b.add("(text ILIKE " + placeholder + ` ESCAPE '\' OR table_number ILIKE ` + placeholder + ` ESCAPE '\')`)
+	}
+	b.addTimeRange(filter.From, filter.To)
+	where, args := b.clause()
+	return where, args, nil
+}
+
+func specialRequestFilterWhereClause(filter SpecialRequestFilter) (string, []any) {
+	var b listWhereBuilder
+	if filter.Gender != "" {
+		b.add("gender = " + b.bind(filter.Gender))
+	}
+	if pattern := searchPatternOrEmpty(filter.Search); pattern != "" {
+		placeholder := b.bind(pattern)
+		columns := []string{"name", "table_number", "instagram", "residence", "text"}
+		matches := make([]string, 0, len(columns))
+		for _, column := range columns {
+			matches = append(matches, column+" ILIKE "+placeholder+` ESCAPE '\'`)
+		}
+		b.add("(" + strings.Join(matches, " OR ") + ")")
+	}
+	b.addTimeRange(filter.From, filter.To)
+	return b.clause()
+}
+
 func customerRequestOrderByClause(sort string, order string) (string, error) {
 	direction := "DESC"
 	if order == "asc" {
@@ -1248,18 +1357,6 @@ func specialRequestOrderByClause(sort string, order string) (string, error) {
 	}
 }
 
-const customerRequestFilterWhere = `
-	WHERE ($1 = '' OR status = $1)
-	  AND (
-	    $2 = 'all' OR $2 = ''
-	    OR ($2 = 'song' AND starts_with(text, $3))
-	    OR ($2 = 'general' AND NOT starts_with(text, $3))
-	  )
-	  AND ($4 = '' OR text ILIKE $4 ESCAPE '\' OR table_number ILIKE $4 ESCAPE '\')
-	  AND ($5::timestamptz IS NULL OR created_at >= $5)
-	  AND ($6::timestamptz IS NULL OR created_at < $6)
-`
-
 // ListCustomerRequestsPage applies filter/search/sort/pagination server-side
 // and reports the total matching row count alongside the current page, so
 // callers can render page controls without a second round trip. Unlike
@@ -1272,25 +1369,30 @@ func (r *Repository) ListCustomerRequestsPage(ctx context.Context, filter Custom
 		return nil, 0, err
 	}
 
-	page := clampListPage(filter.Page)
-	pageSize := clampListPageSize(filter.PageSize)
-	searchPattern := searchPatternOrEmpty(filter.Search)
-
-	var total int
-	countSQL := "SELECT COUNT(*) FROM customer_requests" + customerRequestFilterWhere
-	if err := r.pool.QueryRow(ctx, countSQL, filter.Status, filter.Kind, songRequestPrefix, searchPattern, filter.From, filter.To).Scan(&total); err != nil {
+	where, whereArgs, err := customerRequestFilterWhereClause(filter)
+	if err != nil {
 		return nil, 0, err
 	}
 
+	page := clampListPage(filter.Page)
+	pageSize := clampListPageSize(filter.PageSize)
+
+	var total int
+	countSQL := "SELECT COUNT(*) FROM customer_requests" + where
+	if err := r.pool.QueryRow(ctx, countSQL, whereArgs...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+	listArgs, limitOffset := listPageArgs(whereArgs, pageSize, offset)
 	listSQL := `
 		SELECT id, COALESCE(table_number, ''), COALESCE(text, ''), status, created_at, handled_at
 		FROM customer_requests
-	` + customerRequestFilterWhere + `
+	` + where + `
 		ORDER BY ` + orderBy + `
-		LIMIT $7 OFFSET $8
+		` + limitOffset + `
 	`
-	offset := (page - 1) * pageSize
-	rows, err := r.pool.Query(ctx, listSQL, filter.Status, filter.Kind, songRequestPrefix, searchPattern, filter.From, filter.To, pageSize, offset)
+	rows, err := r.pool.Query(ctx, listSQL, listArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1324,19 +1426,59 @@ func (r *Repository) ListCustomerRequestsPage(ctx context.Context, filter Custom
 	return requests, total, nil
 }
 
-const specialRequestFilterWhere = `
-	WHERE ($1 = '' OR gender = $1)
-	  AND (
-	    $2 = ''
-	    OR name ILIKE $2 ESCAPE '\'
-	    OR table_number ILIKE $2 ESCAPE '\'
-	    OR instagram ILIKE $2 ESCAPE '\'
-	    OR residence ILIKE $2 ESCAPE '\'
-	    OR text ILIKE $2 ESCAPE '\'
-	  )
-	  AND ($3::timestamptz IS NULL OR created_at >= $3)
-	  AND ($4::timestamptz IS NULL OR created_at < $4)
-`
+// GetCustomerRequestPendingSummary returns the pending general/song counts
+// over every pending row plus at most limit newest pending rows, so the
+// admin notification bell and dashboard never read the whole table.
+// General vs. song uses the same songRequestPrefix rule as
+// ListCustomerRequestsPage's kind filter.
+func (r *Repository) GetCustomerRequestPendingSummary(ctx context.Context, limit int) (lamdata.CustomerRequestPendingSummary, error) {
+	summary := lamdata.CustomerRequestPendingSummary{Items: make([]lamdata.CustomerRequest, 0)}
+
+	if err := r.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE NOT starts_with(COALESCE(text, ''), $1)),
+			COUNT(*) FILTER (WHERE starts_with(COALESCE(text, ''), $1))
+		FROM customer_requests
+		WHERE status = 'pending'
+	`, songRequestPrefix).Scan(&summary.PendingGeneralCount, &summary.PendingSongCount); err != nil {
+		return summary, err
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, COALESCE(table_number, ''), COALESCE(text, ''), status, created_at, handled_at
+		FROM customer_requests
+		WHERE status = 'pending'
+		ORDER BY created_at DESC, id DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return summary, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var item lamdata.CustomerRequest
+		var createdAt time.Time
+		var handledAt *time.Time
+		if err := rows.Scan(
+			&item.ID,
+			&item.TableNumber,
+			&item.Text,
+			&item.Status,
+			&createdAt,
+			&handledAt,
+		); err != nil {
+			return summary, err
+		}
+		item.CreatedAt = formatTimestamp(createdAt)
+		if handledAt != nil {
+			item.HandledAt = formatTimestamp(*handledAt)
+		}
+		summary.Items = append(summary.Items, item)
+	}
+
+	return summary, rows.Err()
+}
 
 // ListSpecialRequestsPage is the special_requests equivalent of
 // ListCustomerRequestsPage. See that method's doc comment for the
@@ -1349,23 +1491,24 @@ func (r *Repository) ListSpecialRequestsPage(ctx context.Context, filter Special
 
 	page := clampListPage(filter.Page)
 	pageSize := clampListPageSize(filter.PageSize)
-	searchPattern := searchPatternOrEmpty(filter.Search)
+	where, whereArgs := specialRequestFilterWhereClause(filter)
 
 	var total int
-	countSQL := "SELECT COUNT(*) FROM special_requests" + specialRequestFilterWhere
-	if err := r.pool.QueryRow(ctx, countSQL, filter.Gender, searchPattern, filter.From, filter.To).Scan(&total); err != nil {
+	countSQL := "SELECT COUNT(*) FROM special_requests" + where
+	if err := r.pool.QueryRow(ctx, countSQL, whereArgs...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
+	offset := (page - 1) * pageSize
+	listArgs, limitOffset := listPageArgs(whereArgs, pageSize, offset)
 	listSQL := `
 		SELECT id, COALESCE(table_number, ''), gender, name, age, residence, instagram, ideal_type, text, created_at
 		FROM special_requests
-	` + specialRequestFilterWhere + `
+	` + where + `
 		ORDER BY ` + orderBy + `
-		LIMIT $5 OFFSET $6
+		` + limitOffset + `
 	`
-	offset := (page - 1) * pageSize
-	rows, err := r.pool.Query(ctx, listSQL, filter.Gender, searchPattern, filter.From, filter.To, pageSize, offset)
+	rows, err := r.pool.Query(ctx, listSQL, listArgs...)
 	if err != nil {
 		return nil, 0, err
 	}

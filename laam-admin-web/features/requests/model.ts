@@ -50,6 +50,18 @@ export type CustomerRequestListQuery = {
   order: SortOrder;
 };
 
+/**
+ * Mirrors `laam-api/internal/lamdata.CustomerRequestPendingSummary`: the
+ * pending general/song counts span every pending row, while `items` holds
+ * only the newest pending rows (capped server-side). Backs the notification
+ * bell and the dashboard's pending-count cards.
+ */
+export type CustomerRequestPendingSummary = {
+  pendingGeneralCount: number;
+  pendingSongCount: number;
+  items: CustomerRequest[];
+};
+
 /** Mirrors `laam-api/internal/lamdata.CustomerRequestPage`. */
 export type CustomerRequestPageResult = {
   items: CustomerRequest[];

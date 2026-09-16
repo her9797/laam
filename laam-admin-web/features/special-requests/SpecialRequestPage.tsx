@@ -332,7 +332,7 @@ export function SpecialRequestPage() {
             <EmptyState title={t("emptyTitle")} description={t("emptyDescription")} />
           )
         ) : (
-          <Table>
+          <Table className="min-w-[56rem]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-40">{t("common:columnCreatedAt")}</TableHead>

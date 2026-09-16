@@ -79,6 +79,20 @@ describe("Pagination", () => {
     expect(onPageChange.mock.calls).toEqual([[1], [6], [10]]);
   });
 
+  it("keeps the narrow-screen horizontal scroll without letting the nav scroll vertically", () => {
+    render(
+      <Pagination page={5} pageSize={10} total={100} onPageChange={vi.fn()} onPageSizeChange={vi.fn()} />,
+    );
+
+    // `overflow-x: auto` alone computes `overflow-y` to `auto` too, so the
+    // button's pressed `translate-y-px` would overflow the 32px-tall nav and
+    // flash a vertical scrollbar on every click. Layout isn't measurable in
+    // jsdom; `tests/e2e/pagination-scroll.spec.ts` checks the real overflow.
+    const nav = screen.getByRole("navigation", { name: "페이지 탐색" });
+    expect(nav).toHaveClass("overflow-x-auto");
+    expect(nav).toHaveClass("overflow-y-hidden");
+  });
+
   it("disables the previous button on the first page", () => {
     render(
       <Pagination page={1} pageSize={20} total={45} onPageChange={vi.fn()} onPageSizeChange={vi.fn()} />,

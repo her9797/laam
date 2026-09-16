@@ -1,19 +1,146 @@
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  IP_MAX_FAILURES,
+  resetLoginRateLimitForTests,
+} from "@/lib/auth/login-rate-limit";
 import { isAdminSessionValid } from "@/lib/auth/session";
 
 import { POST } from "./route";
 
-function loginRequest(password: unknown) {
+function loginRequest(password: unknown, forwardedFor?: string) {
   return new NextRequest("http://localhost/api/auth/admin-login", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(forwardedFor ? { "X-Forwarded-For": forwardedFor } : {}),
+    },
     body: JSON.stringify({ password }),
   });
 }
 
+function rawLoginRequest(body: string, forwardedFor: string) {
+  return new NextRequest("http://localhost/api/auth/admin-login", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Forwarded-For": forwardedFor,
+    },
+    body,
+  });
+}
+
 describe("POST /api/auth/admin-login", () => {
+  beforeEach(() => {
+    resetLoginRateLimitForTests();
+  });
+
+  describe("failed-attempt rate limit", () => {
+    const attackerIp = "198.51.100.10";
+
+    async function failRepeatedly(times: number, forwardedFor: string) {
+      for (let i = 0; i < times; i += 1) {
+        const response = await POST(loginRequest("wrong-password", forwardedFor));
+        expect(response.status).toBe(401);
+      }
+    }
+
+    it("rejects the next attempt with 429 even for the correct password once the limit is hit", async () => {
+      await failRepeatedly(IP_MAX_FAILURES, attackerIp);
+
+      const response = await POST(
+        loginRequest(process.env.ADMIN_PASSWORD, attackerIp),
+      );
+
+      expect(response.status).toBe(429);
+      expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+      expect(response.cookies.get("lam_admin_session")).toBeUndefined();
+      expect(response.headers.get("set-cookie")).toBeNull();
+      const payload = (await response.json()) as { error?: unknown };
+      expect(typeof payload.error).toBe("string");
+    });
+
+    it("keys the limit on the rightmost X-Forwarded-For value, ignoring spoofed left values", async () => {
+      for (let i = 0; i < IP_MAX_FAILURES; i += 1) {
+        await POST(loginRequest("wrong-password", `10.0.0.${i}, ${attackerIp}`));
+      }
+
+      const response = await POST(
+        loginRequest(process.env.ADMIN_PASSWORD, `10.9.9.9, ${attackerIp}`),
+      );
+
+      expect(response.status).toBe(429);
+    });
+
+    it("does not block a different client IP", async () => {
+      await failRepeatedly(IP_MAX_FAILURES, attackerIp);
+
+      const response = await POST(
+        loginRequest(process.env.ADMIN_PASSWORD, "203.0.113.20"),
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.cookies.get("lam_admin_session")).toBeDefined();
+    });
+
+    it("clears the IP's failure count after a successful login", async () => {
+      await failRepeatedly(IP_MAX_FAILURES - 1, attackerIp);
+      const success = await POST(
+        loginRequest(process.env.ADMIN_PASSWORD, attackerIp),
+      );
+      expect(success.status).toBe(200);
+
+      await failRepeatedly(IP_MAX_FAILURES - 1, attackerIp);
+      const response = await POST(
+        loginRequest(process.env.ADMIN_PASSWORD, attackerIp),
+      );
+
+      expect(response.status).toBe(200);
+    });
+
+    it("does not let a parallel burst of wrong passwords exceed the per-IP limit", async () => {
+      const burstSize = 20;
+
+      const responses = await Promise.all(
+        Array.from({ length: burstSize }, () =>
+          POST(loginRequest("wrong-password", attackerIp)),
+        ),
+      );
+
+      const statuses = responses.map((response) => response.status);
+      const rejected = statuses.filter((status) => status === 401).length;
+      const limited = statuses.filter((status) => status === 429).length;
+      expect(rejected).toBe(IP_MAX_FAILURES);
+      expect(limited).toBe(burstSize - IP_MAX_FAILURES);
+    });
+
+    it("counts empty passwords and malformed JSON as failures", async () => {
+      await POST(loginRequest("", attackerIp));
+      await POST(rawLoginRequest("{not json", attackerIp));
+      await failRepeatedly(IP_MAX_FAILURES - 2, attackerIp);
+
+      const response = await POST(
+        loginRequest(process.env.ADMIN_PASSWORD, attackerIp),
+      );
+
+      expect(response.status).toBe(429);
+    });
+
+    it("counts whitespace-only passwords as failures", async () => {
+      for (let i = 0; i < IP_MAX_FAILURES; i += 1) {
+        const response = await POST(loginRequest("   ", attackerIp));
+        expect(response.status).toBe(401);
+      }
+
+      const response = await POST(
+        loginRequest(process.env.ADMIN_PASSWORD, attackerIp),
+      );
+
+      expect(response.status).toBe(429);
+    });
+  });
+
   it("returns 401 for an incorrect password", async () => {
     const response = await POST(loginRequest("wrong-password"));
 
@@ -50,5 +177,43 @@ describe("POST /api/auth/admin-login", () => {
     const cookie = response.cookies.get("lam_admin_session");
     expect(cookie).toBeDefined();
     expect(isAdminSessionValid(cookie?.value)).toBe(true);
+  });
+
+  describe("compares the password as an opaque string", () => {
+    it("returns 401 for the correct password followed by a space", async () => {
+      const response = await POST(
+        loginRequest(`${process.env.ADMIN_PASSWORD} `),
+      );
+
+      expect(response.status).toBe(401);
+      expect(response.cookies.get("lam_admin_session")).toBeUndefined();
+    });
+
+    describe("when ADMIN_PASSWORD has surrounding whitespace", () => {
+      const paddedAdminPassword = "  padded-admin-password  ";
+
+      beforeEach(() => {
+        vi.stubEnv("ADMIN_PASSWORD", paddedAdminPassword);
+      });
+
+      afterEach(() => {
+        vi.unstubAllEnvs();
+      });
+
+      it("accepts the exact configured value, whitespace included", async () => {
+        const response = await POST(loginRequest(paddedAdminPassword));
+
+        expect(response.status).toBe(200);
+        const cookie = response.cookies.get("lam_admin_session");
+        expect(isAdminSessionValid(cookie?.value)).toBe(true);
+      });
+
+      it("returns 401 for the value without its surrounding whitespace", async () => {
+        const response = await POST(loginRequest(paddedAdminPassword.trim()));
+
+        expect(response.status).toBe(401);
+        expect(response.cookies.get("lam_admin_session")).toBeUndefined();
+      });
+    });
   });
 });

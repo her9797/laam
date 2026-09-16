@@ -331,14 +331,14 @@ export function OrderListPage() {
             <EmptyState title={t("emptyTitle")} description={t("emptyDescription")} />
           )
         ) : (
-          <Table>
+          <Table className="min-w-[60rem]">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-40">{t("columnApprovedAt")}</TableHead>
+                <TableHead className="w-28">{t("columnApprovedAt")}</TableHead>
                 <TableHead className="w-20">{t("common:columnTable")}</TableHead>
-                <TableHead className="w-[32%]">{t("columnMenuItem")}</TableHead>
+                <TableHead className="w-[18%]">{t("columnMenuItem")}</TableHead>
                 <TableHead>{t("columnRequestNote")}</TableHead>
-                <TableHead className="w-28">{t("columnAmount")}</TableHead>
+                <TableHead className="w-24">{t("columnAmount")}</TableHead>
                 <TableHead className="w-24">{t("columnStatus")}</TableHead>
                 <TableHead className="w-32">{t("columnPosSync")}</TableHead>
                 <TableHead className="w-28">{t("common:columnActions")}</TableHead>

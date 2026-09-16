@@ -2,22 +2,29 @@ import { fetchJson } from "@/lib/api/fetch-json";
 import { resolveCalendarDateRange } from "@/lib/date-range";
 
 import type {
-  CustomerRequest,
   CustomerRequestListQuery,
   CustomerRequestPageResult,
+  CustomerRequestPendingSummary,
   CustomerRequestStatus,
 } from "./model";
 
 const CUSTOMER_REQUESTS_PATH = "/api/admin/customer-requests";
 
-export function fetchCustomerRequests(): Promise<CustomerRequest[]> {
-  return fetchJson<CustomerRequest[]>(CUSTOMER_REQUESTS_PATH, { method: "GET" });
+/**
+ * `laam-api`'s `GET /api/v1/admin/customer-requests/pending-summary`:
+ * pending general/song counts plus the newest pending rows, so the
+ * notification bell and dashboard never read the whole request table.
+ */
+export function fetchCustomerRequestPendingSummary(): Promise<CustomerRequestPendingSummary> {
+  return fetchJson<CustomerRequestPendingSummary>(`${CUSTOMER_REQUESTS_PATH}/pending-summary`, {
+    method: "GET",
+  });
 }
 
 /**
  * Fetches a server-filtered/sorted/paginated page. Reaching `laam-api` with
  * at least one recognized query param switches its response from the
- * legacy plain array (`fetchCustomerRequests` above) to the
+ * legacy plain array to the
  * `{ items, page, pageSize, total }` envelope this returns — see
  * `docs/plans/2026-09-04-admin-list-paging-search-sort.md` section 4.3.
  * `page`/`pageSize`/`kind`/`sort`/`order` are always sent (so a caller of
@@ -59,16 +66,15 @@ export function fetchCustomerRequestsPage(
 
 /**
  * `laam-api`'s `PATCH /api/v1/admin/customer-requests/{id}/status` (proxied
- * here as `/api/admin/customer-requests/{id}/status`) returns the full,
- * refreshed request list in the same response — so callers can write that
- * straight into the `requestsKeys.all` cache entry instead of triggering a
- * second round trip.
+ * here as `/api/admin/customer-requests/{id}/status`) answers 204 No Content;
+ * callers invalidate `requestsKeys.all` to refetch under each cache entry's
+ * own filter.
  */
 export function updateCustomerRequestStatus(
   id: string,
   status: CustomerRequestStatus,
-): Promise<CustomerRequest[]> {
-  return fetchJson<CustomerRequest[]>(`${CUSTOMER_REQUESTS_PATH}/${id}/status`, {
+): Promise<void> {
+  return fetchJson<void>(`${CUSTOMER_REQUESTS_PATH}/${id}/status`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
@@ -77,8 +83,8 @@ export function updateCustomerRequestStatus(
 
 /**
  * `laam-api`'s `PATCH /api/v1/admin/customer-requests` (collection path, no
- * id segment) applies `status` to every id in one statement and returns the
- * full, refreshed request list — see
+ * id segment) applies `status` to every id in one statement and answers
+ * 204 No Content — see
  * `docs/plans/2026-09-04-admin-request-notifications.md` section 4.5 for why
  * this exists instead of one `updateCustomerRequestStatus` call per id
  * (atomicity; a single round trip instead of N).
@@ -86,8 +92,8 @@ export function updateCustomerRequestStatus(
 export function updateCustomerRequestStatuses(
   ids: string[],
   status: CustomerRequestStatus,
-): Promise<CustomerRequest[]> {
-  return fetchJson<CustomerRequest[]>(CUSTOMER_REQUESTS_PATH, {
+): Promise<void> {
+  return fetchJson<void>(CUSTOMER_REQUESTS_PATH, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids, status }),

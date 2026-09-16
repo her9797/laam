@@ -265,6 +265,11 @@ type paymentOrderListQuery struct {
 	To            *time.Time // exclusive
 	Sort          string     // "createdAt" | "amount"
 	Order         string     // "asc" | "desc"
+	// Include narrows the response for callers that read only one half of
+	// the envelope: "" = items and total (default), "items" = skip the
+	// COUNT query and omit total, "total" = skip the list query and return
+	// an empty items array.
+	Include string
 }
 
 func parsePaymentOrderListQuery(query url.Values) (paymentOrderListQuery, error) {
@@ -329,6 +334,15 @@ func parsePaymentOrderListQuery(query url.Values) (paymentOrderListQuery, error)
 			q.Order = order
 		default:
 			return q, fmt.Errorf("invalid order: %q", order)
+		}
+	}
+
+	if include := query.Get("include"); include != "" {
+		switch include {
+		case "items", "total":
+			q.Include = include
+		default:
+			return q, fmt.Errorf("invalid include: %q", include)
 		}
 	}
 

@@ -15,10 +15,11 @@ vi.mock("@tanstack/react-query", async () => {
   return { ...actual, useQuery: vi.fn(actual.useQuery) };
 });
 
-import type { CustomerRequest, CustomerRequestListQuery } from "./model";
+import type { CustomerRequestListQuery, CustomerRequestPendingSummary } from "./model";
 import {
+  requestsKeys,
+  useCustomerRequestPendingSummaryQuery,
   useCustomerRequestsPageQuery,
-  useCustomerRequestsQuery,
   useUpdateCustomerRequestStatusesMutation,
 } from "./queries";
 
@@ -26,16 +27,20 @@ vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
   return {
     ...actual,
-    fetchCustomerRequests: vi.fn(),
+    fetchCustomerRequestPendingSummary: vi.fn(),
     updateCustomerRequestStatuses: vi.fn(),
   };
 });
 
-import { fetchCustomerRequests, updateCustomerRequestStatuses } from "./api";
+import { fetchCustomerRequestPendingSummary, updateCustomerRequestStatuses } from "./api";
 
-const fixture: CustomerRequest[] = [
-  { id: "r1", tableNumber: "1", text: "물", status: "pending", createdAt: "2026-09-04T10:00:00Z" },
-];
+const fixture: CustomerRequestPendingSummary = {
+  pendingGeneralCount: 1,
+  pendingSongCount: 0,
+  items: [
+    { id: "r1", tableNumber: "1", text: "물", status: "pending", createdAt: "2026-09-04T10:00:00Z" },
+  ],
+};
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -91,7 +96,7 @@ describe("useCustomerRequestsPageQuery", () => {
   });
 });
 
-describe("useCustomerRequestsQuery safety-net polling", () => {
+describe("useCustomerRequestPendingSummaryQuery safety-net polling", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -105,10 +110,12 @@ describe("useCustomerRequestsQuery safety-net polling", () => {
   // `visibilitychange` listener interact in ways this component doesn't
   // control).
   it("configures a 60s safety-net poll that stops while the tab is hidden", async () => {
-    vi.mocked(fetchCustomerRequests).mockResolvedValue(fixture);
+    vi.mocked(fetchCustomerRequestPendingSummary).mockResolvedValue(fixture);
     const { Wrapper } = createWrapper();
 
-    const { result } = renderHook(() => useCustomerRequestsQuery(), { wrapper: Wrapper });
+    const { result } = renderHook(() => useCustomerRequestPendingSummaryQuery(), {
+      wrapper: Wrapper,
+    });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(useQuery).toHaveBeenCalledWith(
@@ -117,6 +124,23 @@ describe("useCustomerRequestsQuery safety-net polling", () => {
         refetchIntervalInBackground: false,
       }),
     );
+    expect(result.current.data).toEqual(fixture);
+  });
+
+  // Status mutations and the Realtime broadcast invalidate
+  // `requestsKeys.all`; the summary must sit under that prefix so the bell
+  // and dashboard refetch with them.
+  it("keys the summary under the requestsKeys.all prefix", async () => {
+    vi.mocked(fetchCustomerRequestPendingSummary).mockResolvedValue(fixture);
+    const { Wrapper, queryClient } = createWrapper();
+
+    const { result } = renderHook(() => useCustomerRequestPendingSummaryQuery(), {
+      wrapper: Wrapper,
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(requestsKeys.pendingSummary.slice(0, requestsKeys.all.length)).toEqual(requestsKeys.all);
+    expect(queryClient.getQueryData(requestsKeys.pendingSummary)).toEqual(fixture);
   });
 });
 
@@ -126,7 +150,7 @@ describe("useUpdateCustomerRequestStatusesMutation", () => {
   });
 
   it("calls the bulk API and invalidates every requestsKeys.all-prefixed cache entry", async () => {
-    vi.mocked(updateCustomerRequestStatuses).mockResolvedValue(fixture);
+    vi.mocked(updateCustomerRequestStatuses).mockResolvedValue(undefined);
     const { Wrapper, queryClient } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 

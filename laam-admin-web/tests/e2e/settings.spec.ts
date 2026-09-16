@@ -84,7 +84,7 @@ test.describe("설정과 모바일 내비게이션 회귀", () => {
     await expect(page.locator("html")).toHaveClass(/dark/);
   });
 
-  test("모바일 화면에서 사이드바를 열고 탐색한 뒤 닫을 수 있다", async ({ page }) => {
+  test("모바일 화면에서 사이드바를 열고 닫을 수 있고, 메뉴를 고르면 이동하면서 닫힌다", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     await mockDashboardData(page);
     await loginAsAdmin(page);
@@ -108,15 +108,22 @@ test.describe("설정과 모바일 내비게이션 회귀", () => {
     );
     expect(activeElementInDialog).toBe(true);
 
+    await page.keyboard.press("Escape");
+    await expect(dialog).not.toBeVisible();
+    // Focus returns to the trigger that opened the sheet once it closes.
+    await expect(trigger).toBeFocused();
+
+    await trigger.click();
+    await expect(dialog).toBeVisible();
+
     // "메뉴 관리" sits behind the "상품 관리" dropdown, collapsed by default
-    // since the dashboard isn't one of its routes.
+    // since the dashboard isn't one of its routes. Expanding it keeps the
+    // sheet open (the link inside stays clickable); choosing the link then
+    // closes the sheet on its own, with no Escape needed.
     await dialog.getByRole("button", { name: "상품 관리" }).click();
     await dialog.getByRole("link", { name: "메뉴 관리" }).click();
     await expect(page).toHaveURL(/\/menu$/);
-
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog")).not.toBeVisible();
-    // Focus returns to the trigger that opened the sheet once it closes.
+    await expect(dialog).not.toBeVisible();
     await expect(trigger).toBeFocused();
   });
 });

@@ -39,6 +39,7 @@ export const ko = {
     accountMenu: "계정 메뉴",
     logout: "로그아웃",
     loggingOut: "로그아웃 중…",
+    logoutFailed: "로그아웃하지 못했습니다. 다시 시도해 주세요.",
     language: "언어",
     languageKorean: "한국어",
     languageEnglish: "영어",
@@ -97,6 +98,8 @@ export const ko = {
     passwordPlaceholder: "비밀번호 입력",
     submit: "로그인",
     invalidPassword: "비밀번호가 올바르지 않습니다.",
+    tooManyAttempts: "로그인 시도가 너무 많습니다. {{minutes}}분 후 다시 시도해 주세요.",
+    tooManyAttemptsRetryLater: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
     failed: "로그인에 실패했습니다.",
   },
   dashboard: {
@@ -504,6 +507,7 @@ export const en = {
     accountMenu: "Account menu",
     logout: "Log out",
     loggingOut: "Logging out…",
+    logoutFailed: "Could not log out. Please try again.",
     language: "Language",
     languageKorean: "Korean",
     languageEnglish: "English",
@@ -554,6 +558,8 @@ export const en = {
     passwordPlaceholder: "Enter password",
     submit: "Sign in",
     invalidPassword: "That password is incorrect.",
+    tooManyAttempts: "Too many sign-in attempts. Try again in {{minutes}} min.",
+    tooManyAttemptsRetryLater: "Too many sign-in attempts. Please try again later.",
     failed: "Sign in failed.",
   },
   dashboard: {

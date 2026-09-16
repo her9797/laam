@@ -195,7 +195,7 @@ export function CategoryPanel({ categories }: { categories: MenuCategory[] }) {
           description={t("common:listNoResultsDescription")}
         />
       ) : (
-        <Table>
+        <Table className="min-w-[32rem]">
           <TableHeader>
             <TableRow>
               <TableHead className="w-32">{t("columnId")}</TableHead>

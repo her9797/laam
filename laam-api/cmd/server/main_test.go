@@ -4,7 +4,9 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net/http"
 	"testing"
+	"time"
 )
 
 func TestStartTossCatalogSyncDoesNotSchedulePeriodicPolling(t *testing.T) {
@@ -40,4 +42,24 @@ func TestStartTossCatalogSyncDoesNotSchedulePeriodicPolling(t *testing.T) {
 		}
 		return true
 	})
+}
+
+func TestNewHTTPServerSetsConnectionTimeouts(t *testing.T) {
+	server := newHTTPServer(":0", http.NotFoundHandler())
+
+	if server.ReadHeaderTimeout != 5*time.Second {
+		t.Errorf("ReadHeaderTimeout = %v, want 5s", server.ReadHeaderTimeout)
+	}
+	// An 8MB admin image upload over a slow link must fit in ReadTimeout.
+	if server.ReadTimeout < time.Minute {
+		t.Errorf("ReadTimeout = %v, want at least 1m", server.ReadTimeout)
+	}
+	// WriteTimeout is counted from the end of the request headers, so it must
+	// cover the body read plus the manual catalog sync's 30s context.
+	if server.WriteTimeout < server.ReadTimeout+30*time.Second {
+		t.Errorf("WriteTimeout = %v, want at least ReadTimeout+30s (%v)", server.WriteTimeout, server.ReadTimeout+30*time.Second)
+	}
+	if server.IdleTimeout <= 0 {
+		t.Errorf("IdleTimeout = %v, want a positive limit", server.IdleTimeout)
+	}
 }

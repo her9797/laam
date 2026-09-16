@@ -1,6 +1,6 @@
 import { fetchJson } from "@/lib/api/fetch-json";
 
-import type { OrderListQuery, OrderPageResult, PaymentOrder } from "./model";
+import type { OrderItemsResult, OrderListQuery, OrderPageResult, PaymentOrder } from "./model";
 import { resolveOrderDateRange } from "./order-date-range";
 
 const PAYMENT_ORDERS_PATH = "/api/admin/payment-orders";
@@ -19,8 +19,23 @@ const PAYMENT_ORDERS_PATH = "/api/admin/payment-orders";
  * created. When either is blank or the pair is invalid (e.g. from after
  * to), no bound is sent — used by `./queries.ts`'s fixed internal queries,
  * which intentionally want every order regardless of date.
+ *
+ * `include` lets a caller that reads only half of the envelope skip the
+ * other half's query server-side: `"items"` skips the COUNT and the
+ * response has no `total`; `"total"` skips the list and `items` is `[]`.
  */
-export function fetchOrdersPage(query: OrderListQuery): Promise<OrderPageResult> {
+export function fetchOrdersPage(
+  query: OrderListQuery,
+  options: { include: "items" },
+): Promise<OrderItemsResult>;
+export function fetchOrdersPage(
+  query: OrderListQuery,
+  options?: { include?: "total" },
+): Promise<OrderPageResult>;
+export function fetchOrdersPage(
+  query: OrderListQuery,
+  options: { include?: "items" | "total" } = {},
+): Promise<OrderPageResult | OrderItemsResult> {
   const params = new URLSearchParams({
     page: String(query.page),
     pageSize: String(query.pageSize),
@@ -35,6 +50,9 @@ export function fetchOrdersPage(query: OrderListQuery): Promise<OrderPageResult>
   }
   if (query.search.trim()) {
     params.set("q", query.search.trim());
+  }
+  if (options.include) {
+    params.set("include", options.include);
   }
 
   const range = resolveOrderDateRange(query.dateFrom, query.dateTo);

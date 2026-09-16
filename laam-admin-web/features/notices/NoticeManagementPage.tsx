@@ -245,7 +245,7 @@ export function NoticeManagementPage() {
           description={t("common:listNoResultsDescription")}
         />
       ) : (
-        <Table>
+        <Table className="min-w-[28rem]">
           <TableHeader>
             <TableRow>
               <TableHead>{t("columnText")}</TableHead>

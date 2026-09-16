@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import { fetchJson } from "@/lib/api/fetch-json";
 import type { AppData } from "@/features/bootstrap/model";
@@ -12,7 +12,8 @@ const NOTICES_PATH = "/api/admin/notices";
  * `router.go`) all return the full, refreshed `AppData` bootstrap tree —
  * `notices` lives in that shared tree (Task 4's design) — so callers write
  * the response straight into `bootstrapKeys.all` instead of a second round
- * trip, exactly like Task 6's `features/menu/api.ts`.
+ * trip, like Task 6's `features/menu/api.ts`, but ordered against concurrent
+ * notice mutations (see `useBootstrapSnapshotWrites`).
  */
 
 export type CreateNoticeInput = {
@@ -66,42 +67,105 @@ export function validateNoticeText(text: string): NoticeValidationKey | undefine
   return undefined;
 }
 
-function useApplyBootstrapUpdate() {
+/**
+ * Writing each response snapshot as it arrives lets two notice mutations in
+ * flight at once (one row's visibility toggle while another row's delete is
+ * pending) roll the cache back: whichever response lands last wins, even if
+ * it is the older snapshot, so a deleted notice reappears. Snapshots carry
+ * no version to compare, so a lone mutation still writes its snapshot
+ * straight in (no extra round trip), and a refetch is only spent once
+ * mutations actually overlap:
+ *
+ * - each mutation takes a sequence number when it starts, and its snapshot
+ *   is dropped if a later-started mutation's snapshot is already cached;
+ * - an in-flight bootstrap fetch (e.g. a window-focus refetch) is cancelled
+ *   before writing, so its possibly older response can't land on top;
+ * - start order still isn't the server's commit order, so once overlapping
+ *   mutations have all settled, `bootstrapKeys.all` is invalidated once to
+ *   converge on the server's latest state.
+ *
+ * The bookkeeping is per `QueryClient` since it tracks that client's cache,
+ * and shared by all four hooks since they all write the same key.
+ */
+type BootstrapWriteTracker = {
+  lastStarted: number;
+  lastApplied: number;
+  inFlight: number;
+  overlapped: boolean;
+};
+
+const bootstrapWriteTrackers = new WeakMap<QueryClient, BootstrapWriteTracker>();
+
+function getBootstrapWriteTracker(queryClient: QueryClient): BootstrapWriteTracker {
+  let tracker = bootstrapWriteTrackers.get(queryClient);
+  if (!tracker) {
+    tracker = { lastStarted: 0, lastApplied: 0, inFlight: 0, overlapped: false };
+    bootstrapWriteTrackers.set(queryClient, tracker);
+  }
+  return tracker;
+}
+
+function useBootstrapSnapshotWrites() {
   const queryClient = useQueryClient();
-  return (appData: AppData) => {
-    queryClient.setQueryData(bootstrapKeys.all, appData);
+  const tracker = getBootstrapWriteTracker(queryClient);
+  return {
+    onMutate: () => {
+      tracker.inFlight += 1;
+      if (tracker.inFlight > 1) {
+        tracker.overlapped = true;
+      }
+      tracker.lastStarted += 1;
+      return { sequence: tracker.lastStarted };
+    },
+    onSuccess: async (appData: AppData, _variables: unknown, { sequence }: { sequence: number }) => {
+      await queryClient.cancelQueries({ queryKey: bootstrapKeys.all });
+      if (sequence < tracker.lastApplied) {
+        return;
+      }
+      tracker.lastApplied = sequence;
+      queryClient.setQueryData(bootstrapKeys.all, appData);
+    },
+    onSettled: () => {
+      tracker.inFlight -= 1;
+      if (tracker.inFlight === 0 && tracker.overlapped) {
+        tracker.overlapped = false;
+        // Not returned: the mutation's own success (and the page's status
+        // message) shouldn't wait on this refetch.
+        queryClient.invalidateQueries({ queryKey: bootstrapKeys.all });
+      }
+    },
   };
 }
 
 export function useCreateNoticeMutation() {
-  const applyBootstrapUpdate = useApplyBootstrapUpdate();
+  const snapshotWrites = useBootstrapSnapshotWrites();
   return useMutation({
     mutationFn: (input: CreateNoticeInput) => createNotice(input),
-    onSuccess: applyBootstrapUpdate,
+    ...snapshotWrites,
   });
 }
 
 export function useUpdateNoticeMutation() {
-  const applyBootstrapUpdate = useApplyBootstrapUpdate();
+  const snapshotWrites = useBootstrapSnapshotWrites();
   return useMutation({
     mutationFn: ({ id, text }: { id: string; text: string }) => updateNotice(id, text),
-    onSuccess: applyBootstrapUpdate,
+    ...snapshotWrites,
   });
 }
 
 export function useUpdateNoticeVisibilityMutation() {
-  const applyBootstrapUpdate = useApplyBootstrapUpdate();
+  const snapshotWrites = useBootstrapSnapshotWrites();
   return useMutation({
     mutationFn: ({ id, isVisible }: { id: string; isVisible: boolean }) =>
       updateNoticeVisibility(id, isVisible),
-    onSuccess: applyBootstrapUpdate,
+    ...snapshotWrites,
   });
 }
 
 export function useDeleteNoticeMutation() {
-  const applyBootstrapUpdate = useApplyBootstrapUpdate();
+  const snapshotWrites = useBootstrapSnapshotWrites();
   return useMutation({
     mutationFn: (id: string) => deleteNotice(id),
-    onSuccess: applyBootstrapUpdate,
+    ...snapshotWrites,
   });
 }

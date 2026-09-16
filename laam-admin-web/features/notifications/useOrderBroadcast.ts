@@ -4,6 +4,8 @@ import { useEffect } from "react";
 import { orderKeys } from "@/features/orders/queries";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
+import { BROADCAST_REFETCH_INTERVAL_MS, createBroadcastThrottle } from "./broadcast-throttle";
+
 /**
  * Topic/event names for the Realtime Broadcast signal sent after a payment
  * order is completed. Must match `laam-api`'s `internal/notify.OrdersTopic`
@@ -16,9 +18,15 @@ const NEW_ORDER_EVENT = "new_order";
 
 /**
  * Subscribes to the public `admin-orders` Broadcast channel and
- * invalidates `orderKeys.all` on every `new_order` signal, so a sale that
+ * invalidates `orderKeys.all` on `new_order` signals, so a sale that
  * completes while the operator is looking at the order list (or anywhere
  * else in the admin web) shows up without a manual refresh.
+ *
+ * Signals are coalesced the same way as `useRequestBroadcast`'s (see
+ * `createBroadcastThrottle`): immediate refetch for the first one after a
+ * quiet `BROADCAST_REFETCH_INTERVAL_MS`, one trailing refetch for the rest
+ * of a burst. Each hook runs its own throttle, so a flood on one channel
+ * never delays the other channel's refetch.
  *
  * Deliberately a separate hook and channel from `useRequestBroadcast`
  * rather than another event on `admin-requests`: customer requests and
@@ -44,15 +52,20 @@ export function useOrderBroadcast(): void {
       return;
     }
 
+    const throttle = createBroadcastThrottle(() => {
+      queryClient.invalidateQueries({ queryKey: orderKeys.all });
+    }, BROADCAST_REFETCH_INTERVAL_MS);
+
     const channel = supabase.channel(ORDERS_TOPIC);
     channel
       .on("broadcast", { event: NEW_ORDER_EVENT }, () => {
-        queryClient.invalidateQueries({ queryKey: orderKeys.all });
+        throttle.call();
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
+      throttle.dispose();
     };
   }, [queryClient]);
 }

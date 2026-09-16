@@ -422,21 +422,9 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 				return
 			}
 
-			if err := r.ParseMultipartForm(8 << 20); err != nil {
-				writeError(w, http.StatusBadRequest, err)
-				return
-			}
-
-			file, header, err := r.FormFile("image")
+			upload, status, err := readMenuImageUpload(w, r)
 			if err != nil {
-				writeError(w, http.StatusBadRequest, err)
-				return
-			}
-			defer file.Close()
-
-			content, err := io.ReadAll(file)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
+				writeError(w, status, err)
 				return
 			}
 
@@ -446,9 +434,9 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 			focusY, _ := strconv.Atoi(strings.TrimSpace(r.FormValue("focusY")))
 			if err := repository.CreateMenuImage(r.Context(), store.CreateMenuImageInput{
 				MenuItemID:  menuItemID,
-				Filename:    header.Filename,
-				MimeType:    header.Header.Get("Content-Type"),
-				Content:     content,
+				Filename:    upload.filename,
+				MimeType:    upload.mimeType,
+				Content:     upload.content,
 				IsPrimary:   isPrimary,
 				DisplayArea: displayArea,
 				FocusX:      focusX,
@@ -543,13 +531,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 				return
 			}
 
-			requests, err := repository.ListCustomerRequests(r.Context())
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-
-			writeJSON(w, http.StatusOK, requests)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
@@ -673,9 +655,21 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 			Order:         query.Order,
 			Page:          query.Page,
 			PageSize:      query.PageSize,
+			SkipTotal:     query.Include == "items",
+			SkipItems:     query.Include == "total",
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if query.Include == "items" {
+			// No COUNT ran, so total is omitted rather than reported as 0.
+			writeJSON(w, http.StatusOK, struct {
+				Items    []lamdata.PaymentOrder `json:"items"`
+				Page     int                    `json:"page"`
+				PageSize int                    `json:"pageSize"`
+			}{Items: items, Page: query.Page, PageSize: query.PageSize})
 			return
 		}
 
@@ -770,6 +764,27 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 		writeJSON(w, http.StatusOK, stats)
 	}))
 
+	// Registered as an exact path so it wins over the "/customer-requests/"
+	// subtree handler below, which only serves per-id DELETE/PATCH.
+	mux.HandleFunc("/api/v1/admin/customer-requests/pending-summary", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
+		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
+			return
+		}
+
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowed(w)
+			return
+		}
+
+		summary, err := repository.GetCustomerRequestPendingSummary(r.Context(), pendingSummaryItemLimit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, summary)
+	}))
+
 	mux.HandleFunc("/api/v1/admin/customer-requests/", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
 		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
 			return
@@ -787,13 +802,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 				return
 			}
 
-			requests, err := repository.ListCustomerRequests(r.Context())
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, err)
-				return
-			}
-
-			writeJSON(w, http.StatusOK, requests)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
@@ -819,13 +828,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 			return
 		}
 
-		requests, err := repository.ListCustomerRequests(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, requests)
+		w.WriteHeader(http.StatusNoContent)
 	}))
 
 	mux.HandleFunc("/api/v1/admin/special-requests/", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
@@ -849,13 +852,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 			return
 		}
 
-		requests, err := repository.ListSpecialRequests(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, requests)
+		w.WriteHeader(http.StatusNoContent)
 	}))
 
 	mux.HandleFunc("/api/v1/admin/request-guides", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
@@ -1116,6 +1113,11 @@ func parseStatusResourceID(path string, prefix string) (string, bool) {
 	return resourceID, true
 }
 
+// pendingSummaryItemLimit caps the pending rows the notification panel
+// receives. It stays below store's bulk status update limit (200) so the
+// panel's "mark all" ids always fit in one bulk request.
+const pendingSummaryItemLimit = 100
+
 func storeInputSpecialRequest(payload createSpecialRequestRequest) lamdata.SpecialRequest {
 	return lamdata.SpecialRequest{
 		TableNumber: strings.TrimSpace(payload.TableNumber),
@@ -1171,6 +1173,69 @@ func requireAdminAuth(w http.ResponseWriter, r *http.Request, adminAPIToken stri
 
 func writeMethodNotAllowed(w http.ResponseWriter) {
 	writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+}
+
+const (
+	// maxMenuImageBytes matches laam-admin-web's MAX_IMAGE_SIZE_BYTES
+	// (features/menu/model.ts), the largest file the admin screen lets an
+	// operator pick.
+	maxMenuImageBytes = 8 << 20
+	// maxMenuImageRequestBytes leaves room for the multipart envelope and the
+	// small isPrimary/displayArea/focus form fields around the image.
+	maxMenuImageRequestBytes = maxMenuImageBytes + 1<<20
+)
+
+// allowedMenuImageMimeTypes mirrors laam-admin-web's ALLOWED_IMAGE_MIME_TYPES.
+var allowedMenuImageMimeTypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/webp": true,
+}
+
+type menuImageUpload struct {
+	filename string
+	mimeType string
+	content  []byte
+}
+
+// readMenuImageUpload reads the "image" part of a menu image upload,
+// bounding the request body and the file size before anything is buffered
+// into the database. The MIME type is sniffed from the bytes rather than
+// taken from the client's part header, since it is later served back as the
+// image's Content-Type. On failure it returns the HTTP status to reply with.
+func readMenuImageUpload(w http.ResponseWriter, r *http.Request) (menuImageUpload, int, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxMenuImageRequestBytes)
+	if err := r.ParseMultipartForm(maxMenuImageBytes); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return menuImageUpload{}, http.StatusRequestEntityTooLarge, fmt.Errorf("image upload exceeds %d bytes", maxMenuImageRequestBytes)
+		}
+		return menuImageUpload{}, http.StatusBadRequest, err
+	}
+
+	file, header, err := r.FormFile("image")
+	if err != nil {
+		return menuImageUpload{}, http.StatusBadRequest, err
+	}
+	defer file.Close()
+
+	if header.Size > maxMenuImageBytes {
+		return menuImageUpload{}, http.StatusRequestEntityTooLarge, fmt.Errorf("image exceeds %d bytes", maxMenuImageBytes)
+	}
+	content, err := io.ReadAll(io.LimitReader(file, maxMenuImageBytes+1))
+	if err != nil {
+		return menuImageUpload{}, http.StatusInternalServerError, err
+	}
+	if len(content) > maxMenuImageBytes {
+		return menuImageUpload{}, http.StatusRequestEntityTooLarge, fmt.Errorf("image exceeds %d bytes", maxMenuImageBytes)
+	}
+
+	mimeType := http.DetectContentType(content)
+	if !allowedMenuImageMimeTypes[mimeType] {
+		return menuImageUpload{}, http.StatusUnsupportedMediaType, fmt.Errorf("unsupported image type %q", mimeType)
+	}
+
+	return menuImageUpload{filename: header.Filename, mimeType: mimeType, content: content}, http.StatusOK, nil
 }
 
 func writeStoreError(w http.ResponseWriter, err error) {

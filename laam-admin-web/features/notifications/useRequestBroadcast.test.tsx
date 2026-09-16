@@ -1,8 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { requestsKeys } from "@/features/requests/queries";
+
+import { BROADCAST_REFETCH_INTERVAL_MS } from "./broadcast-throttle";
 
 type BroadcastCallback = (message: { payload: unknown }) => void;
 
@@ -99,5 +101,77 @@ describe("useRequestBroadcast", () => {
     unmount();
 
     expect(removeChannel).toHaveBeenCalledWith(channel);
+  });
+
+  describe("coalescing a flood of signals", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function renderSubscribed() {
+      const channel = createFakeChannel();
+      getSupabaseClientMock.mockReturnValue({
+        channel: vi.fn(() => channel),
+        removeChannel: vi.fn(),
+      });
+      const queryClient = new QueryClient();
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      const { unmount } = renderWithClient(queryClient);
+      return { channel, invalidateSpy, unmount };
+    }
+
+    it("invalidates on the first of 50 signals immediately and folds the rest into one trailing refetch", () => {
+      const { channel, invalidateSpy } = renderSubscribed();
+
+      for (let i = 0; i < 50; i++) {
+        channel.__trigger({ type: "new_request" });
+      }
+      expect(invalidateSpy).toHaveBeenCalledTimes(1);
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: requestsKeys.all });
+
+      vi.advanceTimersByTime(BROADCAST_REFETCH_INTERVAL_MS);
+      expect(invalidateSpy).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(BROADCAST_REFETCH_INTERVAL_MS * 10);
+      expect(invalidateSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("invalidates immediately again for a signal arriving after the interval has passed", () => {
+      const { channel, invalidateSpy } = renderSubscribed();
+
+      channel.__trigger({ type: "new_request" });
+      vi.advanceTimersByTime(BROADCAST_REFETCH_INTERVAL_MS);
+      expect(invalidateSpy).toHaveBeenCalledTimes(1);
+
+      channel.__trigger({ type: "new_request" });
+      expect(invalidateSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("drops a pending trailing refetch on unmount", () => {
+      const { channel, invalidateSpy, unmount } = renderSubscribed();
+
+      channel.__trigger({ type: "new_request" });
+      channel.__trigger({ type: "new_request" });
+      unmount();
+      vi.advanceTimersByTime(BROADCAST_REFETCH_INTERVAL_MS * 10);
+
+      expect(invalidateSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("ignores a signal delivered after unmount", () => {
+      const { channel, invalidateSpy, unmount } = renderSubscribed();
+
+      unmount();
+      // The fake channel keeps its callback after `removeChannel`, as a real
+      // one does until the server acknowledges the leave.
+      channel.__trigger({ type: "new_request" });
+      vi.advanceTimersByTime(BROADCAST_REFETCH_INTERVAL_MS * 10);
+
+      expect(invalidateSpy).not.toHaveBeenCalled();
+    });
   });
 });

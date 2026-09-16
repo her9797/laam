@@ -1,8 +1,10 @@
 import { expect, type Page } from "@playwright/test";
 
 import type { AppData } from "@/features/bootstrap/model";
+import type { PaymentOrder } from "@/features/orders/model";
 import type { CustomerRequest } from "@/features/requests/model";
 import type { SpecialRequest } from "@/features/special-requests/model";
+import type { SystemLog } from "@/features/system-logs/model";
 
 /**
  * Matches this suite's Playwright `webServer.env` (`playwright.config.ts`)
@@ -101,25 +103,39 @@ export async function mockBootstrap(page: Page, appData: AppData): Promise<void>
   });
 }
 
-/** Mocks the general/song request list route (`GET /api/admin/customer-requests`). */
-export async function mockCustomerRequestsList(
+/**
+ * Mocks the notification bell/dashboard summary route
+ * (`GET /api/admin/customer-requests/pending-summary`), deriving the pending
+ * general/song counts and newest-first pending items from `requests` the way
+ * `laam-api` does (same `[노래 신청]` prefix rule).
+ */
+export async function mockCustomerRequestPendingSummary(
   page: Page,
   requests: CustomerRequest[],
 ): Promise<void> {
-  await page.route("**/api/admin/customer-requests", async (route) => {
-    await route.fulfill({ json: requests });
+  await page.route("**/api/admin/customer-requests/pending-summary", async (route) => {
+    const pending = requests
+      .filter((request) => request.status === "pending")
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    const songCount = pending.filter((request) => request.text.startsWith(SONG_REQUEST_PREFIX)).length;
+    await route.fulfill({
+      json: {
+        pendingGeneralCount: pending.length - songCount,
+        pendingSongCount: songCount,
+        items: pending,
+      },
+    });
   });
 }
 
 /**
  * Mocks a status-change PATCH (`PATCH /api/admin/customer-requests/{id}/status`),
- * which per `features/requests/api.ts` returns the full refreshed list.
+ * which answers 204 No Content.
  *
  * Pass `state` whenever the screen under test reads the *paged* list
  * (`mockCustomerRequestsPage`): `useUpdateCustomerRequestStatusMutation`
- * invalidates `requestsKeys.all` rather than writing this response into the
- * cache (see `features/requests/queries.ts`), so the list refetches right
- * after the PATCH — and without advancing the shared state that refetch
+ * invalidates `requestsKeys.all` (see `features/requests/queries.ts`), so
+ * the list refetches right after the PATCH — and without advancing the shared state that refetch
  * would just serve the pre-PATCH rows again.
  */
 export async function mockCustomerRequestStatusUpdate(
@@ -131,30 +147,25 @@ export async function mockCustomerRequestStatusUpdate(
     if (state) {
       state.requests = refreshedRequests;
     }
-    await route.fulfill({ json: refreshedRequests });
+    await route.fulfill({ status: 204 });
   });
 }
 
 /**
  * Mocks the bulk status-change PATCH (`PATCH /api/admin/customer-requests`,
  * the collection path — see `docs/plans/2026-09-04-admin-request-notifications.md`
- * section 4.5), which returns the full refreshed list, same as the
- * single-id PATCH above. This shares its URL with `mockCustomerRequestsList`
- * (`GET` on the same path), so it must be registered *after* that call in a
- * test: Playwright matches routes most-recently-registered-first, and
- * `route.fallback()` on a non-`PATCH` request here defers to the
- * previously-registered `GET` handler underneath it.
+ * section 4.5), which answers 204 No Content, same as the single-id PATCH
+ * above. `route.fallback()` on a non-`PATCH` request here defers to any
+ * previously-registered handler for the same path, so register it *after*
+ * those (Playwright matches routes most-recently-registered-first).
  */
-export async function mockCustomerRequestsBulkStatusUpdate(
-  page: Page,
-  refreshedRequests: CustomerRequest[],
-): Promise<void> {
+export async function mockCustomerRequestsBulkStatusUpdate(page: Page): Promise<void> {
   await page.route("**/api/admin/customer-requests", async (route) => {
     if (route.request().method() !== "PATCH") {
       await route.fallback();
       return;
     }
-    await route.fulfill({ json: refreshedRequests });
+    await route.fulfill({ status: 204 });
   });
 }
 
@@ -169,8 +180,9 @@ export async function mockSpecialRequestsList(
 }
 
 /**
- * Mocks a delete (`DELETE /api/admin/special-requests/{id}`), which per
- * `features/special-requests/api.ts` returns the full refreshed list.
+ * Mocks a delete (`DELETE /api/admin/special-requests/{id}`), which answers
+ * 204 No Content. `refreshedRequests` only advances `state` so a paged list
+ * refetch after the delete observes it.
  */
 export async function mockSpecialRequestDelete(
   page: Page,
@@ -181,7 +193,7 @@ export async function mockSpecialRequestDelete(
     if (state) {
       state.requests = refreshedRequests;
     }
-    await route.fulfill({ json: refreshedRequests });
+    await route.fulfill({ status: 204 });
   });
 }
 
@@ -190,9 +202,8 @@ export async function mockSpecialRequestDelete(
  * reads `requests` on every call and the mutation mocks
  * (`mockCustomerRequestStatusUpdate`, `mockSpecialRequestDelete`) replace
  * it, so a screen that refetches after a mutation observes the change. A
- * plain array would not: those mutations invalidate their query key instead
- * of writing the response into the cache, so the list always goes back to
- * the network before re-rendering.
+ * plain array would not: those mutations answer 204 and invalidate their
+ * query key, so the list always goes back to the network before re-rendering.
  */
 export type CustomerRequestListState = { requests: CustomerRequest[] };
 
@@ -202,15 +213,12 @@ const SONG_REQUEST_PREFIX = "[노래 신청]";
 
 /**
  * Mocks the paged general/song request route
- * (`GET /api/admin/customer-requests?...`) that `RequestListPage` uses —
- * distinct from `mockCustomerRequestsList` above, which answers the bare,
- * query-less path the notification bell and dashboard still call. Reaching
- * `laam-api` with any recognized query param switches its response from the
- * plain array to the `{ items, page, pageSize, total }` envelope (see
- * `features/requests/api.ts`'s `fetchCustomerRequestsPage`), so the two
- * shapes need two mocks. The match predicate keys on exactly that — same
- * path, non-empty query string — rather than a glob, so the split is
- * explicit and the two routes can never shadow each other.
+ * (`GET /api/admin/customer-requests?...`) that `RequestListPage` uses.
+ * Reaching `laam-api` with any recognized query param switches its response
+ * from the legacy plain array to the `{ items, page, pageSize, total }`
+ * envelope (see `features/requests/api.ts`'s `fetchCustomerRequestsPage`).
+ * The match predicate keys on exactly that — same path, non-empty query
+ * string — rather than a glob, so it never shadows the bare path's PATCH.
  *
  * `kind` and `status` are applied here the way the server applies them
  * (`kind` via the same `[노래 신청]` text-prefix convention
@@ -337,7 +345,7 @@ export async function mockDashboardData(
 ): Promise<void> {
   const specialRequests = overrides.specialRequests ?? buildSpecialRequests();
   await mockBootstrap(page, overrides.appData ?? buildAppData());
-  await mockCustomerRequestsList(page, overrides.requests ?? buildCustomerRequests());
+  await mockCustomerRequestPendingSummary(page, overrides.requests ?? buildCustomerRequests());
   // Kept for any test that still reads the bare, query-less list directly —
   // nothing on the dashboard itself does since `useSpecialRequestCountQuery`
   // below replaced its old full-list read.
@@ -371,4 +379,67 @@ export async function loginAsAdmin(page: Page): Promise<void> {
   await page.getByLabel("비밀번호").fill(ADMIN_PASSWORD);
   await page.getByRole("button", { name: "로그인" }).click();
   await expect(page).toHaveURL(/\/dashboard$/);
+}
+
+/**
+ * Fresh `PaymentOrder[]` each call — field names/shapes match
+ * `features/orders/model.ts`'s `PaymentOrder` (mirrors `laam-api`).
+ */
+export function buildPaymentOrders(): PaymentOrder[] {
+  return [
+    {
+      orderId: "order-1",
+      menuItemId: "menu-1",
+      menuItemName: "아메리카노",
+      categoryName: "음료",
+      tableNumber: "3",
+      requestNote: "얼음 적게 주세요",
+      amount: 4000,
+      vat: 364,
+      suppliedAmount: 3636,
+      taxFreeAmount: 0,
+      status: "READY",
+      paymentMethod: "CARD",
+      approvedAt: "2026-09-03T10:00:00Z",
+      posSyncStatus: "SUCCEEDED",
+      createdAt: "2026-09-03T10:00:00Z",
+    },
+  ];
+}
+
+/**
+ * Mocks the paginated order list route (`GET /api/admin/payment-orders?...`)
+ * with real rows, for `/orders`. Same path-regardless-of-query-string match
+ * as `mockPaymentOrdersList`; register it after `mockDashboardData` so it
+ * takes precedence (Playwright matches most-recently-registered first).
+ */
+export async function mockPaymentOrdersPage(page: Page, orders: PaymentOrder[]): Promise<void> {
+  await page.route("**/api/admin/payment-orders?**", async (route) => {
+    await route.fulfill({
+      json: { items: orders, page: 1, pageSize: 20, total: orders.length },
+    });
+  });
+}
+
+/** Fresh `SystemLog[]` each call — shape matches `features/system-logs/model.ts`. */
+export function buildSystemLogs(): SystemLog[] {
+  return [
+    {
+      id: "log-1",
+      method: "GET",
+      path: "/api/v1/admin/payment-orders",
+      status: 502,
+      message: "upstream POS request failed",
+      createdAt: "2026-09-03T10:00:00Z",
+    },
+  ];
+}
+
+/** Mocks the paged system log route (`GET /api/admin/system-logs?...`). */
+export async function mockSystemLogsPage(page: Page, logs: SystemLog[]): Promise<void> {
+  await page.route("**/api/admin/system-logs?**", async (route) => {
+    await route.fulfill({
+      json: { items: logs, page: 1, pageSize: 20, total: logs.length },
+    });
+  });
 }
