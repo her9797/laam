@@ -3,9 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const replaceMock = vi.fn();
 const refreshMock = vi.fn();
+// Reassigned (followed by `rerender`) to simulate arriving on another route.
+let currentPathname = "/dashboard";
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/dashboard",
+  usePathname: () => currentPathname,
   useRouter: () => ({ replace: replaceMock, refresh: refreshMock }),
 }));
 
@@ -15,9 +17,19 @@ vi.mock(
     default: ({
       href,
       children,
+      onClick,
       ...props
     }: React.ComponentProps<"a"> & { href: string }) => (
-      <a href={href} {...props}>
+      <a
+        href={href}
+        {...props}
+        onClick={(event) => {
+          onClick?.(event);
+          // Like the real `next/link`, keep the click client-side instead of
+          // letting jsdom attempt (and report as unimplemented) a page load.
+          event.preventDefault();
+        }}
+      >
         {children}
       </a>
     ),
@@ -36,23 +48,24 @@ vi.mock("@/features/notifications/NotificationBells", () => ({
   NotificationBells: () => <button type="button">알림</button>,
 }));
 
+// The real `<Toaster />` lives in `AppProviders`, which these renders don't
+// include — assert on what the shell asks the toast manager to show instead.
+const toastAddMock = vi.fn();
+vi.mock("@/components/ui/toast", () => ({
+  toast: { add: (...args: unknown[]) => toastAddMock(...args) },
+}));
+
 import i18n from "@/i18n/client";
 
 import { AdminShell } from "./AdminShell";
 
-const NAV_LABELS = [
-  "대시보드",
-  "매장 플레이어",
-  "손님 요청",
-  "노래 신청",
-  "특별 요청",
-  "메뉴 관리",
-  "카테고리 관리",
-  "이벤트·공지",
-  "안내 문구",
-];
+const TOP_LEVEL_NAV_LABELS = ["대시보드", "매장 플레이어", "이벤트·공지", "안내 문구"];
 
 const REQUEST_GROUP_SUB_LABELS = ["손님 요청", "노래 신청", "특별 요청"];
+
+const PRODUCT_GROUP_SUB_LABELS = ["메뉴 관리", "카테고리 관리"];
+
+const LOGOUT_FAILED_MESSAGE = "로그아웃하지 못했습니다. 다시 시도해 주세요.";
 
 function setViewportWidth(width: number) {
   Object.defineProperty(window, "innerWidth", {
@@ -79,6 +92,8 @@ describe("AdminShell", () => {
   beforeEach(async () => {
     replaceMock.mockClear();
     refreshMock.mockClear();
+    toastAddMock.mockClear();
+    currentPathname = "/dashboard";
     window.localStorage.clear();
     clearSidebarWidthCookie();
     setViewportWidth(1024);
@@ -99,19 +114,24 @@ describe("AdminShell", () => {
       </AdminShell>,
     );
 
-    // "손님 요청"/"노래 신청"/"특별 요청" sit behind the "요청 관리" dropdown
-    // and "메뉴 관리"/"카테고리 관리" sit behind the "상품 관리" dropdown,
-    // both closed by default here since the mocked pathname ("/dashboard")
-    // isn't one of their routes — open them first so every item in
-    // NAV_LABELS is reachable.
-    fireEvent.click(screen.getByRole("button", { name: "요청 관리" }));
-    fireEvent.click(screen.getByRole("button", { name: "상품 관리" }));
-
-    for (const label of NAV_LABELS) {
+    function expectReachableLink(label: string) {
       const link = screen.getByRole("link", { name: label });
       expect(link).toBeInTheDocument();
       expect(link).not.toHaveAttribute("tabindex", "-1");
     }
+
+    TOP_LEVEL_NAV_LABELS.forEach(expectReachableLink);
+
+    // "손님 요청"/"노래 신청"/"특별 요청" sit behind the "요청 관리" dropdown
+    // and "메뉴 관리"/"카테고리 관리" sit behind the "상품 관리" dropdown,
+    // both closed by default here since the mocked pathname ("/dashboard")
+    // isn't one of their routes. Only one dropdown is expanded at a time, so
+    // each is opened right before checking the links nested under it.
+    fireEvent.click(screen.getByRole("button", { name: "요청 관리" }));
+    REQUEST_GROUP_SUB_LABELS.forEach(expectReachableLink);
+
+    fireEvent.click(screen.getByRole("button", { name: "상품 관리" }));
+    PRODUCT_GROUP_SUB_LABELS.forEach(expectReachableLink);
   });
 
   it("exposes 상품 관리 as a collapsed dropdown that reveals its sub-links on click", () => {
@@ -263,6 +283,263 @@ describe("AdminShell", () => {
         expect.objectContaining({ method: "POST" }),
       );
       expect(replaceMock).toHaveBeenCalledWith("/login");
+    });
+    expect(refreshMock).toHaveBeenCalled();
+    expect(toastAddMock).not.toHaveBeenCalled();
+  });
+
+  it("stays on the page and shows a translated error toast when logout responds with a non-2xx status", async () => {
+    global.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
+    render(
+      <AdminShell>
+        <p>page content</p>
+      </AdminShell>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
+
+    await vi.waitFor(() => {
+      expect(replaceMock).not.toHaveBeenCalled();
+      expect(toastAddMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: LOGOUT_FAILED_MESSAGE }),
+      );
+    });
+    expect(refreshMock).not.toHaveBeenCalled();
+  });
+
+  it("stays on the page and shows a translated error toast when the logout request itself fails", async () => {
+    global.fetch = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    render(
+      <AdminShell>
+        <p>page content</p>
+      </AdminShell>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
+
+    await vi.waitFor(() => {
+      expect(replaceMock).not.toHaveBeenCalled();
+      expect(toastAddMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: LOGOUT_FAILED_MESSAGE }),
+      );
+    });
+    expect(refreshMock).not.toHaveBeenCalled();
+  });
+
+  it("re-enables the logout button after a failed attempt so a retry can log out", async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 500 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    render(
+      <AdminShell>
+        <p>page content</p>
+      </AdminShell>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
+
+    await vi.waitFor(() => {
+      expect(screen.getByRole("button", { name: "로그아웃" })).toBeEnabled();
+    });
+    expect(replaceMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "로그아웃" }));
+
+    await vi.waitFor(() => {
+      expect(replaceMock).toHaveBeenCalledWith("/login");
+    });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  describe("사이드바 메뉴 그룹", () => {
+    it.each(["매장 플레이어", "시스템 로그"])(
+      "그룹을 열어 둔 채 최상위 메뉴(%s)를 누르면 열려 있던 그룹이 닫힌다",
+      (linkLabel) => {
+        render(
+          <AdminShell>
+            <p>page content</p>
+          </AdminShell>,
+        );
+        const requestGroup = screen.getByRole("button", { name: "요청 관리" });
+        fireEvent.click(requestGroup);
+        expect(requestGroup).toHaveAttribute("aria-expanded", "true");
+
+        fireEvent.click(screen.getByRole("link", { name: linkLabel }));
+
+        expect(requestGroup).toHaveAttribute("aria-expanded", "false");
+        expect(screen.queryByRole("link", { name: "손님 요청" })).not.toBeInTheDocument();
+      },
+    );
+
+    it("다른 그룹을 열면 먼저 열려 있던 그룹은 닫혀 한 번에 하나만 열린다", () => {
+      render(
+        <AdminShell>
+          <p>page content</p>
+        </AdminShell>,
+      );
+      const requestGroup = screen.getByRole("button", { name: "요청 관리" });
+      const productGroup = screen.getByRole("button", { name: "상품 관리" });
+
+      fireEvent.click(requestGroup);
+      fireEvent.click(productGroup);
+
+      expect(requestGroup).toHaveAttribute("aria-expanded", "false");
+      expect(productGroup).toHaveAttribute("aria-expanded", "true");
+      expect(screen.queryByRole("link", { name: "손님 요청" })).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "메뉴 관리" })).toBeInTheDocument();
+    });
+
+    it("현재 경로가 속해 자동으로 펼쳐진 그룹도 다른 그룹을 열면 닫힌다", () => {
+      currentPathname = "/requests";
+      render(
+        <AdminShell>
+          <p>page content</p>
+        </AdminShell>,
+      );
+      const requestGroup = screen.getByRole("button", { name: "요청 관리" });
+      const productGroup = screen.getByRole("button", { name: "상품 관리" });
+      expect(requestGroup).toHaveAttribute("aria-expanded", "true");
+
+      fireEvent.click(productGroup);
+
+      expect(requestGroup).toHaveAttribute("aria-expanded", "false");
+      expect(productGroup).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("현재 경로가 속한 그룹도 자기 토글 버튼으로 접을 수 있다", () => {
+      currentPathname = "/requests";
+      render(
+        <AdminShell>
+          <p>page content</p>
+        </AdminShell>,
+      );
+      const requestGroup = screen.getByRole("button", { name: "요청 관리" });
+      expect(requestGroup).toHaveAttribute("aria-expanded", "true");
+
+      fireEvent.click(requestGroup);
+
+      expect(requestGroup).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByRole("link", { name: "손님 요청" })).not.toBeInTheDocument();
+    });
+
+    it("같은 그룹의 하위 메뉴를 누르면 그 그룹은 열린 채로 남는다", () => {
+      render(
+        <AdminShell>
+          <p>page content</p>
+        </AdminShell>,
+      );
+      const productGroup = screen.getByRole("button", { name: "상품 관리" });
+      fireEvent.click(productGroup);
+
+      fireEvent.click(screen.getByRole("link", { name: "메뉴 관리" }));
+
+      expect(productGroup).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByRole("link", { name: "카테고리 관리" })).toBeInTheDocument();
+    });
+
+    it("다른 화면으로 이동하면 직접 열어 둔 그룹은 초기화되고 현재 경로가 속한 그룹만 열린다", () => {
+      const { rerender } = render(
+        <AdminShell>
+          <p>page content</p>
+        </AdminShell>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "상품 관리" }));
+
+      currentPathname = "/requests";
+      rerender(
+        <AdminShell>
+          <p>page content</p>
+        </AdminShell>,
+      );
+
+      expect(screen.getByRole("button", { name: "요청 관리" })).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByRole("button", { name: "상품 관리" })).toHaveAttribute("aria-expanded", "false");
+
+      // Returning to the screen the group was opened on doesn't restore that
+      // earlier manual choice either.
+      currentPathname = "/dashboard";
+      rerender(
+        <AdminShell>
+          <p>page content</p>
+        </AdminShell>,
+      );
+
+      expect(screen.getByRole("button", { name: "요청 관리" })).toHaveAttribute("aria-expanded", "false");
+      expect(screen.getByRole("button", { name: "상품 관리" })).toHaveAttribute("aria-expanded", "false");
+    });
+
+    it("데스크톱에서는 메뉴 링크를 눌러도 사이드바의 펼침·접힘 상태가 바뀌지 않는다", () => {
+      render(
+        <AdminShell>
+          <p>page content</p>
+        </AdminShell>,
+      );
+      const sidebar = document.querySelector('[data-slot="sidebar"]');
+      expect(sidebar).toHaveAttribute("data-state", "expanded");
+
+      fireEvent.click(screen.getByRole("link", { name: "매장 플레이어" }));
+      expect(sidebar).toHaveAttribute("data-state", "expanded");
+
+      fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
+      expect(sidebar).toHaveAttribute("data-state", "collapsed");
+
+      fireEvent.click(screen.getByRole("link", { name: "매장 플레이어" }));
+      expect(sidebar).toHaveAttribute("data-state", "collapsed");
+    });
+  });
+
+  describe("모바일 사이드 시트", () => {
+    beforeEach(() => {
+      setViewportWidth(375);
+    });
+
+    it("최상위 메뉴 링크를 누르면 사이드 시트가 닫힌다", async () => {
+      render(
+        <AdminShell>
+          <p>page content</p>
+        </AdminShell>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
+
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("link", { name: "매장 플레이어" }));
+
+      await vi.waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+    });
+
+    it("그룹의 하위 메뉴 링크를 누르면 사이드 시트가 닫힌다", async () => {
+      render(
+        <AdminShell>
+          <p>page content</p>
+        </AdminShell>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
+      const dialog = screen.getByRole("dialog");
+      fireEvent.click(within(dialog).getByRole("button", { name: "상품 관리" }));
+
+      fireEvent.click(within(dialog).getByRole("link", { name: "메뉴 관리" }));
+
+      await vi.waitFor(() => {
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+    });
+
+    it("그룹 토글 버튼을 누르면 사이드 시트는 열린 채로 남는다", () => {
+      render(
+        <AdminShell>
+          <p>page content</p>
+        </AdminShell>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "메뉴 열기" }));
+
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "상품 관리" }));
+
+      // A closing sheet drops out of the accessibility tree immediately, so
+      // this lookup would already fail had the toggle dismissed it.
+      const dialog = screen.getByRole("dialog");
+      expect(within(dialog).getByRole("link", { name: "메뉴 관리" })).toBeInTheDocument();
     });
   });
 
