@@ -2,9 +2,9 @@
 
 ## 프로젝트 구조
 
-- `lam-web`: 손님용 모바일 QR 메뉴 웹
-- `lam-admin-web`: 운영자용 Next.js 관리자 웹
-- `lam-api`: 손님·관리자 기능을 제공하는 Go API
+- `laam-web`: 손님용 모바일 QR 메뉴 웹
+- `laam-admin-web`: 운영자용 Next.js 관리자 웹
+- `laam-api`: 손님·관리자 기능을 제공하는 Go API
 - 존재하지 않는 디렉터리, 기능, API 계약은 구현된 것으로 가정하지 않는다.
 
 ## 기준 규칙
@@ -17,7 +17,7 @@
 
 ## 아키텍처
 
-- 손님 기능은 `lam-web`, 운영 기능은 `lam-admin-web`에 둔다.
+- 손님 기능은 `laam-web`, 운영 기능은 `laam-admin-web`에 둔다.
 - 손님과 관리자의 화면, 라우트, 인증 흐름을 섞지 않는다.
 - 프론트엔드 API 접근은 확인된 service 또는 API 계층에 둔다.
 - 인증, 인가, 객체 소유권은 서버에서 강제하며 UI 숨김을 보안 통제로 사용하지 않는다.
@@ -72,7 +72,7 @@
 
 - Issue 또는 코드 변경 작업: `.agents/skills/lam-work-on-issue/SKILL.md`
 - 본인 dev 브랜치에서 `main`으로 변경 전달: `.agents/skills/lam-deliver-change/SKILL.md`
-- CI(`lam-api CI`, `lam-admin-web CI`) 실패 재현과 원인 확정: `.agents/skills/lam-verify-ci/SKILL.md`
+- CI(`laam-api CI`, `laam-admin-web CI`) 실패 재현과 원인 확정: `.agents/skills/lam-verify-ci/SKILL.md`
 
 RBAC 전용 Skill은 두지 않는다. 권한 변경도 `lam-work-on-issue`와 이 문서의 보안 규칙을 따른다.
 

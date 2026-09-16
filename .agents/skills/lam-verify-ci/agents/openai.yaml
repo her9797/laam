@@ -1,4 +1,4 @@
 interface:
   display_name: "lam CI 검증"
-  short_description: "lam-api CI 검사를 LF 기준으로 로컬 재현하고 실패 원인 확정"
-  default_prompt: "$lam-verify-ci로 lam-api CI 실패 원인을 재현해서 확정해 주세요."
+  short_description: "laam-api CI 검사를 LF 기준으로 로컬 재현하고 실패 원인 확정"
+  default_prompt: "$lam-verify-ci로 laam-api CI 실패 원인을 재현해서 확정해 주세요."
