@@ -25,7 +25,9 @@ export async function POST(request: NextRequest) {
   const payload = (await request.json().catch(() => null)) as
     | { password?: string }
     | null;
-  const password = payload?.password?.trim() ?? "";
+  // Compared exactly as submitted, with no trim: the password is an opaque
+  // secret, and surrounding whitespace may be part of ADMIN_PASSWORD.
+  const password = payload?.password ?? "";
 
   // Invariant: from checkLoginAllowed through recordLoginFailure /
   // recordLoginSuccess below there must be no `await`. Any yield in between
