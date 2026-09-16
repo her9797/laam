@@ -38,6 +38,19 @@ export function LoginForm() {
         if (response.status === 401) {
           throw new Error(t("invalidPassword"));
         }
+        if (response.status === 429) {
+          // Rounded up so the operator is never told to retry before the
+          // server-side block (Retry-After, in seconds) has actually ended.
+          const retryAfterSeconds = Number(response.headers.get("Retry-After"));
+          if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+            throw new Error(
+              t("tooManyAttempts", {
+                minutes: Math.ceil(retryAfterSeconds / 60),
+              }),
+            );
+          }
+          throw new Error(t("tooManyAttemptsRetryLater"));
+        }
         const payload = (await response.json().catch(() => null)) as
           | { error?: string }
           | null;
