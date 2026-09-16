@@ -60,4 +60,47 @@ describe("LoginForm", () => {
     expect(alert).toHaveTextContent("비밀번호가 올바르지 않습니다.");
     expect(replaceMock).not.toHaveBeenCalled();
   });
+
+  it("shows a translated retry-later message with the wait in minutes when rate limited", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "server message" }), {
+        status: 429,
+        headers: { "Retry-After": "90" },
+      }),
+    );
+
+    render(<LoginForm />);
+
+    fireEvent.change(screen.getByLabelText("관리자 비밀번호"), {
+      target: { value: "any-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "로그인" }));
+
+    const alert = await screen.findByRole("alert");
+    // 90 seconds rounds up to 2 minutes so the operator never retries early.
+    expect(alert).toHaveTextContent(
+      "로그인 시도가 너무 많습니다. 2분 후 다시 시도해 주세요.",
+    );
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
+  it("shows a translated retry-later message without a wait when Retry-After is missing", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "server message" }), {
+        status: 429,
+      }),
+    );
+
+    render(<LoginForm />);
+
+    fireEvent.change(screen.getByLabelText("관리자 비밀번호"), {
+      target: { value: "any-password" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "로그인" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.",
+    );
+  });
 });
