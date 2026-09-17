@@ -26,7 +26,7 @@ export function InventoryPage() {
   const { t, i18n } = useTranslation("inventory");
   const itemsQuery = useInventoryItemsQuery(false);
   const categoriesQuery = useExpenseCategoriesQuery();
-  const { step } = useInventoryQuantityAdjuster();
+  const { step, flushAndWait } = useInventoryQuantityAdjuster();
   const reorderHeadingId = useId();
 
   const [categoryId, setCategoryId] = useState<string | null>(null);
@@ -215,6 +215,7 @@ export function InventoryPage() {
       />
       <SetQuantityDialog
         item={setQuantityItem}
+        waitForPending={flushAndWait}
         onOpenChange={(open) => !open && setSetQuantityItemId(null)}
       />
     </div>

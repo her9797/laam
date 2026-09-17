@@ -401,6 +401,47 @@ func TestExpenseReceipt_CreateUpdateDeleteAppliesInventory(t *testing.T) {
 	}
 }
 
+func TestExpenseReceipt_UpdatePreservesExistingItemSnapshots(t *testing.T) {
+	repo := resetExpenseDB(t)
+	ctx := context.Background()
+	gin := mustCreateItem(t, repo, "Original Gin", "liquor", 0, 0)
+	lime := mustCreateItem(t, repo, "Fresh Lime", "garnish", 0, 0)
+
+	receipt, err := repo.CreateExpenseReceipt(ctx, receiptInput("2026-09-10", itemLine(gin.ID, 2, 40000)))
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	newName := "Renamed Gin"
+	newCategory := "beverage"
+	if _, err := repo.UpdateInventoryItem(ctx, gin.ID, UpdateInventoryItemInput{Name: &newName, CategoryID: &newCategory}); err != nil {
+		t.Fatalf("rename and reclassify item: %v", err)
+	}
+
+	input := receiptInput("2026-09-10", itemLine(gin.ID, 2, 40000))
+	input.Memo = "memo-only correction"
+	updated, err := repo.UpdateExpenseReceipt(ctx, receipt.ID, input)
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if got := updated.Lines[0]; got.ItemName != "Original Gin" || got.CategoryID != "liquor" {
+		t.Fatalf("existing line snapshot = (%q, %q), want original purchase metadata", got.ItemName, got.CategoryID)
+	}
+
+	updated, err = repo.UpdateExpenseReceipt(ctx, receipt.ID, receiptInput("2026-09-10",
+		itemLine(gin.ID, 2, 40000),
+		itemLine(lime.ID, 1, 3000),
+	))
+	if err != nil {
+		t.Fatalf("add new line: %v", err)
+	}
+	if got := updated.Lines[0]; got.ItemName != "Original Gin" || got.CategoryID != "liquor" {
+		t.Fatalf("existing line snapshot after adding line = (%q, %q), want original purchase metadata", got.ItemName, got.CategoryID)
+	}
+	if got := updated.Lines[1]; got.ItemName != "Fresh Lime" || got.CategoryID != "garnish" {
+		t.Fatalf("new line snapshot = (%q, %q), want current inventory metadata", got.ItemName, got.CategoryID)
+	}
+}
+
 func TestExpenseReceipt_ValidationErrors(t *testing.T) {
 	repo := resetExpenseDB(t)
 	ctx := context.Background()

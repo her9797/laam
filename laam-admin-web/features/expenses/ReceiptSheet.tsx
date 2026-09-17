@@ -117,6 +117,7 @@ function toDraftLines(receipt: ExpenseReceipt): DraftLine[] {
           key: nextLineKey(),
           kind: "item",
           itemId: line.itemId,
+          itemName: line.itemName,
           quantity: line.quantity ?? 1,
           amount: formatAmountInput(String(line.amount)),
         }
@@ -450,6 +451,7 @@ function ReceiptForm({
                     {line.kind === "item" ? (
                       <ItemLineFields
                         line={line}
+                        fallbackItemName={line.itemName}
                         index={index}
                         errors={lineErrors}
                         item={findItem(line.itemId)}
@@ -691,6 +693,7 @@ function RemoveLineButton({ onRemove, label }: { onRemove: () => void; label: st
 
 function ItemLineFields({
   line,
+  fallbackItemName,
   index,
   errors,
   item,
@@ -699,6 +702,7 @@ function ItemLineFields({
   onRemove,
 }: {
   line: Extract<DraftLine, { kind: "item" }>;
+  fallbackItemName?: string;
   index: number;
   errors: LineErrors;
   item: InventoryItem | undefined;
@@ -727,6 +731,7 @@ function ItemLineFields({
         <div className="min-w-0 flex-1">
           <InventoryItemCombobox
             value={line.itemId}
+            fallbackLabel={fallbackItemName}
             labelId={labelId}
             invalid={Boolean(errors.item)}
             onChange={onPick}

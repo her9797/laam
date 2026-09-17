@@ -24,24 +24,41 @@ import { useSetInventoryQuantityMutation } from "./queries";
 /** "지금 남은 수량" — replaces the quantity with a counted value. */
 export function SetQuantityDialog({
   item,
+  waitForPending,
   onOpenChange,
 }: {
   item: InventoryItem | null;
+  waitForPending?: (itemId: string) => Promise<void>;
   onOpenChange: (open: boolean) => void;
 }) {
   return (
     <Dialog open={item !== null} onOpenChange={onOpenChange}>
       <DialogContent>
-        {item ? <SetQuantityForm key={item.id} item={item} onDone={() => onOpenChange(false)} /> : null}
+        {item ? (
+          <SetQuantityForm
+            key={item.id}
+            item={item}
+            waitForPending={waitForPending}
+            onDone={() => onOpenChange(false)}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   );
 }
 
-function SetQuantityForm({ item, onDone }: { item: InventoryItem; onDone: () => void }) {
+function SetQuantityForm({
+  item,
+  waitForPending,
+  onDone,
+}: {
+  item: InventoryItem;
+  waitForPending?: (itemId: string) => Promise<void>;
+  onDone: () => void;
+}) {
   const { t } = useTranslation("inventory");
   const inputId = useId();
-  const mutation = useSetInventoryQuantityMutation();
+  const mutation = useSetInventoryQuantityMutation(waitForPending);
   const [value, setValue] = useState(item.quantity >= 0 ? String(item.quantity) : "");
   const [errorKey, setErrorKey] = useState<string | null>(null);
 

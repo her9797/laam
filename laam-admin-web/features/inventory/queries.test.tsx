@@ -195,6 +195,68 @@ describe("useSetInventoryQuantityMutation", () => {
     expect(adjustCalls()[0][1]).toEqual(expect.objectContaining({ body: JSON.stringify({ set: 1 }) }));
     expect(cachedGin()).toMatchObject({ quantity: 1, needsReorder: true });
   });
+
+  it("flushes a pending debounced delta before setting the absolute quantity", async () => {
+    const { wrapper, cachedGin } = setup();
+    fetchJsonMock
+      .mockResolvedValueOnce({ ...GIN, quantity: 6 })
+      .mockResolvedValueOnce({ ...GIN, quantity: 10 });
+    const { result } = renderHook(() => {
+      const adjuster = useInventoryQuantityAdjuster();
+      const setter = useSetInventoryQuantityMutation(adjuster.flushAndWait);
+      return { adjuster, setter };
+    }, { wrapper });
+
+    act(() => result.current.adjuster.step(GIN, 1));
+    await act(async () => {
+      await result.current.setter.mutateAsync({ id: "gin", quantity: 10 });
+    });
+
+    expect(adjustCalls().map(([, init]) => init?.body)).toEqual([
+      JSON.stringify({ delta: 1 }),
+      JSON.stringify({ set: 10 }),
+    ]);
+    expect(cachedGin()?.quantity).toBe(10);
+  });
+
+  it("waits for an in-flight debounced delta before setting the absolute quantity", async () => {
+    const { wrapper, cachedGin } = setup();
+    let resolveDelta!: (item: InventoryItem) => void;
+    fetchJsonMock
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (resolveDelta = resolve as (item: InventoryItem) => void)),
+      )
+      .mockResolvedValueOnce({ ...GIN, quantity: 10 });
+    const { result } = renderHook(() => {
+      const adjuster = useInventoryQuantityAdjuster();
+      const setter = useSetInventoryQuantityMutation(adjuster.flushAndWait);
+      return { adjuster, setter };
+    }, { wrapper });
+
+    act(() => result.current.adjuster.step(GIN, 1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(600);
+    });
+    expect(adjustCalls().map(([, init]) => init?.body)).toEqual([JSON.stringify({ delta: 1 })]);
+
+    let setPromise!: Promise<InventoryItem>;
+    act(() => {
+      setPromise = result.current.setter.mutateAsync({ id: "gin", quantity: 10 });
+    });
+    await act(async () => Promise.resolve());
+    expect(adjustCalls()).toHaveLength(1);
+
+    await act(async () => {
+      resolveDelta({ ...GIN, quantity: 6 });
+      await setPromise;
+    });
+
+    expect(adjustCalls().map(([, init]) => init?.body)).toEqual([
+      JSON.stringify({ delta: 1 }),
+      JSON.stringify({ set: 10 }),
+    ]);
+    expect(cachedGin()?.quantity).toBe(10);
+  });
 });
 
 describe("useRenameExpenseCategoryMutation", () => {

@@ -628,6 +628,35 @@ func receiptItemQuantities(ctx context.Context, tx pgx.Tx, receiptID string) (ma
 // receipt's lines and returns the new per-item quantity sums. Archived items
 // are refused unless allowedArchived already had them on this receipt.
 func writeReceiptLines(ctx context.Context, tx pgx.Tx, receiptID string, receipt validatedReceipt, items map[string]lockedInventoryItem, allowedArchived map[string]int) (map[string]int, error) {
+	type itemSnapshot struct {
+		name       string
+		categoryID string
+	}
+	existingSnapshots := map[string]itemSnapshot{}
+	rows, err := tx.Query(ctx, `
+		SELECT item_id, item_name, category_id
+		FROM expense_receipt_lines
+		WHERE receipt_id = $1 AND item_id IS NOT NULL
+		ORDER BY line_order
+	`, receiptID)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var itemID, itemName, categoryID string
+		if err := rows.Scan(&itemID, &itemName, &categoryID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if _, exists := existingSnapshots[itemID]; !exists {
+			existingSnapshots[itemID] = itemSnapshot{name: itemName, categoryID: categoryID}
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	var categoryIDs []string
 	for _, line := range receipt.lines {
 		if line.ItemID == "" {
@@ -672,8 +701,13 @@ func writeReceiptLines(ctx context.Context, tx pgx.Tx, receiptID string, receipt
 			}
 			id := line.ItemID
 			itemID = &id
-			itemName = item.name
-			categoryID = item.categoryID
+			if snapshot, exists := existingSnapshots[line.ItemID]; exists {
+				itemName = snapshot.name
+				categoryID = snapshot.categoryID
+			} else {
+				itemName = item.name
+				categoryID = item.categoryID
+			}
 			sums[line.ItemID] += *line.Quantity
 		} else {
 			if !knownCategories[line.CategoryID] {

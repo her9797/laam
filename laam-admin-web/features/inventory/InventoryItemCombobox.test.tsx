@@ -95,6 +95,16 @@ afterEach(() => {
 });
 
 describe("InventoryItemCombobox", () => {
+  it("shows the snapshot name when the selected item is archived and absent from the active list", async () => {
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <InventoryItemCombobox value="archived-gin" fallbackLabel="보관된 진" onChange={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByRole("combobox", { name: "보관된 진" })).toBeInTheDocument();
+  });
+
   it("lists items by most recent purchase and picks one", async () => {
     const { onChange } = renderHarness();
 

@@ -29,6 +29,8 @@ import { useInventoryItemsQuery } from "./queries";
 
 type InventoryItemComboboxProps = {
   value: string | null;
+  /** Snapshot label for a selected archived item omitted from the active list. */
+  fallbackLabel?: string;
   onChange: (item: InventoryItem) => void;
   id?: string;
   /**
@@ -52,6 +54,7 @@ type InventoryItemComboboxProps = {
  */
 export function InventoryItemCombobox({
   value,
+  fallbackLabel,
   onChange,
   id,
   labelId,
@@ -108,7 +111,7 @@ export function InventoryItemCombobox({
         onClick={() => handleOpenChange(true)}
       >
         <span id={valueId} className="truncate">
-          {selected ? selected.name : t("comboboxPlaceholder")}
+          {selected?.name ?? (value ? fallbackLabel : undefined) ?? t("comboboxPlaceholder")}
         </span>
         <RiArrowDownSLine data-icon="inline-end" aria-hidden="true" />
       </Button>

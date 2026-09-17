@@ -118,11 +118,13 @@ export function useUpdateInventoryItemMutation() {
   });
 }
 
-export function useSetInventoryQuantityMutation() {
+export function useSetInventoryQuantityMutation(waitForPending?: (itemId: string) => Promise<void>) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, quantity }: { id: string; quantity: number }) =>
-      adjustInventoryItem(id, { set: quantity }),
+    mutationFn: async ({ id, quantity }: { id: string; quantity: number }) => {
+      await waitForPending?.(id);
+      return adjustInventoryItem(id, { set: quantity });
+    },
     onSuccess: (updated) => {
       mapCachedItems(queryClient, updated.id, () => updated);
       return queryClient.invalidateQueries({ queryKey: inventoryKeys.adjustments(updated.id) });
@@ -250,7 +252,12 @@ function createQuantityAdjuster(queryClient: QueryClient, translate: Translate) 
     }
   }
 
-  return { step, flushAll };
+  function flushAndWait(itemId: string): Promise<void> {
+    flush(itemId);
+    return chains.get(itemId) ?? Promise.resolve();
+  }
+
+  return { step, flushAll, flushAndWait };
 }
 
 export function useInventoryQuantityAdjuster() {
@@ -265,5 +272,5 @@ export function useInventoryQuantityAdjuster() {
   // Leaving the screen mid-debounce still saves the taps already shown.
   useEffect(() => () => adjuster.flushAll(), [adjuster]);
 
-  return { step: adjuster.step };
+  return { step: adjuster.step, flushAndWait: adjuster.flushAndWait };
 }

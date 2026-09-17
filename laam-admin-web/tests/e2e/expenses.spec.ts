@@ -111,6 +111,30 @@ test.describe("지출 화면 (휴대폰)", () => {
     await liquor.click();
     await expect(page).toHaveURL(/\/expenses\?month=2026-09$/);
   });
+
+  test("보관된 품목의 원래 이름을 보여 주고 메모만 바꿔도 품목 연결을 유지한다", async ({ page }) => {
+    const state = createExpenseServerState();
+    const archived = state.items.find((item) => item.id === "gin");
+    if (!archived) throw new Error("gin fixture is required");
+    archived.isArchived = true;
+    archived.needsReorder = false;
+    await openExpenses(page, state);
+
+    await page.getByRole("button", { name: /코스트코/ }).click();
+    const sheet = page.getByRole("dialog", { name: "영수증 수정" });
+    const itemLine = sheet.getByRole("group", { name: "품목 줄 1" });
+    await expect(itemLine.getByRole("combobox")).toContainText("탱커레이 진");
+    await sheet.getByRole("textbox", { name: "메모" }).fill("월말 확인");
+    await sheet.getByRole("button", { name: "저장" }).click();
+    await page.getByRole("alertdialog", { name: "영수증을 수정할까요?" }).getByRole("button", { name: "수정 저장" }).click();
+
+    await expect(sheet).toBeHidden();
+    expect(state.receiptBodies).toHaveLength(1);
+    expect(state.receiptBodies[0]).toMatchObject({
+      memo: "월말 확인",
+      lines: expect.arrayContaining([expect.objectContaining({ itemId: "gin" })]),
+    });
+  });
 });
 
 test.describe("재고 화면 (휴대폰)", () => {
@@ -135,6 +159,67 @@ test.describe("재고 화면 (휴대폰)", () => {
     await lime.getByRole("button", { name: "라임 1 줄이기" }).click();
     await expect.poll(() => state.adjustBodies.at(-1)).toEqual({ itemId: "lime", body: { delta: -1 } });
     await expect(lime.getByRole("button", { name: /라임 지금 남은 수량 입력/ })).toContainText("13");
+  });
+
+  test("증가 요청이 처리 중이면 절대 수량 설정을 뒤에 보내 최종 수량을 지킨다", async ({ page }) => {
+    const state = createExpenseServerState();
+    let releaseDelta!: () => void;
+    let markDeltaStarted!: () => void;
+    const deltaStarted = new Promise<void>((resolve) => (markDeltaStarted = resolve));
+    const deltaRelease = new Promise<void>((resolve) => (releaseDelta = resolve));
+    let deltaInFlight = false;
+    let overlapped = false;
+
+    await page.setViewportSize(PHONE);
+    await mockDashboardData(page);
+    await loginAsAdmin(page);
+    await mockExpenseApi(page, state);
+    await page.route(
+      (url) => /^\/api\/admin\/inventory-items\/[^/]+\/adjust$/.test(url.pathname),
+      async (route) => {
+        const itemId = new URL(route.request().url()).pathname.split("/")[4];
+        const body = route.request().postDataJSON() as { delta?: number; set?: number };
+        state.adjustBodies.push({ itemId, body });
+        const item = state.items.find((candidate) => candidate.id === itemId);
+        if (!item) return route.fulfill({ status: 404, json: { error: "not found" } });
+        if (body.delta !== undefined) {
+          deltaInFlight = true;
+          markDeltaStarted();
+          await deltaRelease;
+          deltaInFlight = false;
+        } else if (deltaInFlight) {
+          overlapped = true;
+        }
+        const quantity = body.set ?? item.quantity + (body.delta ?? 0);
+        const updated = {
+          ...item,
+          quantity,
+          needsReorder: !item.isArchived && quantity < item.minQuantity,
+          needsCheck: quantity < 0,
+        };
+        state.items = state.items.map((candidate) => (candidate.id === itemId ? updated : candidate));
+        await route.fulfill({ json: updated });
+      },
+    );
+    await page.goto("/inventory");
+
+    const lime = page.getByRole("listitem", { name: "라임" });
+    await lime.getByRole("button", { name: "라임 1 늘리기" }).click();
+    await deltaStarted;
+    await lime.getByRole("button", { name: /라임 지금 남은 수량 입력/ }).click();
+    const dialog = page.getByRole("dialog", { name: "지금 남은 수량" });
+    await dialog.getByRole("textbox", { name: "남은 수량" }).fill("10");
+    await dialog.getByRole("button", { name: "저장" }).click();
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+
+    expect(overlapped).toBe(false);
+    expect(state.adjustBodies).toEqual([{ itemId: "lime", body: { delta: 1 } }]);
+    releaseDelta();
+    await expect.poll(() => state.adjustBodies).toEqual([
+      { itemId: "lime", body: { delta: 1 } },
+      { itemId: "lime", body: { set: 10 } },
+    ]);
+    await expect(lime.getByRole("button", { name: /라임 지금 남은 수량 입력/ })).toContainText("10");
   });
 });
 

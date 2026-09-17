@@ -74,7 +74,7 @@ export const RECEIPT_MAX_LINES = 100;
  * under the cursor beyond the separators themselves.
  */
 export type DraftLine =
-  | { key: string; kind: "item"; itemId: string | null; quantity: number; amount: string }
+  | { key: string; kind: "item"; itemId: string | null; itemName?: string; quantity: number; amount: string }
   | { key: string; kind: "other"; categoryId: string | null; description: string; amount: string };
 
 /** Keeps only digits and adds thousands separators ("0012" → "12"). */
