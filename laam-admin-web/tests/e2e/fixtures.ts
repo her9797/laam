@@ -365,6 +365,16 @@ export async function mockDashboardData(
   // whole screen fails to render and every assertion on the dashboard (page
   // heading included) misses, no matter what the test is actually about.
   await mockPaymentOrdersList(page, overrides.orderCount ?? 0);
+  // The expense/inventory shortcut cards (`features/dashboard/DashboardPage.tsx`).
+  await page.route("**/api/admin/expenses/summary?**", async (route) => {
+    const month = new URL(route.request().url()).searchParams.get("month") ?? "";
+    await route.fulfill({
+      json: { month, total: 0, previousMonthTotal: 0, receiptCount: 0, byCategory: [] },
+    });
+  });
+  await page.route("**/api/admin/inventory/summary", async (route) => {
+    await route.fulfill({ json: { reorderCount: 0, needsCheckCount: 0 } });
+  });
 }
 
 /**
