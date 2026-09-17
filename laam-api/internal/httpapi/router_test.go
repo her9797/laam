@@ -83,21 +83,25 @@ func TestParseStatusResourceID(t *testing.T) {
 
 func TestStoreInputSpecialRequest_TrimsWhitespace(t *testing.T) {
 	payload := createSpecialRequestRequest{
-		TableNumber: "  T-01  ",
-		Gender:      " male ",
-		Name:        " 홍길동 ",
-		Age:         " 20s ",
-		Residence:   " 서울 ",
-		Instagram:   " @handle ",
-		IdealType:   " tall ",
-		Text:        " hello ",
+		TableNumber:    "  T-01  ",
+		Gender:         " male ",
+		Name:           " 홍길동 ",
+		Age:            " 20s ",
+		Residence:      " 서울 ",
+		Instagram:      " @handle ",
+		IdealHeight:    " 175 ",
+		IdealResidence: " 강남 ",
+		IdealAgeRange:  " 20대 ",
+		IdealDetails:   " tall ",
+		Text:           " hello ",
 	}
 
 	got := storeInputSpecialRequest(payload)
 
 	if got.TableNumber != "T-01" || got.Gender != "male" || got.Name != "홍길동" ||
 		got.Age != "20s" || got.Residence != "서울" || got.Instagram != "@handle" ||
-		got.IdealType != "tall" || got.Text != "hello" {
+		got.IdealHeight != "175" || got.IdealResidence != "강남" || got.IdealAgeRange != "20대" ||
+		got.IdealDetails != "tall" || got.Text != "hello" {
 		t.Errorf("storeInputSpecialRequest did not trim all fields: %+v", got)
 	}
 }

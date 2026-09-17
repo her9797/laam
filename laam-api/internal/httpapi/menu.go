@@ -31,14 +31,17 @@ type createCustomerRequestRequest struct {
 }
 
 type createSpecialRequestRequest struct {
-	TableNumber string `json:"tableNumber"`
-	Gender      string `json:"gender"`
-	Name        string `json:"name"`
-	Age         string `json:"age"`
-	Residence   string `json:"residence"`
-	Instagram   string `json:"instagram"`
-	IdealType   string `json:"idealType"`
-	Text        string `json:"text"`
+	TableNumber    string `json:"tableNumber"`
+	Gender         string `json:"gender"`
+	Name           string `json:"name"`
+	Age            string `json:"age"`
+	Residence      string `json:"residence"`
+	Instagram      string `json:"instagram"`
+	IdealHeight    string `json:"idealHeight"`
+	IdealResidence string `json:"idealResidence"`
+	IdealAgeRange  string `json:"idealAgeRange"`
+	IdealDetails   string `json:"idealDetails"`
+	Text           string `json:"text"`
 }
 
 type updateVisibilityRequest struct {

@@ -723,14 +723,17 @@ func TestRepository_SpecialRequestLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	valid := lamdata.SpecialRequest{
-		TableNumber: "T-01",
-		Gender:      "male",
-		Name:        "Kim",
-		Age:         "20s",
-		Residence:   "Seoul",
-		Instagram:   "@kim",
-		IdealType:   "tall",
-		Text:        "hello",
+		TableNumber:    "T-01",
+		Gender:         "male",
+		Name:           "Kim",
+		Age:            "20s",
+		Residence:      "Seoul",
+		Instagram:      "@kim",
+		IdealHeight:    "175",
+		IdealResidence: "Gangnam",
+		IdealAgeRange:  "late 20s",
+		IdealDetails:   "tall",
+		Text:           "hello",
 	}
 
 	t.Run("invalid gender is rejected", func(t *testing.T) {
@@ -759,6 +762,10 @@ func TestRepository_SpecialRequestLifecycle(t *testing.T) {
 	}
 	if len(requests) != 1 || requests[0].Name != "Kim" {
 		t.Fatalf("requests = %+v, want a single 'Kim' request", requests)
+	}
+	if requests[0].IdealHeight != "175" || requests[0].IdealResidence != "Gangnam" ||
+		requests[0].IdealAgeRange != "late 20s" || requests[0].IdealDetails != "tall" {
+		t.Fatalf("ideal type fields = %+v, want height=175 residence=Gangnam ageRange='late 20s' details=tall", requests[0])
 	}
 
 	t.Run("delete", func(t *testing.T) {

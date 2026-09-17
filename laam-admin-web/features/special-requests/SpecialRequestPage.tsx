@@ -47,17 +47,20 @@ import { formatDateTime } from "@/lib/utils";
 import type { SpecialRequest, SpecialRequestGender, SpecialRequestListQuery, SpecialRequestSort } from "./model";
 import { useDeleteSpecialRequestMutation, useSpecialRequestsPageQuery } from "./queries";
 
-// Field list mirrors `admin-screen.tsx`'s special-request detail modal
-// exactly (table / name / age / residence / contact / ideal type / message)
-// so the operator sees the same fields they already know from the current
-// app. Labels are keys in the `specialRequests` namespace.
+// Field list mirrors the customer-facing special-request form's fields
+// (table / name / age / residence / contact / ideal height, residence, age
+// range, details / message) so the operator sees every field the guest
+// filled in. Labels are keys in the `specialRequests` namespace.
 const DETAIL_FIELDS: Array<{ key: keyof SpecialRequest; labelKey: string }> = [
   { key: "tableNumber", labelKey: "fieldTableNumber" },
   { key: "name", labelKey: "fieldName" },
   { key: "age", labelKey: "fieldAge" },
   { key: "residence", labelKey: "fieldResidence" },
   { key: "instagram", labelKey: "fieldInstagram" },
-  { key: "idealType", labelKey: "fieldIdealType" },
+  { key: "idealHeight", labelKey: "fieldIdealHeight" },
+  { key: "idealResidence", labelKey: "fieldIdealResidence" },
+  { key: "idealAgeRange", labelKey: "fieldIdealAgeRange" },
+  { key: "idealDetails", labelKey: "fieldIdealDetails" },
   { key: "text", labelKey: "fieldText" },
 ];
 

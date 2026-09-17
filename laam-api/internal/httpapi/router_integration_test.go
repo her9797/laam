@@ -280,7 +280,9 @@ func TestRouter_CustomerRequests_SendsBroadcastOnCreate(t *testing.T) {
 	t.Run("special request creation does not send a broadcast", func(t *testing.T) {
 		body, _ := json.Marshal(map[string]string{
 			"tableNumber": "T-02", "gender": "female", "name": "n", "age": "20",
-			"residence": "r", "instagram": "i", "idealType": "t", "text": "hello",
+			"residence": "r", "instagram": "i",
+			"idealHeight": "170", "idealResidence": "r2", "idealAgeRange": "20s", "idealDetails": "t",
+			"text": "hello",
 		})
 		rec := doRequest(t, handler, http.MethodPost, "/api/v1/special-requests", body, requestHeaders())
 		if rec.Code != http.StatusCreated {
@@ -300,14 +302,17 @@ func TestRouter_SpecialRequests_Create(t *testing.T) {
 	handler := resetServer(t)
 
 	valid := map[string]string{
-		"tableNumber": "T-01",
-		"gender":      "female",
-		"name":        "Lee",
-		"age":         "30s",
-		"residence":   "Seoul",
-		"instagram":   "@lee",
-		"idealType":   "kind",
-		"text":        "hi",
+		"tableNumber":    "T-01",
+		"gender":         "female",
+		"name":           "Lee",
+		"age":            "30s",
+		"residence":      "Seoul",
+		"instagram":      "@lee",
+		"idealHeight":    "180",
+		"idealResidence": "Gangnam",
+		"idealAgeRange":  "30s",
+		"idealDetails":   "kind",
+		"text":           "hi",
 	}
 	body, _ := json.Marshal(valid)
 	rec := doRequest(t, handler, http.MethodPost, "/api/v1/special-requests", body, requestHeaders())
