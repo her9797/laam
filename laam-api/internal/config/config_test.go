@@ -259,3 +259,23 @@ func TestLoad_DBStatementTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_ExpenseReceiptStorage(t *testing.T) {
+	t.Setenv("SUPABASE_STORAGE_KEY", "")
+	t.Setenv("EXPENSE_RECEIPT_BUCKET", "")
+
+	cfg := Load()
+	if cfg.SupabaseStorageKey != "" {
+		t.Errorf("SupabaseStorageKey = %q, want empty default", cfg.SupabaseStorageKey)
+	}
+	if cfg.ExpenseReceiptBucket != "expense-receipts" {
+		t.Errorf("ExpenseReceiptBucket = %q, want expense-receipts", cfg.ExpenseReceiptBucket)
+	}
+
+	t.Setenv("SUPABASE_STORAGE_KEY", "storage-secret")
+	t.Setenv("EXPENSE_RECEIPT_BUCKET", " receipts-prod ")
+	cfg = Load()
+	if cfg.SupabaseStorageKey != "storage-secret" || cfg.ExpenseReceiptBucket != "receipts-prod" {
+		t.Errorf("storage config = %q/%q", cfg.SupabaseStorageKey, cfg.ExpenseReceiptBucket)
+	}
+}

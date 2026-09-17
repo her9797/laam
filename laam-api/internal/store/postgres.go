@@ -323,6 +323,69 @@ ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS toss_labels TEXT[] NOT NULL DEFA
 ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS label_colors TEXT[] NOT NULL DEFAULT '{}';
 CREATE INDEX IF NOT EXISTS idx_payment_orders_done_approved_at ON payment_orders (approved_at) WHERE status = 'DONE';
 CREATE INDEX IF NOT EXISTS idx_customer_requests_pending_created_at ON customer_requests (created_at DESC, id DESC) WHERE status = 'pending';
+
+CREATE TABLE IF NOT EXISTS expense_categories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  sort_order INTEGER NOT NULL,
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO expense_categories (id, name, sort_order, is_default) VALUES
+  ('liquor', '술', 1, TRUE),
+  ('glass', '잔', 2, TRUE),
+  ('garnish', '가니시', 3, TRUE),
+  ('beverage', '음료', 4, TRUE),
+  ('supplies', '가게 자재', 5, TRUE),
+  ('other', '기타', 6, TRUE)
+ON CONFLICT (id) DO NOTHING;
+CREATE TABLE IF NOT EXISTS inventory_items (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  category_id TEXT NOT NULL REFERENCES expense_categories(id),
+  unit TEXT NOT NULL DEFAULT '',
+  quantity INTEGER NOT NULL DEFAULT 0,
+  min_quantity INTEGER NOT NULL DEFAULT 0 CHECK (min_quantity >= 0),
+  is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_items_active_name ON inventory_items (lower(regexp_replace(name, '\s', '', 'g'))) WHERE NOT is_archived;
+CREATE TABLE IF NOT EXISTS expense_receipts (
+  id TEXT PRIMARY KEY,
+  date DATE NOT NULL,
+  vendor TEXT NOT NULL DEFAULT '',
+  payment_method TEXT NOT NULL CHECK (payment_method IN ('card', 'cash', 'transfer')),
+  memo TEXT NOT NULL DEFAULT '',
+  total BIGINT NOT NULL DEFAULT 0,
+  image_path TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_expense_receipts_date ON expense_receipts (date DESC, created_at DESC);
+CREATE TABLE IF NOT EXISTS expense_receipt_lines (
+  id TEXT PRIMARY KEY,
+  receipt_id TEXT NOT NULL REFERENCES expense_receipts(id) ON DELETE CASCADE,
+  line_order INTEGER NOT NULL,
+  item_id TEXT REFERENCES inventory_items(id),
+  item_name TEXT NOT NULL DEFAULT '',
+  category_id TEXT NOT NULL REFERENCES expense_categories(id),
+  description TEXT NOT NULL DEFAULT '',
+  quantity INTEGER CHECK (quantity IS NULL OR quantity >= 1),
+  amount BIGINT NOT NULL CHECK (amount >= 0)
+);
+CREATE INDEX IF NOT EXISTS idx_expense_receipt_lines_receipt_id ON expense_receipt_lines (receipt_id, line_order);
+CREATE INDEX IF NOT EXISTS idx_expense_receipt_lines_item_id ON expense_receipt_lines (item_id) WHERE item_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS inventory_adjustments (
+  id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL REFERENCES inventory_items(id),
+  delta INTEGER NOT NULL,
+  quantity_after INTEGER NOT NULL,
+  reason TEXT NOT NULL CHECK (reason IN ('purchase', 'receipt_edit', 'receipt_delete', 'manual')),
+  receipt_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_inventory_adjustments_item_created_at ON inventory_adjustments (item_id, created_at DESC, id DESC);
 `)
 	return err
 }

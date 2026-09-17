@@ -8,11 +8,13 @@ import { useState, type ComponentType, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   RiAlarmWarningLine,
+  RiArchive2Line,
   RiArrowDownSLine,
   RiBarChart2Line,
   RiDashboardLine,
   RiFileTextLine,
   RiFolderLine,
+  RiListCheck2,
   RiMegaphoneLine,
   RiMusic2Line,
   RiPlayCircleLine,
@@ -22,6 +24,7 @@ import {
   RiShoppingCart2Line,
   RiStarLine,
   RiUserVoiceLine,
+  RiWallet3Line,
 } from "@remixicon/react";
 
 import { Button } from "@/components/ui/button";
@@ -102,7 +105,24 @@ const PRODUCT_NAV_GROUP: NavGroup = {
   ],
 };
 
-const NAV_GROUPS: NavGroup[] = [REQUEST_NAV_GROUP, ORDER_NAV_GROUP, PRODUCT_NAV_GROUP];
+// A labeled sub-section rather than its own link — expenses and inventory
+// are separate screens that share their categories and purchase records.
+const INVENTORY_NAV_GROUP: NavGroup = {
+  labelKey: "navInventoryGroup",
+  icon: RiArchive2Line,
+  items: [
+    { href: "/expenses", labelKey: "navExpenses", icon: RiWallet3Line },
+    { href: "/inventory", labelKey: "navInventory", icon: RiArchive2Line },
+    { href: "/inventory/items", labelKey: "navInventoryItems", icon: RiListCheck2 },
+  ],
+};
+
+const NAV_GROUPS: NavGroup[] = [
+  REQUEST_NAV_GROUP,
+  ORDER_NAV_GROUP,
+  PRODUCT_NAV_GROUP,
+  INVENTORY_NAV_GROUP,
+];
 
 const BOTTOM_NAV_ITEMS: NavItem[] = [
   { href: "/tables", labelKey: "navTables", icon: RiQrCodeLine },

@@ -32,6 +32,12 @@ type Config struct {
 	// as "sending is disabled", not an error.
 	SupabaseURL          string
 	SupabaseBroadcastKey string
+	// SupabaseStorageKey is a server-only secret key for the private expense
+	// receipt photo bucket (see internal/objectstore), reusing SupabaseURL.
+	// Empty disables the receipt image endpoints (503); receipts themselves
+	// keep working.
+	SupabaseStorageKey   string
+	ExpenseReceiptBucket string
 	// QRSigningSecret and CustomerWebBaseURL configure the admin table QR
 	// endpoint (see internal/httpapi/tables.go). Both are empty by default,
 	// matching laam-web's own optional QR_SIGNING_SECRET handling — the
@@ -105,6 +111,11 @@ func Load() Config {
 		youTubeAPIBaseURL = "https://www.googleapis.com/youtube/v3"
 	}
 
+	expenseReceiptBucket := strings.TrimSpace(os.Getenv("EXPENSE_RECEIPT_BUCKET"))
+	if expenseReceiptBucket == "" {
+		expenseReceiptBucket = "expense-receipts"
+	}
+
 	dbStatementTimeout := defaultDBStatementTimeout
 	if raw := strings.TrimSpace(os.Getenv("DB_STATEMENT_TIMEOUT")); raw != "" {
 		if parsed, err := time.ParseDuration(raw); err == nil && parsed >= 0 {
@@ -130,6 +141,8 @@ func Load() Config {
 		YouTubeAPIBaseURL:      youTubeAPIBaseURL,
 		SupabaseURL:            os.Getenv("SUPABASE_URL"),
 		SupabaseBroadcastKey:   os.Getenv("SUPABASE_BROADCAST_KEY"),
+		SupabaseStorageKey:     os.Getenv("SUPABASE_STORAGE_KEY"),
+		ExpenseReceiptBucket:   expenseReceiptBucket,
 		QRSigningSecret:        os.Getenv("QR_SIGNING_SECRET"),
 		CustomerWebBaseURL:     os.Getenv("CUSTOMER_WEB_BASE_URL"),
 		TossPlaceWebhookSecret: os.Getenv("TOSS_PLACE_WEBHOOK_SECRET"),
