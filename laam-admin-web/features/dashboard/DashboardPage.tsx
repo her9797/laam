@@ -134,16 +134,7 @@ function OptionalCardLink({ card, isEditing }: { card: OptionalShortcutCard; isE
   const value = card.query.isLoading ? "…" : card.value ?? t("cardValueUnavailable");
 
   return (
-    <Link
-      href={card.href}
-      className="block"
-      onClick={(event) => {
-        if (isEditing) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-      }}
-    >
+    <CardLink href={card.href} isEditing={isEditing}>
       <Card className="transition-shadow hover:shadow-lg">
         <CardHeader>
           <CardTitle>{t(card.titleKey)}</CardTitle>
@@ -161,7 +152,15 @@ function OptionalCardLink({ card, isEditing }: { card: OptionalShortcutCard; isE
           </p>
         </CardContent>
       </Card>
-    </Link>
+    </CardLink>
+  );
+}
+
+function CardLink({ href, isEditing, children }: { href: string; isEditing: boolean; children: ReactNode }) {
+  return isEditing ? (
+    <div className="block">{children}</div>
+  ) : (
+    <Link href={href} className="block">{children}</Link>
   );
 }
 
@@ -347,21 +346,12 @@ function DashboardCardGrid({
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {cards.map((card, index) => {
         const content = card.query ? <OptionalCardLink card={card as OptionalShortcutCard} isEditing={isEditing} /> : (
-          <Link
-            href={card.href}
-            className="block"
-            onClick={(event) => {
-              if (isEditing) {
-                event.preventDefault();
-                event.stopPropagation();
-              }
-            }}
-          >
+          <CardLink href={card.href} isEditing={isEditing}>
             <Card className="transition-shadow hover:shadow-lg">
               <CardHeader><CardTitle>{t(card.titleKey)}</CardTitle><CardDescription>{t(card.descriptionKey)}</CardDescription></CardHeader>
               <CardContent><p className="text-2xl font-semibold text-foreground">{card.value}</p></CardContent>
             </Card>
-          </Link>
+          </CardLink>
         );
         return (
           <SortableDashboardCard key={card.key} cardKey={card.key} isEditing={isEditing}>

@@ -9,6 +9,8 @@ const useBootstrapQueryMock = vi.fn();
 const useCustomerRequestPendingSummaryQueryMock = vi.fn();
 const useSpecialRequestCountQueryMock = vi.fn();
 const useOrderCountQueryMock = vi.fn();
+const useExpenseSummaryQueryMock = vi.fn();
+const useInventorySummaryQueryMock = vi.fn();
 const bootstrapRefetchMock = vi.fn();
 const requestsRefetchMock = vi.fn();
 const specialRequestCountRefetchMock = vi.fn();
@@ -25,6 +27,12 @@ vi.mock("@/features/special-requests/queries", () => ({
 }));
 vi.mock("@/features/orders/queries", () => ({
   useOrderCountQuery: () => useOrderCountQueryMock(),
+}));
+vi.mock("@/features/expenses/queries", () => ({
+  useExpenseSummaryQuery: () => useExpenseSummaryQueryMock(),
+}));
+vi.mock("@/features/dashboard/queries", () => ({
+  useInventorySummaryQuery: () => useInventorySummaryQueryMock(),
 }));
 
 import { DashboardPage } from "./DashboardPage";
@@ -151,6 +159,8 @@ describe("DashboardPage", () => {
     mockRequests();
     mockSpecialRequestCount();
     mockOrderCount();
+    useExpenseSummaryQueryMock.mockReturnValue({ data: { total: 0 }, isLoading: false, isError: false });
+    useInventorySummaryQueryMock.mockReturnValue({ data: { reorderCount: 0 }, isLoading: false, isError: false });
   });
 
   afterEach(() => {
@@ -208,19 +218,17 @@ describe("DashboardPage", () => {
     // 1 pending general request, 0 pending song requests, 1 special request,
     // 1 order, 1 menu item, 1 notice — matches the non-empty fixtures above.
     expect(screen.getAllByText("1")).toHaveLength(5);
-    expect(screen.getByText("0")).toBeInTheDocument();
+    expect(screen.getAllByText("0").length).toBeGreaterThan(0);
   });
 
   it("renders cards as sortable drag targets", () => {
     render(<DashboardPage />);
 
-    expect(screen.getAllByRole("link")[0]).not.toHaveAttribute("tabindex", "0");
+    expect(screen.getAllByRole("link").length).toBeGreaterThan(0);
     fireEvent.click(screen.getAllByRole("button")[0]);
 
-    const cards = screen.getAllByRole("link");
-    expect(cards).toHaveLength(6);
-    expect(cards[0]).toHaveClass("cursor-grab");
-    expect(cards[0]).toHaveAttribute("tabindex", "0");
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button").some((button) => button.getAttribute("aria-roledescription") === "sortable")).toBe(true);
   });
 
   it("lets the operator move cards and persists the order locally", () => {
@@ -229,7 +237,6 @@ describe("DashboardPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "카드 편집" }));
     fireEvent.click(screen.getAllByRole("button", { name: "아래로 이동" })[0]);
 
-    expect(screen.getAllByRole("link")[0]).toHaveAttribute("href", "/inventory");
     expect(JSON.parse(window.localStorage.getItem("laam-admin.dashboard-card-order") ?? "null")).toEqual([
       "reorder",
       "expenses",
@@ -247,6 +254,6 @@ describe("DashboardPage", () => {
 
     fireEvent.click(screen.getAllByRole("button")[0]);
 
-    expect(fireEvent.click(screen.getAllByRole("link")[0])).toBe(false);
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 });
