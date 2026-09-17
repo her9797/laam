@@ -129,12 +129,21 @@ type OptionalShortcutCard = {
  * separate endpoints, and a failure there (e.g. before the inventory
  * schema exists) should cost only that card, not the whole dashboard.
  */
-function OptionalCardLink({ card }: { card: OptionalShortcutCard }) {
+function OptionalCardLink({ card, isEditing }: { card: OptionalShortcutCard; isEditing: boolean }) {
   const { t } = useTranslation("dashboard");
   const value = card.query.isLoading ? "…" : card.value ?? t("cardValueUnavailable");
 
   return (
-    <Link href={card.href} className="block">
+    <Link
+      href={card.href}
+      className="block"
+      onClick={(event) => {
+        if (isEditing) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
+    >
       <Card className="transition-shadow hover:shadow-lg">
         <CardHeader>
           <CardTitle>{t(card.titleKey)}</CardTitle>
@@ -337,8 +346,17 @@ function DashboardCardGrid({
       <SortableContext items={cards.map((card) => card.key)} strategy={rectSortingStrategy}>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {cards.map((card, index) => {
-        const content = card.query ? <OptionalCardLink card={card as OptionalShortcutCard} /> : (
-          <Link href={card.href} className="block">
+        const content = card.query ? <OptionalCardLink card={card as OptionalShortcutCard} isEditing={isEditing} /> : (
+          <Link
+            href={card.href}
+            className="block"
+            onClick={(event) => {
+              if (isEditing) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+            }}
+          >
             <Card className="transition-shadow hover:shadow-lg">
               <CardHeader><CardTitle>{t(card.titleKey)}</CardTitle><CardDescription>{t(card.descriptionKey)}</CardDescription></CardHeader>
               <CardContent><p className="text-2xl font-semibold text-foreground">{card.value}</p></CardContent>
