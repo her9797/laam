@@ -38,6 +38,18 @@ laam-api
 - `POST /api/v1/admin/song-requests/{requestId}/approve`
 - `GET /api/v1/admin/song-player/queue`
 - `PATCH /api/v1/admin/song-player/queue/{queueId}/status`
+- `GET|POST /api/v1/admin/expense-categories`
+- `PATCH /api/v1/admin/expense-categories/{id}`
+- `GET|POST /api/v1/admin/inventory-items`
+- `PATCH /api/v1/admin/inventory-items/{id}`
+- `POST /api/v1/admin/inventory-items/{id}/adjust`
+- `GET /api/v1/admin/inventory-items/{id}/adjustments`
+- `GET /api/v1/admin/inventory/summary`
+- `GET|POST /api/v1/admin/expense-receipts`
+- `GET|PATCH|DELETE /api/v1/admin/expense-receipts/{id}`
+- `POST|DELETE /api/v1/admin/expense-receipts/{id}/image`
+- `GET /api/v1/admin/expense-receipts/{id}/image-url`
+- `GET /api/v1/admin/expenses/summary`
 
 ## 실행 방법
 
@@ -99,6 +111,13 @@ YOUTUBE_API_KEY=서버용_YouTube_Data_API_v3_키
 ```
 
 관리자가 노래 신청을 승인하면 API가 임베드 가능한 영상을 검색해 재생 대기열에 저장합니다. 관리자 웹의 `/player` 화면은 대기열을 순서대로 재생하고 완료 상태를 API에 반영합니다.
+
+재고·지출 관리의 영수증 사진은 Supabase Storage 비공개 버킷에 저장합니다. `SUPABASE_URL`을 재사용하고 서버 전용 secret key와 버킷 이름을 설정합니다. 버킷은 API가 만들지 않으므로 배포 시 비공개 버킷으로 미리 생성합니다. 키가 없으면 영수증 이미지 엔드포인트만 `503`을 반환합니다.
+
+```bash
+SUPABASE_STORAGE_KEY=서버용_Supabase_secret_key
+EXPENSE_RECEIPT_BUCKET=expense-receipts
+```
 
 ## 구현 메모
 

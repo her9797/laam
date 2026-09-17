@@ -174,6 +174,37 @@ describe("AdminShell", () => {
     }
   });
 
+  it("exposes 재고·지출 as a collapsed dropdown with expense, inventory and item links", () => {
+    render(
+      <AdminShell>
+        <p>page content</p>
+      </AdminShell>,
+    );
+
+    const toggle = screen.getByRole("button", { name: "재고·지출" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("link", { name: "재고" })).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(screen.getByRole("link", { name: "지출" })).toHaveAttribute("href", "/expenses");
+    expect(screen.getByRole("link", { name: "재고" })).toHaveAttribute("href", "/inventory");
+    expect(screen.getByRole("link", { name: "품목·분류" })).toHaveAttribute("href", "/inventory/items");
+  });
+
+  it("marks 품목·분류, not 재고, as the current page on /inventory/items", () => {
+    currentPathname = "/inventory/items";
+    render(
+      <AdminShell>
+        <p>page content</p>
+      </AdminShell>,
+    );
+
+    expect(screen.getByRole("button", { name: "재고·지출" })).toHaveAttribute("aria-expanded", "true");
+    const breadcrumb = screen.getByRole("navigation", { name: "breadcrumb" });
+    expect(within(breadcrumb).getByText("품목·분류")).toHaveAttribute("aria-current", "page");
+  });
+
   it("renders the page content passed as children", () => {
     render(
       <AdminShell>

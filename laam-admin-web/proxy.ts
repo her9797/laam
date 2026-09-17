@@ -40,6 +40,8 @@ export const config = {
     "/notices/:path*",
     "/store-copy/:path*",
     "/system-logs/:path*",
+    "/inventory/:path*",
+    "/expenses/:path*",
   ],
 };
 

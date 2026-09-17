@@ -78,7 +78,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 deploy_api() {
   local customer_web_base_url="$1"
   local api_secrets
-  api_secrets="DATABASE_URL=laam-database-url:latest,ADMIN_API_TOKEN=laam-admin-api-token:latest,PAYMENT_API_TOKEN=laam-payment-api-token:latest,SUPABASE_BROADCAST_KEY=laam-supabase-secret-key:latest,SUPABASE_URL=laam-supabase-url:latest,QR_SIGNING_SECRET=laam-qr-signing-secret:latest,TOSS_PLACE_ACCESS_KEY=laam-toss-place-access-key:latest,TOSS_PLACE_SECRET_KEY=laam-toss-place-secret-key:latest,TOSS_PLACE_MERCHANT_ID=laam-toss-place-merchant-id:latest,TOSS_PLACE_WEBHOOK_SECRET=laam-toss-place-webhook-secret:latest"
+  api_secrets="DATABASE_URL=laam-database-url:latest,ADMIN_API_TOKEN=laam-admin-api-token:latest,PAYMENT_API_TOKEN=laam-payment-api-token:latest,SUPABASE_BROADCAST_KEY=laam-supabase-secret-key:latest,SUPABASE_STORAGE_KEY=laam-supabase-secret-key:latest,SUPABASE_URL=laam-supabase-url:latest,QR_SIGNING_SECRET=laam-qr-signing-secret:latest,TOSS_PLACE_ACCESS_KEY=laam-toss-place-access-key:latest,TOSS_PLACE_SECRET_KEY=laam-toss-place-secret-key:latest,TOSS_PLACE_MERCHANT_ID=laam-toss-place-merchant-id:latest,TOSS_PLACE_WEBHOOK_SECRET=laam-toss-place-webhook-secret:latest"
   if "$GCLOUD" secrets describe laam-youtube-api-key --project="$PROJECT_ID" >/dev/null 2>&1; then
     api_secrets+=",YOUTUBE_API_KEY=laam-youtube-api-key:latest"
   else

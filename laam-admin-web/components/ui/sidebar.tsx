@@ -40,6 +40,14 @@ function clampSidebarWidth(value: number) {
   return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, value))
 }
 
+function readStoredSidebarWidth() {
+  if (typeof document === "undefined") return SIDEBAR_WIDTH_DEFAULT
+  const match = document.cookie.match(/(?:^|; )sidebar_width=(\d+)/)
+  if (!match) return SIDEBAR_WIDTH_DEFAULT
+  const stored = Number(match[1])
+  return Number.isNaN(stored) ? SIDEBAR_WIDTH_DEFAULT : clampSidebarWidth(stored)
+}
+
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
   open: boolean
@@ -106,6 +114,7 @@ function SidebarProvider({
   // This is the internal state of the sidebar's (desktop, expanded-only)
   // drag-resizable width.
   const [width, _setWidth] = React.useState(SIDEBAR_WIDTH_DEFAULT)
+  const [widthReady, setWidthReady] = React.useState(false)
 
   const setWidth = React.useCallback(
     (value: number | ((value: number) => number)) => {
@@ -125,16 +134,13 @@ function SidebarProvider({
   // the server-rendered default and React doesn't report a hydration
   // mismatch — this is the one deliberate exception to the lint rule's
   // advice, same as `SalesStatsPage`'s date-range restore.
-  React.useEffect(() => {
-    const match = document.cookie.match(/(?:^|; )sidebar_width=(\d+)/)
-    if (!match) {
-      return
-    }
-    const stored = Number(match[1])
-    if (!Number.isNaN(stored)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      _setWidth(clampSidebarWidth(stored))
-    }
+  const useIsomorphicLayoutEffect = typeof window === "undefined" ? React.useEffect : React.useLayoutEffect
+  useIsomorphicLayoutEffect(() => {
+    // Apply the saved width before paint while keeping server and hydration markup identical.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    _setWidth(readStoredSidebarWidth())
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setWidthReady(true)
   }, [])
 
   // Adds a keyboard shortcut to toggle the sidebar.
@@ -178,13 +184,14 @@ function SidebarProvider({
         data-slot="sidebar-wrapper"
         style={
           {
-            "--sidebar-width": `${width}px`,
+            "--sidebar-width": widthReady ? `${width}px` : "var(--laam-sidebar-width, 256px)",
             "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
             ...style,
           } as React.CSSProperties
         }
         className={cn(
           "group/sidebar-wrapper flex min-h-svh w-full has-data-[variant=inset]:bg-sidebar",
+          !widthReady && "[&_*]:!transition-none",
           className
         )}
         {...props}

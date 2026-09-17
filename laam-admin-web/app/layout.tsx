@@ -32,6 +32,17 @@ const THEME_INIT_SCRIPT = `(function () {
   }
 })();`;
 
+const SIDEBAR_WIDTH_INIT_SCRIPT = `(function () {
+  try {
+    var match = document.cookie.match(/(?:^|; )sidebar_width=(\\d+)/);
+    if (!match) return;
+    var width = Math.min(320, Math.max(148, Number(match[1])));
+    if (!Number.isNaN(width)) document.documentElement.style.setProperty("--laam-sidebar-width", width + "px");
+  } catch (error) {
+    // Keep the default width when cookies are unavailable.
+  }
+})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -42,6 +53,11 @@ export default function RootLayout({
           id="theme-init"
           strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
+        <Script
+          id="sidebar-width-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: SIDEBAR_WIDTH_INIT_SCRIPT }}
         />
         <SkipLink />
         <AppProviders>{children}</AppProviders>

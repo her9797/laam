@@ -42,7 +42,7 @@
    | `laam-database-url` | laam-api |
    | `laam-admin-api-token` | laam-api, laam-admin-web (두 곳 값이 동일해야 함) |
    | `laam-payment-api-token` | laam-api, laam-web (두 곳 값이 동일해야 함) |
-   | `laam-supabase-secret-key` | laam-api |
+   | `laam-supabase-secret-key` | laam-api (`SUPABASE_BROADCAST_KEY`와 영수증 사진 저장용 `SUPABASE_STORAGE_KEY`에 같은 값을 주입. Storage 비공개 버킷 `expense-receipts` 필요) |
    | `laam-supabase-url` | laam-api |
    | `laam-toss-place-access-key` | laam-api |
    | `laam-toss-place-secret-key` | laam-api |

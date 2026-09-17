@@ -34,6 +34,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 	registerSongRoutes(mux, repository, cfg)
 	registerTableRoutes(mux, cfg)
 	registerTossPlaceWebhookRoutes(mux, repository, cfg)
+	registerExpenseRoutes(mux, repository, cfg)
 
 	mux.HandleFunc("/api/v1/bootstrap", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -1192,7 +1193,7 @@ var allowedMenuImageMimeTypes = map[string]bool{
 	"image/webp": true,
 }
 
-type menuImageUpload struct {
+type imageUpload struct {
 	filename string
 	mimeType string
 	content  []byte
@@ -1203,39 +1204,47 @@ type menuImageUpload struct {
 // into the database. The MIME type is sniffed from the bytes rather than
 // taken from the client's part header, since it is later served back as the
 // image's Content-Type. On failure it returns the HTTP status to reply with.
-func readMenuImageUpload(w http.ResponseWriter, r *http.Request) (menuImageUpload, int, error) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxMenuImageRequestBytes)
-	if err := r.ParseMultipartForm(maxMenuImageBytes); err != nil {
+func readMenuImageUpload(w http.ResponseWriter, r *http.Request) (imageUpload, int, error) {
+	return readImageUpload(w, r, maxMenuImageBytes, maxMenuImageRequestBytes)
+}
+
+// readImageUpload is readMenuImageUpload with caller-chosen limits: the
+// "image" file part may hold at most maxFileBytes and the whole request body
+// at most maxRequestBytes (both 413), and only JPEG/PNG/WebP bytes are
+// accepted (415).
+func readImageUpload(w http.ResponseWriter, r *http.Request, maxFileBytes int64, maxRequestBytes int64) (imageUpload, int, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
+	if err := r.ParseMultipartForm(maxFileBytes); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			return menuImageUpload{}, http.StatusRequestEntityTooLarge, fmt.Errorf("image upload exceeds %d bytes", maxMenuImageRequestBytes)
+			return imageUpload{}, http.StatusRequestEntityTooLarge, fmt.Errorf("image upload exceeds %d bytes", maxRequestBytes)
 		}
-		return menuImageUpload{}, http.StatusBadRequest, err
+		return imageUpload{}, http.StatusBadRequest, err
 	}
 
 	file, header, err := r.FormFile("image")
 	if err != nil {
-		return menuImageUpload{}, http.StatusBadRequest, err
+		return imageUpload{}, http.StatusBadRequest, err
 	}
 	defer file.Close()
 
-	if header.Size > maxMenuImageBytes {
-		return menuImageUpload{}, http.StatusRequestEntityTooLarge, fmt.Errorf("image exceeds %d bytes", maxMenuImageBytes)
+	if header.Size > maxFileBytes {
+		return imageUpload{}, http.StatusRequestEntityTooLarge, fmt.Errorf("image exceeds %d bytes", maxFileBytes)
 	}
-	content, err := io.ReadAll(io.LimitReader(file, maxMenuImageBytes+1))
+	content, err := io.ReadAll(io.LimitReader(file, maxFileBytes+1))
 	if err != nil {
-		return menuImageUpload{}, http.StatusInternalServerError, err
+		return imageUpload{}, http.StatusInternalServerError, err
 	}
-	if len(content) > maxMenuImageBytes {
-		return menuImageUpload{}, http.StatusRequestEntityTooLarge, fmt.Errorf("image exceeds %d bytes", maxMenuImageBytes)
+	if int64(len(content)) > maxFileBytes {
+		return imageUpload{}, http.StatusRequestEntityTooLarge, fmt.Errorf("image exceeds %d bytes", maxFileBytes)
 	}
 
 	mimeType := http.DetectContentType(content)
 	if !allowedMenuImageMimeTypes[mimeType] {
-		return menuImageUpload{}, http.StatusUnsupportedMediaType, fmt.Errorf("unsupported image type %q", mimeType)
+		return imageUpload{}, http.StatusUnsupportedMediaType, fmt.Errorf("unsupported image type %q", mimeType)
 	}
 
-	return menuImageUpload{filename: header.Filename, mimeType: mimeType, content: content}, http.StatusOK, nil
+	return imageUpload{filename: header.Filename, mimeType: mimeType, content: content}, http.StatusOK, nil
 }
 
 func writeStoreError(w http.ResponseWriter, err error) {
