@@ -142,6 +142,7 @@ function defaultOrderCountResult() {
 
 describe("DashboardPage", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     bootstrapRefetchMock.mockClear();
     requestsRefetchMock.mockClear();
     specialRequestCountRefetchMock.mockClear();
@@ -217,5 +218,24 @@ describe("DashboardPage", () => {
     expect(cards).toHaveLength(6);
     expect(cards[0]).toHaveClass("cursor-grab");
     expect(cards[0]).toHaveAttribute("tabindex", "0");
+  });
+
+  it("lets the operator move cards and persists the order locally", () => {
+    render(<DashboardPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "카드 편집" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "아래로 이동" })[0]);
+
+    expect(screen.getAllByRole("link")[0]).toHaveAttribute("href", "/inventory");
+    expect(JSON.parse(window.localStorage.getItem("laam-admin.dashboard-card-order") ?? "null")).toEqual([
+      "reorder",
+      "expenses",
+      "general",
+      "song",
+      "special",
+      "orders",
+      "menu",
+      "notices",
+    ]);
   });
 });

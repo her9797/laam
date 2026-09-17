@@ -130,6 +130,10 @@ export const ko = {
     cardReorderDescription: "최소 수량보다 적게 남은 품목",
     amountValue: "{{amount}}원",
     cardValueUnavailable: "불러오지 못했어요",
+    editCards: "카드 편집",
+    finishEditing: "편집 완료",
+    moveCardUp: "위로 이동",
+    moveCardDown: "아래로 이동",
   },
   notifications: {
     bellLabel: "새 알림 {{count}}건",
@@ -807,6 +811,10 @@ export const en = {
     cardReorderDescription: "Items below their minimum quantity",
     amountValue: "₩{{amount}}",
     cardValueUnavailable: "Unavailable",
+    editCards: "Edit cards",
+    finishEditing: "Done",
+    moveCardUp: "Move up",
+    moveCardDown: "Move down",
   },
   notifications: {
     bellLabel: "{{count}} new notifications",

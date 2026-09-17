@@ -3,7 +3,8 @@
 import "@/i18n/client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { RiArrowDownSLine, RiArrowUpSLine, RiCheckLine, RiSettings3Line } from "@remixicon/react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   closestCenter,
@@ -15,7 +16,6 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
-  arrayMove,
   rectSortingStrategy,
   SortableContext,
   sortableKeyboardCoordinates,
@@ -24,12 +24,17 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states/PageStates";
 import { useBootstrapQuery } from "@/features/bootstrap/queries";
+import { seoulMonth } from "@/features/expenses/model";
+import { useExpenseSummaryQuery } from "@/features/expenses/queries";
+import { formatNumber } from "@/features/inventory/format";
 import { useOrderCountQuery } from "@/features/orders/queries";
 import { useCustomerRequestPendingSummaryQuery } from "@/features/requests/queries";
 import { useSpecialRequestCountQuery } from "@/features/special-requests/queries";
 
+import { useInventorySummaryQuery } from "./queries";
 import { buildDashboardSummary, type DashboardSummary } from "./summary";
 
 type ShortcutCard = {
@@ -41,32 +46,19 @@ type ShortcutCard = {
   value: number;
 };
 
-function SortableShortcutCard({ card }: { card: ShortcutCard }) {
-  const { t } = useTranslation("dashboard");
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: card.key,
-  });
+const DASHBOARD_CARD_ORDER_KEY = "laam-admin.dashboard-card-order";
+const DEFAULT_CARD_ORDER = ["expenses", "reorder", "general", "song", "special", "orders", "menu", "notices"];
 
-  return (
-    <Link
-      ref={setNodeRef}
-      href={card.href}
-      className={`block cursor-grab touch-none active:cursor-grabbing ${isDragging ? "opacity-50" : ""}`}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      {...attributes}
-      {...listeners}
-    >
-      <Card className="transition-shadow hover:shadow-lg">
-        <CardHeader>
-          <CardTitle>{t(card.titleKey)}</CardTitle>
-          <CardDescription>{t(card.descriptionKey)}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-2xl font-semibold text-foreground">{card.value}</p>
-        </CardContent>
-      </Card>
-    </Link>
-  );
+function readCardOrder(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(DASHBOARD_CARD_ORDER_KEY) ?? "null");
+    if (!Array.isArray(parsed)) return DEFAULT_CARD_ORDER;
+    const known = new Set(DEFAULT_CARD_ORDER);
+    const saved = parsed.filter((key): key is string => typeof key === "string" && known.has(key));
+    return [...saved, ...DEFAULT_CARD_ORDER.filter((key) => !saved.includes(key))];
+  } catch {
+    return DEFAULT_CARD_ORDER;
+  }
 }
 
 // Every card links to the management route for the data it counts — the
@@ -122,24 +114,78 @@ function buildCards(summary: DashboardSummary): ShortcutCard[] {
   ];
 }
 
-export function DashboardPage() {
+type OptionalShortcutCard = {
+  key: string;
+  href: string;
+  titleKey: string;
+  descriptionKey: string;
+  query: { isLoading: boolean; isError: boolean };
+  /** Rendered value once the query has data. */
+  value: string | null;
+};
+
+/**
+ * Expense and inventory cards load on their own: their summaries are
+ * separate endpoints, and a failure there (e.g. before the inventory
+ * schema exists) should cost only that card, not the whole dashboard.
+ */
+function OptionalCardLink({ card }: { card: OptionalShortcutCard }) {
   const { t } = useTranslation("dashboard");
-  const [cardOrder, setCardOrder] = useState<string[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const stored = window.localStorage.getItem("laam-admin.dashboard-card-order");
-      const parsed: unknown = stored ? JSON.parse(stored) : [];
-      return Array.isArray(parsed) && parsed.every((key): key is string => typeof key === "string")
-        ? parsed
-        : [];
-    } catch {
-      return [];
-    }
-  });
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  const value = card.query.isLoading ? "…" : card.value ?? t("cardValueUnavailable");
+
+  return (
+    <Link href={card.href} className="block">
+      <Card className="transition-shadow hover:shadow-lg">
+        <CardHeader>
+          <CardTitle>{t(card.titleKey)}</CardTitle>
+          <CardDescription>{t(card.descriptionKey)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p
+            className={
+              card.value === null && !card.query.isLoading
+                ? "text-sm text-muted-foreground"
+                : "text-2xl font-semibold text-foreground"
+            }
+          >
+            {value}
+          </p>
+        </CardContent>
+      </Card>
+    </Link>
   );
+}
+
+export function DashboardPage() {
+  const { t, i18n } = useTranslation("dashboard");
+  const [isEditing, setIsEditing] = useState(false);
+  const [cardOrder, setCardOrder] = useState(DEFAULT_CARD_ORDER);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setCardOrder(readCardOrder()), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  const expenseSummaryQuery = useExpenseSummaryQuery(seoulMonth(new Date()));
+  const inventorySummaryQuery = useInventorySummaryQuery();
+  const optionalCards: OptionalShortcutCard[] = [
+    {
+      key: "expenses",
+      href: "/expenses",
+      titleKey: "cardExpensesTitle",
+      descriptionKey: "cardExpensesDescription",
+      query: expenseSummaryQuery,
+      value: expenseSummaryQuery.data
+        ? t("amountValue", { amount: formatNumber(expenseSummaryQuery.data.total, i18n.language) })
+        : null,
+    },
+    {
+      key: "reorder",
+      href: "/inventory",
+      titleKey: "cardReorderTitle",
+      descriptionKey: "cardReorderDescription",
+      query: inventorySummaryQuery,
+      value: inventorySummaryQuery.data ? String(inventorySummaryQuery.data.reorderCount) : null,
+    },
+  ];
   const bootstrapQuery = useBootstrapQuery();
   const requestsQuery = useCustomerRequestPendingSummaryQuery();
   const specialRequestCountQuery = useSpecialRequestCountQuery();
@@ -197,6 +243,26 @@ export function DashboardPage() {
     specialRequestCountQuery.data.total,
     orderCountQuery.data.total,
   );
+  const allCards = [
+    ...optionalCards,
+    ...buildCards(summary).map((card) => ({ ...card, query: null as null, value: String(card.value) })),
+  ];
+  const orderedCards = cardOrder
+    .map((key) => allCards.find((card) => card.key === key))
+    .filter((card): card is (typeof allCards)[number] => Boolean(card));
+  const emptyStateCards = orderedCards.filter((card) => card.key === "expenses" || card.key === "reorder");
+
+  function moveCard(key: string, direction: -1 | 1) {
+    setCardOrder((current) => {
+      const next = [...current];
+      const index = next.indexOf(key);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= next.length) return current;
+      [next[index], next[target]] = [next[target], next[index]];
+      window.localStorage.setItem(DASHBOARD_CARD_ORDER_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
   // All 4 queries have already succeeded above (the loading/error branches
   // returned first) — "empty" here means every aggregate count is genuinely
   // zero: no pending general or song requests, no special or order-history
@@ -210,46 +276,104 @@ export function DashboardPage() {
     summary.orderCount === 0 &&
     summary.menuItemCount === 0 &&
     summary.noticeCount === 0;
-  const cards = buildCards(summary);
-  const orderedCards = [
-    ...cardOrder.map((key) => cards.find((card) => card.key === key)).filter(Boolean),
-    ...cards.filter((card) => !cardOrder.includes(card.key)),
-  ] as ShortcutCard[];
-
-  function persistCardOrder(nextOrder: string[]) {
-    setCardOrder(nextOrder);
-    try {
-      window.localStorage.setItem("laam-admin.dashboard-card-order", JSON.stringify(nextOrder));
-    } catch {
-      // Private browsing or storage quotas should not prevent reordering in memory.
-    }
-  }
-
-  function handleDragEnd({ active, over }: DragEndEvent) {
-    if (!over || active.id === over.id) return;
-    const currentOrder = orderedCards.map((card) => card.key);
-    const from = currentOrder.indexOf(String(active.id));
-    const to = currentOrder.indexOf(String(over.id));
-    if (from < 0 || to < 0) return;
-    persistCardOrder(arrayMove(currentOrder, from, to));
-  }
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-lg font-semibold text-foreground">{t("title")}</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-lg font-semibold text-foreground">{t("title")}</h1>
+        <Button type="button" variant="outline" size="sm" onClick={() => setIsEditing((current) => !current)}>
+          {isEditing ? <RiCheckLine data-icon="inline-start" aria-hidden="true" /> : <RiSettings3Line data-icon="inline-start" aria-hidden="true" />}
+          {isEditing ? t("finishEditing") : t("editCards")}
+        </Button>
+      </div>
       {isEmpty ? (
-        <EmptyState title={t("emptyTitle")} description={t("emptyDescription")} />
+        <>
+          <EmptyState title={t("emptyTitle")} description={t("emptyDescription")} />
+          <DashboardCardGrid cards={emptyStateCards} isEditing={isEditing} onMove={moveCard} />
+        </>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={orderedCards.map((card) => card.key)} strategy={rectSortingStrategy}>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {orderedCards.map((card) => (
-                <SortableShortcutCard key={card.key} card={card} />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
+        <DashboardCardGrid cards={orderedCards} isEditing={isEditing} onMove={moveCard} />
       )}
+    </div>
+  );
+}
+
+type DashboardCard = {
+  key: string;
+  href: string;
+  titleKey: string;
+  descriptionKey: string;
+  value: string | null;
+  query: OptionalShortcutCard["query"] | null;
+};
+
+function DashboardCardGrid({
+  cards,
+  isEditing,
+  onMove,
+}: {
+  cards: DashboardCard[];
+  isEditing: boolean;
+  onMove: (key: string, direction: -1 | 1) => void;
+}) {
+  const { t } = useTranslation("dashboard");
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  function handleDragEnd({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id) return;
+    const current = cards.map((card) => card.key);
+    const from = current.indexOf(String(active.id));
+    const to = current.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    const direction = to > from ? 1 : -1;
+    for (let index = from; index !== to; index += direction) {
+      onMove(String(active.id), direction);
+    }
+  }
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={cards.map((card) => card.key)} strategy={rectSortingStrategy}>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {cards.map((card, index) => {
+        const content = card.query ? <OptionalCardLink card={card as OptionalShortcutCard} /> : (
+          <Link href={card.href} className="block">
+            <Card className="transition-shadow hover:shadow-lg">
+              <CardHeader><CardTitle>{t(card.titleKey)}</CardTitle><CardDescription>{t(card.descriptionKey)}</CardDescription></CardHeader>
+              <CardContent><p className="text-2xl font-semibold text-foreground">{card.value}</p></CardContent>
+            </Card>
+          </Link>
+        );
+        return (
+          <SortableDashboardCard key={card.key} cardKey={card.key}>
+            {content}
+            {isEditing ? (
+              <div className="absolute right-2 top-2 flex gap-1 rounded-full bg-background/95 p-1 shadow-sm ring-1 ring-border">
+                <Button type="button" variant="ghost" size="icon-xs" aria-label={t("moveCardUp")} disabled={index === 0} onClick={() => onMove(card.key, -1)}><RiArrowUpSLine aria-hidden="true" /></Button>
+                <Button type="button" variant="ghost" size="icon-xs" aria-label={t("moveCardDown")} disabled={index === cards.length - 1} onClick={() => onMove(card.key, 1)}><RiArrowDownSLine aria-hidden="true" /></Button>
+              </div>
+            ) : null}
+          </SortableDashboardCard>
+        );
+          })}
+        </div>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+function SortableDashboardCard({ cardKey, children }: { cardKey: string; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cardKey });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`relative cursor-grab touch-none active:cursor-grabbing ${isDragging ? "opacity-50" : ""}`}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
     </div>
   );
 }
