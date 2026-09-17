@@ -15,15 +15,25 @@ test("특별한 요청 폼의 이상형은 키·거주지·연령대·세부사�
     assert.match(source, new RegExp(`${field}:\\s*event\\.target\\.value`), `${field}를 업데이트하는 핸들러가 있어야 한다`);
   }
 
-  const idealHeightIndex = source.indexOf(">키<");
-  const idealResidenceIndex = source.indexOf(">거주지<");
-  const idealAgeRangeIndex = source.indexOf(">연령대<");
-  const idealDetailsIndex = source.indexOf(">세부사항<");
+  const fieldsetIndex = source.indexOf('className="request-compose-field-wide request-compose-fieldset"');
+  assert.ok(fieldsetIndex >= 0, "이상형 4개 필드를 한 그룹으로 묶는 fieldset이 있어야 한다");
 
-  assert.ok(idealHeightIndex >= 0, "키 라벨이 있어야 한다");
+  const legendIndex = source.indexOf(">이상형<", fieldsetIndex);
+  const idealHeightIndex = source.indexOf(">키<", fieldsetIndex);
+  const idealResidenceIndex = source.indexOf(">거주지<", fieldsetIndex);
+  const idealAgeRangeIndex = source.indexOf(">연령대<", fieldsetIndex);
+  const idealDetailsIndex = source.indexOf(">세부사항<", fieldsetIndex);
+  const fieldsetCloseIndex = source.indexOf("</fieldset>", fieldsetIndex);
+
+  assert.ok(legendIndex > fieldsetIndex, "이상형 legend가 fieldset 열기 태그 다음에 와야 한다");
+  assert.ok(idealHeightIndex > legendIndex, "키는 legend 다음에 와야 한다");
   assert.ok(idealResidenceIndex > idealHeightIndex, "거주지는 키 다음에 와야 한다");
   assert.ok(idealAgeRangeIndex > idealResidenceIndex, "연령대는 거주지 다음에 와야 한다");
   assert.ok(idealDetailsIndex > idealAgeRangeIndex, "세부사항은 연령대 다음에 와야 한다");
+  assert.ok(
+    fieldsetCloseIndex > idealDetailsIndex,
+    "4개 필드 모두 같은 fieldset이 닫히기 전에 있어야 한다(같은 그룹 안에 있어야 함)",
+  );
 });
 
 test("특별한 요청 제출 시 이상형 4개 필드가 모두 서버로 전달된다", async () => {

@@ -271,58 +271,63 @@ export function RequestsScreen({ store, initialCategory }: RequestsScreenProps) 
                   placeholder="예: @your_instagram"
                 />
               </label>
-              <label className="request-compose-field">
-                <span>키</span>
-                <input
-                  value={specialForm.idealHeight}
-                  onChange={(event) =>
-                    setSpecialForm((current) => ({
-                      ...current,
-                      idealHeight: event.target.value,
-                    }))
-                  }
-                  placeholder="예: 175cm 이상"
-                />
-              </label>
-              <label className="request-compose-field">
-                <span>거주지</span>
-                <input
-                  value={specialForm.idealResidence}
-                  onChange={(event) =>
-                    setSpecialForm((current) => ({
-                      ...current,
-                      idealResidence: event.target.value,
-                    }))
-                  }
-                  placeholder="예: 성수, 잠실"
-                />
-              </label>
-              <label className="request-compose-field">
-                <span>연령대</span>
-                <input
-                  value={specialForm.idealAgeRange}
-                  onChange={(event) =>
-                    setSpecialForm((current) => ({
-                      ...current,
-                      idealAgeRange: event.target.value,
-                    }))
-                  }
-                  placeholder="예: 20대 초반~중반"
-                />
-              </label>
-              <label className="request-compose-field request-compose-field-wide">
-                <span>세부사항</span>
-                <input
-                  value={specialForm.idealDetails}
-                  onChange={(event) =>
-                    setSpecialForm((current) => ({
-                      ...current,
-                      idealDetails: event.target.value,
-                    }))
-                  }
-                  placeholder="어떤 사람이 이상형인지 자유롭게 적어주세요"
-                />
-              </label>
+              <fieldset className="request-compose-field-wide request-compose-fieldset">
+                <legend className="request-compose-fieldset-legend">이상형</legend>
+                <div className="request-compose-fieldset-grid">
+                  <label className="request-compose-field">
+                    <span>키</span>
+                    <input
+                      value={specialForm.idealHeight}
+                      onChange={(event) =>
+                        setSpecialForm((current) => ({
+                          ...current,
+                          idealHeight: event.target.value,
+                        }))
+                      }
+                      placeholder="예: 175cm 이상"
+                    />
+                  </label>
+                  <label className="request-compose-field">
+                    <span>거주지</span>
+                    <input
+                      value={specialForm.idealResidence}
+                      onChange={(event) =>
+                        setSpecialForm((current) => ({
+                          ...current,
+                          idealResidence: event.target.value,
+                        }))
+                      }
+                      placeholder="예: 성수, 잠실"
+                    />
+                  </label>
+                  <label className="request-compose-field">
+                    <span>연령대</span>
+                    <input
+                      value={specialForm.idealAgeRange}
+                      onChange={(event) =>
+                        setSpecialForm((current) => ({
+                          ...current,
+                          idealAgeRange: event.target.value,
+                        }))
+                      }
+                      placeholder="예: 20대 초반~중반"
+                    />
+                  </label>
+                  <label className="request-compose-field request-compose-field-wide">
+                    <span>세부사항</span>
+                    <input
+                      value={specialForm.idealDetails}
+                      onChange={(event) =>
+                        setSpecialForm((current) => ({
+                          ...current,
+                          idealDetails: event.target.value,
+                        }))
+                      }
+                      placeholder="어떤 사람이 이상형인지 자유롭게 적어주세요"
+                    />
+                  </label>
+                </div>
+              </fieldset>
               <label className="request-compose-field request-compose-field-wide">
                 <span>하고 싶은 말</span>
                 <textarea
