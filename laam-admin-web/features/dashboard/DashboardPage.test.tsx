@@ -214,6 +214,9 @@ describe("DashboardPage", () => {
   it("renders cards as sortable drag targets", () => {
     render(<DashboardPage />);
 
+    expect(screen.getAllByRole("link")[0]).not.toHaveAttribute("tabindex", "0");
+    fireEvent.click(screen.getAllByRole("button")[0]);
+
     const cards = screen.getAllByRole("link");
     expect(cards).toHaveLength(6);
     expect(cards[0]).toHaveClass("cursor-grab");
@@ -237,5 +240,13 @@ describe("DashboardPage", () => {
       "menu",
       "notices",
     ]);
+  });
+
+  it("does not navigate when a card is clicked in edit mode", () => {
+    render(<DashboardPage />);
+
+    fireEvent.click(screen.getAllByRole("button")[0]);
+
+    expect(fireEvent.click(screen.getAllByRole("link")[0])).toBe(false);
   });
 });

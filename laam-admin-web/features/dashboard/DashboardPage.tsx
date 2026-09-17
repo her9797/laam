@@ -318,7 +318,7 @@ function DashboardCardGrid({
 }) {
   const { t } = useTranslation("dashboard");
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
   function handleDragEnd({ active, over }: DragEndEvent) {
@@ -346,7 +346,7 @@ function DashboardCardGrid({
           </Link>
         );
         return (
-          <SortableDashboardCard key={card.key} cardKey={card.key}>
+          <SortableDashboardCard key={card.key} cardKey={card.key} isEditing={isEditing}>
             {content}
             {isEditing ? (
               <div className="absolute right-2 top-2 flex gap-1 rounded-full bg-background/95 p-1 shadow-sm ring-1 ring-border">
@@ -363,15 +363,29 @@ function DashboardCardGrid({
   );
 }
 
-function SortableDashboardCard({ cardKey, children }: { cardKey: string; children: ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: cardKey });
+function SortableDashboardCard({
+  cardKey,
+  children,
+  isEditing,
+}: {
+  cardKey: string;
+  children: ReactNode;
+  isEditing: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: cardKey,
+    disabled: !isEditing,
+  });
   return (
     <div
       ref={setNodeRef}
-      className={`relative cursor-grab touch-none active:cursor-grabbing ${isDragging ? "opacity-50" : ""}`}
+      className={`relative ${isEditing ? "cursor-grab touch-none active:cursor-grabbing" : ""} ${isDragging ? "opacity-50" : ""}`}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      {...attributes}
-      {...listeners}
+      {...(isEditing ? attributes : {})}
+      {...(isEditing ? listeners : {})}
+      onClick={(event) => {
+        if (isEditing) event.preventDefault();
+      }}
     >
       {children}
     </div>
