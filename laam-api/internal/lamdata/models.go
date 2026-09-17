@@ -109,16 +109,19 @@ type SongQueueItem struct {
 }
 
 type SpecialRequest struct {
-	ID          string `json:"id"`
-	TableNumber string `json:"tableNumber"`
-	Gender      string `json:"gender"`
-	Name        string `json:"name"`
-	Age         string `json:"age"`
-	Residence   string `json:"residence"`
-	Instagram   string `json:"instagram"`
-	IdealType   string `json:"idealType"`
-	Text        string `json:"text"`
-	CreatedAt   string `json:"createdAt"`
+	ID             string `json:"id"`
+	TableNumber    string `json:"tableNumber"`
+	Gender         string `json:"gender"`
+	Name           string `json:"name"`
+	Age            string `json:"age"`
+	Residence      string `json:"residence"`
+	Instagram      string `json:"instagram"`
+	IdealHeight    string `json:"idealHeight"`
+	IdealResidence string `json:"idealResidence"`
+	IdealAgeRange  string `json:"idealAgeRange"`
+	IdealDetails   string `json:"idealDetails"`
+	Text           string `json:"text"`
+	CreatedAt      string `json:"createdAt"`
 }
 
 // PaymentOrder is the admin-facing read shape for a payment_orders row,

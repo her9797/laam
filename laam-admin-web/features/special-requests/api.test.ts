@@ -21,7 +21,10 @@ describe("special-requests api", () => {
         age: "20대",
         residence: "서울",
         instagram: "@handle",
-        idealType: "친절한 사람",
+        idealHeight: "175 이상",
+        idealResidence: "서울",
+        idealAgeRange: "20대 초반~중반",
+        idealDetails: "친절한 사람",
         text: "소개해주세요",
         createdAt: "2026-09-03T10:00:00Z",
       },
@@ -35,7 +38,10 @@ describe("special-requests api", () => {
       "/api/admin/special-requests",
       expect.objectContaining({ method: "GET" }),
     );
-    expect(specialRequests[0]).toHaveProperty("idealType");
+    expect(specialRequests[0]).toHaveProperty("idealHeight");
+    expect(specialRequests[0]).toHaveProperty("idealResidence");
+    expect(specialRequests[0]).toHaveProperty("idealAgeRange");
+    expect(specialRequests[0]).toHaveProperty("idealDetails");
   });
 
   it("sends delete to the resource path and resolves on 204", async () => {

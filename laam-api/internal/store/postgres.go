@@ -386,6 +386,20 @@ CREATE TABLE IF NOT EXISTS inventory_adjustments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_inventory_adjustments_item_created_at ON inventory_adjustments (item_id, created_at DESC, id DESC);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'special_requests' AND column_name = 'ideal_type'
+  ) THEN
+    ALTER TABLE special_requests ADD COLUMN IF NOT EXISTS ideal_height TEXT NOT NULL DEFAULT '';
+    ALTER TABLE special_requests ADD COLUMN IF NOT EXISTS ideal_residence TEXT NOT NULL DEFAULT '';
+    ALTER TABLE special_requests ADD COLUMN IF NOT EXISTS ideal_age_range TEXT NOT NULL DEFAULT '';
+    ALTER TABLE special_requests ADD COLUMN IF NOT EXISTS ideal_details TEXT NOT NULL DEFAULT '';
+    UPDATE special_requests SET ideal_details = ideal_type WHERE ideal_details = '';
+    ALTER TABLE special_requests DROP COLUMN ideal_type;
+  END IF;
+END $$;
 `)
 	return err
 }
@@ -534,26 +548,29 @@ func seedSampleActivity(ctx context.Context, tx pgx.Tx) error {
 	}
 
 	type sampleSpecialRequest struct {
-		id          string
-		tableNumber string
-		gender      string
-		name        string
-		age         string
-		residence   string
-		instagram   string
-		idealType   string
-		text        string
-		createdAgo  string
+		id             string
+		tableNumber    string
+		gender         string
+		name           string
+		age            string
+		residence      string
+		instagram      string
+		idealHeight    string
+		idealResidence string
+		idealAgeRange  string
+		idealDetails   string
+		text           string
+		createdAgo     string
 	}
 	specialRequests := []sampleSpecialRequest{
-		{id: "sample-special-1", tableNumber: "4", gender: "male", name: "김민준", age: "20대", residence: "서울", instagram: "@minjun_kim", idealType: "밝고 긍정적인 사람", text: "혹시 옆 테이블 분과 자리 바꿔도 될까요?", createdAgo: "30 minutes"},
-		{id: "sample-special-2", tableNumber: "6", gender: "female", name: "이서연", age: "20대", residence: "인천", instagram: "@seoyeon.lee", idealType: "유머감각 있는 사람", text: "친구들이랑 같이 왔는데 자리 넓혀주실 수 있나요?", createdAgo: "1 hour 15 minutes"},
+		{id: "sample-special-1", tableNumber: "4", gender: "male", name: "김민준", age: "20대", residence: "서울", instagram: "@minjun_kim", idealHeight: "170 이상", idealResidence: "서울", idealAgeRange: "20대 초반~중반", idealDetails: "밝고 긍정적인 사람", text: "혹시 옆 테이블 분과 자리 바꿔도 될까요?", createdAgo: "30 minutes"},
+		{id: "sample-special-2", tableNumber: "6", gender: "female", name: "이서연", age: "20대", residence: "인천", instagram: "@seoyeon.lee", idealHeight: "180 이상", idealResidence: "서울/인천", idealAgeRange: "20대 후반~30대 초반", idealDetails: "유머감각 있는 사람", text: "친구들이랑 같이 왔는데 자리 넓혀주실 수 있나요?", createdAgo: "1 hour 15 minutes"},
 	}
 	for _, s := range specialRequests {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO special_requests (id, table_number, gender, name, age, residence, instagram, ideal_type, text, created_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW() - $10::interval)
-		`, s.id, s.tableNumber, s.gender, s.name, s.age, s.residence, s.instagram, s.idealType, s.text, s.createdAgo); err != nil {
+			INSERT INTO special_requests (id, table_number, gender, name, age, residence, instagram, ideal_height, ideal_residence, ideal_age_range, ideal_details, text, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW() - $13::interval)
+		`, s.id, s.tableNumber, s.gender, s.name, s.age, s.residence, s.instagram, s.idealHeight, s.idealResidence, s.idealAgeRange, s.idealDetails, s.text, s.createdAgo); err != nil {
 			return err
 		}
 	}
@@ -1183,7 +1200,10 @@ func (r *Repository) ListSpecialRequests(ctx context.Context) ([]lamdata.Special
 			age,
 			residence,
 			instagram,
-			ideal_type,
+			ideal_height,
+			ideal_residence,
+			ideal_age_range,
+			ideal_details,
 			text,
 			created_at
 		FROM special_requests
@@ -1206,7 +1226,10 @@ func (r *Repository) ListSpecialRequests(ctx context.Context) ([]lamdata.Special
 			&item.Age,
 			&item.Residence,
 			&item.Instagram,
-			&item.IdealType,
+			&item.IdealHeight,
+			&item.IdealResidence,
+			&item.IdealAgeRange,
+			&item.IdealDetails,
 			&item.Text,
 			&createdAt,
 		); err != nil {
@@ -1565,7 +1588,7 @@ func (r *Repository) ListSpecialRequestsPage(ctx context.Context, filter Special
 	offset := (page - 1) * pageSize
 	listArgs, limitOffset := listPageArgs(whereArgs, pageSize, offset)
 	listSQL := `
-		SELECT id, COALESCE(table_number, ''), gender, name, age, residence, instagram, ideal_type, text, created_at
+		SELECT id, COALESCE(table_number, ''), gender, name, age, residence, instagram, ideal_height, ideal_residence, ideal_age_range, ideal_details, text, created_at
 		FROM special_requests
 	` + where + `
 		ORDER BY ` + orderBy + `
@@ -1589,7 +1612,10 @@ func (r *Repository) ListSpecialRequestsPage(ctx context.Context, filter Special
 			&item.Age,
 			&item.Residence,
 			&item.Instagram,
-			&item.IdealType,
+			&item.IdealHeight,
+			&item.IdealResidence,
+			&item.IdealAgeRange,
+			&item.IdealDetails,
 			&item.Text,
 			&createdAt,
 		); err != nil {
@@ -1612,15 +1638,18 @@ func (r *Repository) CreateSpecialRequest(ctx context.Context, input lamdata.Spe
 		strings.TrimSpace(input.Age) == "" ||
 		strings.TrimSpace(input.Residence) == "" ||
 		strings.TrimSpace(input.Instagram) == "" ||
-		strings.TrimSpace(input.IdealType) == "" ||
+		strings.TrimSpace(input.IdealHeight) == "" ||
+		strings.TrimSpace(input.IdealResidence) == "" ||
+		strings.TrimSpace(input.IdealAgeRange) == "" ||
+		strings.TrimSpace(input.IdealDetails) == "" ||
 		strings.TrimSpace(input.Text) == "" {
 		return ErrInvalidInput
 	}
 
 	id := nextID("special-request")
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO special_requests (id, table_number, gender, name, age, residence, instagram, ideal_type, text)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO special_requests (id, table_number, gender, name, age, residence, instagram, ideal_height, ideal_residence, ideal_age_range, ideal_details, text)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	`,
 		id,
 		input.TableNumber,
@@ -1629,7 +1658,10 @@ func (r *Repository) CreateSpecialRequest(ctx context.Context, input lamdata.Spe
 		input.Age,
 		input.Residence,
 		input.Instagram,
-		input.IdealType,
+		input.IdealHeight,
+		input.IdealResidence,
+		input.IdealAgeRange,
+		input.IdealDetails,
 		input.Text,
 	)
 	return classifyError(err)

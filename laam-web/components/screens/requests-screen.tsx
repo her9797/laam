@@ -24,7 +24,10 @@ type SpecialFormState = {
   age: string;
   residence: string;
   instagram: string;
-  idealType: string;
+  idealHeight: string;
+  idealResidence: string;
+  idealAgeRange: string;
+  idealDetails: string;
   text: string;
 };
 
@@ -34,7 +37,10 @@ const defaultSpecialForm: SpecialFormState = {
   age: "",
   residence: "",
   instagram: "",
-  idealType: "",
+  idealHeight: "",
+  idealResidence: "",
+  idealAgeRange: "",
+  idealDetails: "",
   text: "",
 };
 
@@ -103,7 +109,10 @@ export function RequestsScreen({ store, initialCategory }: RequestsScreenProps) 
       !specialForm.age.trim() ||
       !specialForm.residence.trim() ||
       !specialForm.instagram.trim() ||
-      !specialForm.idealType.trim() ||
+      !specialForm.idealHeight.trim() ||
+      !specialForm.idealResidence.trim() ||
+      !specialForm.idealAgeRange.trim() ||
+      !specialForm.idealDetails.trim() ||
       !specialForm.text.trim()
     ) {
       setFeedback(
@@ -123,7 +132,10 @@ export function RequestsScreen({ store, initialCategory }: RequestsScreenProps) 
           age: specialForm.age.trim(),
           residence: specialForm.residence.trim(),
           instagram: specialForm.instagram.trim(),
-          idealType: specialForm.idealType.trim(),
+          idealHeight: specialForm.idealHeight.trim(),
+          idealResidence: specialForm.idealResidence.trim(),
+          idealAgeRange: specialForm.idealAgeRange.trim(),
+          idealDetails: specialForm.idealDetails.trim(),
           text: specialForm.text.trim(),
         });
         setSpecialForm(defaultSpecialForm);
@@ -259,17 +271,56 @@ export function RequestsScreen({ store, initialCategory }: RequestsScreenProps) 
                   placeholder="예: @your_instagram"
                 />
               </label>
-              <label className="request-compose-field request-compose-field-wide">
-                <span>이상형</span>
+              <label className="request-compose-field">
+                <span>키</span>
                 <input
-                  value={specialForm.idealType}
+                  value={specialForm.idealHeight}
                   onChange={(event) =>
                     setSpecialForm((current) => ({
                       ...current,
-                      idealType: event.target.value,
+                      idealHeight: event.target.value,
                     }))
                   }
-                  placeholder="어떤 사람이 이상형인지 적어주세요"
+                  placeholder="예: 175cm 이상"
+                />
+              </label>
+              <label className="request-compose-field">
+                <span>거주지</span>
+                <input
+                  value={specialForm.idealResidence}
+                  onChange={(event) =>
+                    setSpecialForm((current) => ({
+                      ...current,
+                      idealResidence: event.target.value,
+                    }))
+                  }
+                  placeholder="예: 성수, 잠실"
+                />
+              </label>
+              <label className="request-compose-field">
+                <span>연령대</span>
+                <input
+                  value={specialForm.idealAgeRange}
+                  onChange={(event) =>
+                    setSpecialForm((current) => ({
+                      ...current,
+                      idealAgeRange: event.target.value,
+                    }))
+                  }
+                  placeholder="예: 20대 초반~중반"
+                />
+              </label>
+              <label className="request-compose-field request-compose-field-wide">
+                <span>세부사항</span>
+                <input
+                  value={specialForm.idealDetails}
+                  onChange={(event) =>
+                    setSpecialForm((current) => ({
+                      ...current,
+                      idealDetails: event.target.value,
+                    }))
+                  }
+                  placeholder="어떤 사람이 이상형인지 자유롭게 적어주세요"
                 />
               </label>
               <label className="request-compose-field request-compose-field-wide">

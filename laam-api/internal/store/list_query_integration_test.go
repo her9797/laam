@@ -202,9 +202,9 @@ func TestRepository_ListSpecialRequestsPage_FiltersSearchesSortsAndPages(t *test
 	ctx := context.Background()
 
 	seed := []lamdata.SpecialRequest{
-		{TableNumber: "T-01", Gender: "male", Name: "Kim", Age: "20s", Residence: "Seoul", Instagram: "@kim", IdealType: "tall", Text: "hi"},
-		{TableNumber: "T-02", Gender: "female", Name: "Lee", Age: "30s", Residence: "Busan", Instagram: "@lee", IdealType: "kind", Text: "hello"},
-		{TableNumber: "T-03", Gender: "female", Name: "Park", Age: "20s", Residence: "Seoul", Instagram: "@park", IdealType: "funny", Text: "hey"},
+		{TableNumber: "T-01", Gender: "male", Name: "Kim", Age: "20s", Residence: "Seoul", Instagram: "@kim", IdealHeight: "175", IdealResidence: "Seoul", IdealAgeRange: "20s", IdealDetails: "tall", Text: "hi"},
+		{TableNumber: "T-02", Gender: "female", Name: "Lee", Age: "30s", Residence: "Busan", Instagram: "@lee", IdealHeight: "180", IdealResidence: "Busan", IdealAgeRange: "30s", IdealDetails: "kind", Text: "hello"},
+		{TableNumber: "T-03", Gender: "female", Name: "Park", Age: "20s", Residence: "Seoul", Instagram: "@park", IdealHeight: "175", IdealResidence: "Seoul", IdealAgeRange: "20s", IdealDetails: "funny", Text: "hey"},
 	}
 	for _, s := range seed {
 		if err := repo.CreateSpecialRequest(ctx, s); err != nil {
@@ -316,7 +316,9 @@ func TestRepository_ListSpecialRequestsPage_FiltersByCreatedAtRange(t *testing.T
 	newSpecialRequest := func(table, name string) lamdata.SpecialRequest {
 		return lamdata.SpecialRequest{
 			TableNumber: table, Gender: "male", Name: name, Age: "20s",
-			Residence: "Seoul", Instagram: "@" + name, IdealType: "tall", Text: "hi",
+			Residence: "Seoul", Instagram: "@" + name,
+			IdealHeight: "175", IdealResidence: "Seoul", IdealAgeRange: "20s", IdealDetails: "tall",
+			Text: "hi",
 		}
 	}
 

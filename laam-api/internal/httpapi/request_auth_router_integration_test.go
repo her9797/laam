@@ -14,7 +14,7 @@ func TestRouter_RequestCreationRequiresServerAuth(t *testing.T) {
 	for _, path := range []string{"/api/v1/customer-requests", "/api/v1/special-requests"} {
 		t.Run(path, func(t *testing.T) {
 			handler := resetServer(t)
-			body := []byte(`{"tableNumber":"T-01","text":"help","gender":"female","name":"Test","age":"20","residence":"Seoul","instagram":"test","idealType":"kind"}`)
+			body := []byte(`{"tableNumber":"T-01","text":"help","gender":"female","name":"Test","age":"20","residence":"Seoul","instagram":"test","idealHeight":"175","idealResidence":"Seoul","idealAgeRange":"20s","idealDetails":"kind"}`)
 			for _, token := range []string{"", "wrong-token", testCfg.AdminAPIToken} {
 				headers := map[string]string{}
 				if token != "" {
