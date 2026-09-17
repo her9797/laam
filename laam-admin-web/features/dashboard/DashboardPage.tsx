@@ -3,7 +3,25 @@
 import "@/i18n/client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  rectSortingStrategy,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states/PageStates";
@@ -22,6 +40,34 @@ type ShortcutCard = {
   descriptionKey: string;
   value: number;
 };
+
+function SortableShortcutCard({ card }: { card: ShortcutCard }) {
+  const { t } = useTranslation("dashboard");
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: card.key,
+  });
+
+  return (
+    <Link
+      ref={setNodeRef}
+      href={card.href}
+      className={`block cursor-grab touch-none active:cursor-grabbing ${isDragging ? "opacity-50" : ""}`}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      {...attributes}
+      {...listeners}
+    >
+      <Card className="transition-shadow hover:shadow-lg">
+        <CardHeader>
+          <CardTitle>{t(card.titleKey)}</CardTitle>
+          <CardDescription>{t(card.descriptionKey)}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <p className="text-2xl font-semibold text-foreground">{card.value}</p>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
 
 // Every card links to the management route for the data it counts — the
 // three built in this task (`/requests`, `/song-requests`,
@@ -78,6 +124,22 @@ function buildCards(summary: DashboardSummary): ShortcutCard[] {
 
 export function DashboardPage() {
   const { t } = useTranslation("dashboard");
+  const [cardOrder, setCardOrder] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const stored = window.localStorage.getItem("laam-admin.dashboard-card-order");
+      const parsed: unknown = stored ? JSON.parse(stored) : [];
+      return Array.isArray(parsed) && parsed.every((key): key is string => typeof key === "string")
+        ? parsed
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
   const bootstrapQuery = useBootstrapQuery();
   const requestsQuery = useCustomerRequestPendingSummaryQuery();
   const specialRequestCountQuery = useSpecialRequestCountQuery();
@@ -148,6 +210,29 @@ export function DashboardPage() {
     summary.orderCount === 0 &&
     summary.menuItemCount === 0 &&
     summary.noticeCount === 0;
+  const cards = buildCards(summary);
+  const orderedCards = [
+    ...cardOrder.map((key) => cards.find((card) => card.key === key)).filter(Boolean),
+    ...cards.filter((card) => !cardOrder.includes(card.key)),
+  ] as ShortcutCard[];
+
+  function persistCardOrder(nextOrder: string[]) {
+    setCardOrder(nextOrder);
+    try {
+      window.localStorage.setItem("laam-admin.dashboard-card-order", JSON.stringify(nextOrder));
+    } catch {
+      // Private browsing or storage quotas should not prevent reordering in memory.
+    }
+  }
+
+  function handleDragEnd({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id) return;
+    const currentOrder = orderedCards.map((card) => card.key);
+    const from = currentOrder.indexOf(String(active.id));
+    const to = currentOrder.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    persistCardOrder(arrayMove(currentOrder, from, to));
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -155,21 +240,15 @@ export function DashboardPage() {
       {isEmpty ? (
         <EmptyState title={t("emptyTitle")} description={t("emptyDescription")} />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {buildCards(summary).map((card) => (
-            <Link key={card.key} href={card.href} className="block">
-              <Card className="transition-shadow hover:shadow-lg">
-                <CardHeader>
-                  <CardTitle>{t(card.titleKey)}</CardTitle>
-                  <CardDescription>{t(card.descriptionKey)}</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-2xl font-semibold text-foreground">{card.value}</p>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-        </div>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={orderedCards.map((card) => card.key)} strategy={rectSortingStrategy}>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {orderedCards.map((card) => (
+                <SortableShortcutCard key={card.key} card={card} />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
     </div>
   );

@@ -209,4 +209,13 @@ describe("DashboardPage", () => {
     expect(screen.getAllByText("1")).toHaveLength(5);
     expect(screen.getByText("0")).toBeInTheDocument();
   });
+
+  it("renders cards as sortable drag targets", () => {
+    render(<DashboardPage />);
+
+    const cards = screen.getAllByRole("link");
+    expect(cards).toHaveLength(6);
+    expect(cards[0]).toHaveClass("cursor-grab");
+    expect(cards[0]).toHaveAttribute("tabindex", "0");
+  });
 });
