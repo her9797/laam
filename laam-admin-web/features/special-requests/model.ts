@@ -12,7 +12,10 @@ export type SpecialRequest = {
   age: string;
   residence: string;
   instagram: string;
-  idealType: string;
+  idealHeight: string;
+  idealResidence: string;
+  idealAgeRange: string;
+  idealDetails: string;
   text: string;
   createdAt: string;
 };

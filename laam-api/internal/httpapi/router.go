@@ -1121,14 +1121,17 @@ const pendingSummaryItemLimit = 100
 
 func storeInputSpecialRequest(payload createSpecialRequestRequest) lamdata.SpecialRequest {
 	return lamdata.SpecialRequest{
-		TableNumber: strings.TrimSpace(payload.TableNumber),
-		Gender:      strings.TrimSpace(payload.Gender),
-		Name:        strings.TrimSpace(payload.Name),
-		Age:         strings.TrimSpace(payload.Age),
-		Residence:   strings.TrimSpace(payload.Residence),
-		Instagram:   strings.TrimSpace(payload.Instagram),
-		IdealType:   strings.TrimSpace(payload.IdealType),
-		Text:        strings.TrimSpace(payload.Text),
+		TableNumber:    strings.TrimSpace(payload.TableNumber),
+		Gender:         strings.TrimSpace(payload.Gender),
+		Name:           strings.TrimSpace(payload.Name),
+		Age:            strings.TrimSpace(payload.Age),
+		Residence:      strings.TrimSpace(payload.Residence),
+		Instagram:      strings.TrimSpace(payload.Instagram),
+		IdealHeight:    strings.TrimSpace(payload.IdealHeight),
+		IdealResidence: strings.TrimSpace(payload.IdealResidence),
+		IdealAgeRange:  strings.TrimSpace(payload.IdealAgeRange),
+		IdealDetails:   strings.TrimSpace(payload.IdealDetails),
+		Text:           strings.TrimSpace(payload.Text),
 	}
 }
 

@@ -37,7 +37,10 @@ const ITEMS: SpecialRequest[] = [
     age: "20대",
     residence: "서울",
     instagram: "@handle",
-    idealType: "친절한 사람",
+    idealHeight: "180 이상",
+    idealResidence: "강남",
+    idealAgeRange: "20대 초반",
+    idealDetails: "친절한 사람",
     text: "소개해주세요",
     createdAt: "2026-09-03T10:00:00Z",
   },
@@ -344,6 +347,9 @@ describe("SpecialRequestPage", () => {
     expect(within(dialog).getByText("20대")).toBeInTheDocument();
     expect(within(dialog).getByText("서울")).toBeInTheDocument();
     expect(within(dialog).getByText("@handle")).toBeInTheDocument();
+    expect(within(dialog).getByText("180 이상")).toBeInTheDocument();
+    expect(within(dialog).getByText("강남")).toBeInTheDocument();
+    expect(within(dialog).getByText("20대 초반")).toBeInTheDocument();
     expect(within(dialog).getByText("친절한 사람")).toBeInTheDocument();
     expect(within(dialog).getByText("소개해주세요")).toBeInTheDocument();
   });

@@ -73,14 +73,17 @@ func TestRouter_AdminCustomerRequests_InvalidParamIsBadRequest(t *testing.T) {
 func createSpecialRequestViaAPI(t *testing.T, handler http.Handler, tableNumber string, name string) {
 	t.Helper()
 	payload := map[string]string{
-		"tableNumber": tableNumber,
-		"gender":      "female",
-		"name":        name,
-		"age":         "20s",
-		"residence":   "Seoul",
-		"instagram":   "@" + name,
-		"idealType":   "kind",
-		"text":        "hi",
+		"tableNumber":    tableNumber,
+		"gender":         "female",
+		"name":           name,
+		"age":            "20s",
+		"residence":      "Seoul",
+		"instagram":      "@" + name,
+		"idealHeight":    "175",
+		"idealResidence": "Seoul",
+		"idealAgeRange":  "20s",
+		"idealDetails":   "kind",
+		"text":           "hi",
 	}
 	body, _ := json.Marshal(payload)
 	rec := doRequest(t, handler, http.MethodPost, "/api/v1/special-requests", body, requestHeaders())
