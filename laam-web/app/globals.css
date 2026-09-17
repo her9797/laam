@@ -1277,6 +1277,30 @@ body:has(.menu-detail-modal) .content-card {
   grid-column: 1 / -1;
 }
 
+.request-compose-fieldset {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.02);
+  min-width: 0;
+}
+
+.request-compose-fieldset-legend {
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.request-compose-fieldset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
 .request-compose-field input:focus,
 .request-compose-field select:focus,
 .request-compose-field textarea:focus {
@@ -1314,6 +1338,10 @@ body:has(.menu-detail-modal) .content-card {
   .request-compose-button-wide,
   .request-compose-field-wide {
     grid-column: auto;
+  }
+
+  .request-compose-fieldset-grid {
+    grid-template-columns: 1fr;
   }
 }
 
