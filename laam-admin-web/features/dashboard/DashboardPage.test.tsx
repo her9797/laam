@@ -26,21 +26,6 @@ vi.mock("@/features/special-requests/queries", () => ({
 vi.mock("@/features/orders/queries", () => ({
   useOrderCountQuery: () => useOrderCountQueryMock(),
 }));
-const useExpenseSummaryQueryMock = vi.fn();
-const useInventorySummaryQueryMock = vi.fn();
-vi.mock("@/features/expenses/queries", () => ({
-  useExpenseSummaryQuery: (month: string) => useExpenseSummaryQueryMock(month),
-}));
-vi.mock("./queries", () => ({
-  useInventorySummaryQuery: () => useInventorySummaryQueryMock(),
-}));
-vi.mock("next/link", () => ({
-  default: ({ href, children, ...props }: React.ComponentProps<"a"> & { href: string }) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
-}));
 
 import { DashboardPage } from "./DashboardPage";
 
@@ -165,22 +150,6 @@ describe("DashboardPage", () => {
     mockRequests();
     mockSpecialRequestCount();
     mockOrderCount();
-    useExpenseSummaryQueryMock.mockReturnValue({
-      data: {
-        month: "2026-09",
-        total: 368000,
-        previousMonthTotal: 500000,
-        receiptCount: 4,
-        byCategory: [],
-      },
-      isLoading: false,
-      isError: false,
-    });
-    useInventorySummaryQueryMock.mockReturnValue({
-      data: { reorderCount: 2, needsCheckCount: 0 },
-      isLoading: false,
-      isError: false,
-    });
   });
 
   afterEach(() => {
@@ -241,26 +210,12 @@ describe("DashboardPage", () => {
     expect(screen.getByText("0")).toBeInTheDocument();
   });
 
-  it("adds this month's spending and the reorder count as shortcut cards", () => {
+  it("renders cards as sortable drag targets", () => {
     render(<DashboardPage />);
 
-    expect(useExpenseSummaryQueryMock).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}$/));
-    const expenses = screen.getByRole("link", { name: /이번 달 지출/ });
-    expect(expenses).toHaveAttribute("href", "/expenses");
-    expect(expenses).toHaveTextContent("368,000원");
-    const reorder = screen.getByRole("link", { name: /주문 필요 품목/ });
-    expect(reorder).toHaveAttribute("href", "/inventory");
-    expect(reorder).toHaveTextContent("2");
-  });
-
-  it("keeps the rest of the dashboard when the expense or inventory summary fails", () => {
-    useExpenseSummaryQueryMock.mockReturnValue({ data: undefined, isLoading: false, isError: true });
-    useInventorySummaryQueryMock.mockReturnValue({ data: undefined, isLoading: false, isError: true });
-
-    render(<DashboardPage />);
-
-    expect(screen.getByText("손님 요청")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /이번 달 지출/ })).toHaveTextContent("불러오지 못했어요");
-    expect(screen.getByRole("link", { name: /주문 필요 품목/ })).toHaveTextContent("불러오지 못했어요");
+    const cards = screen.getAllByRole("link");
+    expect(cards).toHaveLength(6);
+    expect(cards[0]).toHaveClass("cursor-grab");
+    expect(cards[0]).toHaveAttribute("tabindex", "0");
   });
 });
