@@ -4,7 +4,7 @@ import "@/i18n/client";
 
 import Link from "next/link";
 import { RiArrowDownSLine, RiArrowUpSLine, RiCheckLine, RiSettings3Line } from "@remixicon/react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   closestCenter,
@@ -36,6 +36,8 @@ import { useSpecialRequestCountQuery } from "@/features/special-requests/queries
 
 import { useInventorySummaryQuery } from "./queries";
 import { buildDashboardSummary, type DashboardSummary } from "./summary";
+
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 type ShortcutCard = {
   key: string;
@@ -168,9 +170,10 @@ export function DashboardPage() {
   const { t, i18n } = useTranslation("dashboard");
   const [isEditing, setIsEditing] = useState(false);
   const [cardOrder, setCardOrder] = useState(DEFAULT_CARD_ORDER);
-  useEffect(() => {
-    const timer = window.setTimeout(() => setCardOrder(readCardOrder()), 0);
-    return () => window.clearTimeout(timer);
+  useIsomorphicLayoutEffect(() => {
+    // Apply the persisted order before the browser paints, while keeping the
+    // server and hydration renders identical.
+    setCardOrder(readCardOrder());
   }, []);
   const expenseSummaryQuery = useExpenseSummaryQuery(seoulMonth(new Date()));
   const inventorySummaryQuery = useInventorySummaryQuery();

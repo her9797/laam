@@ -6,7 +6,7 @@ import {
   RiMoonLine,
   RiSunLine,
 } from "@remixicon/react";
-import type { ComponentType } from "react";
+import { useEffect, useLayoutEffect, useState, type ComponentType } from "react";
 import { useTranslation } from "react-i18next";
 
 import { buttonVariants } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import type { Theme } from "./theme";
 import { useTheme } from "./ThemeProvider";
 
 const THEME_OPTIONS: readonly Theme[] = ["light", "dark", "system"];
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 const THEME_LABEL_KEYS: Record<Theme, string> = {
   light: "themeLight",
@@ -40,13 +41,16 @@ const THEME_ICONS: Record<Theme, ComponentType<{ className?: string }>> = {
 export function ThemeMenu() {
   const { t } = useTranslation();
   const { theme, setTheme } = useTheme();
-  const TriggerIcon = THEME_ICONS[theme];
+  const [hydrated, setHydrated] = useState(false);
+  useIsomorphicLayoutEffect(() => setHydrated(true), []);
+  const visibleTheme = hydrated ? theme : "system";
+  const TriggerIcon = THEME_ICONS[visibleTheme];
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(buttonVariants({ variant: "outline", size: "icon-sm" }))}
-        aria-label={`${t("theme")}: ${t(THEME_LABEL_KEYS[theme])}`}
+        aria-label={`${t("theme")}: ${t(THEME_LABEL_KEYS[visibleTheme])}`}
       >
         <TriggerIcon className="size-4" aria-hidden="true" />
       </DropdownMenuTrigger>
