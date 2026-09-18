@@ -298,6 +298,49 @@ func TestRouter_CustomerRequests_SendsBroadcastOnCreate(t *testing.T) {
 	})
 }
 
+func TestRouter_SecretCoupons_Claim(t *testing.T) {
+	handler := resetServer(t)
+
+	t.Run("without auth is rejected", func(t *testing.T) {
+		body, _ := json.Marshal(map[string]string{"tableNumber": "T-01"})
+		rec := doRequest(t, handler, http.MethodPost, "/api/v1/secret-coupons/vinyl-laam/claim", body, nil)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+		}
+	})
+
+	body, _ := json.Marshal(map[string]string{"tableNumber": "T-01"})
+	rec := doRequest(t, handler, http.MethodPost, "/api/v1/secret-coupons/vinyl-laam/claim", body, requestHeaders())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var claim struct {
+		RewardLabel  string `json:"rewardLabel"`
+		ClaimedCount int    `json:"claimedCount"`
+		TotalCount   int    `json:"totalCount"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &claim); err != nil {
+		t.Fatalf("decode claim response: %v", err)
+	}
+	if claim.RewardLabel != "1만원 할인권" || claim.ClaimedCount != 1 || claim.TotalCount != 5 {
+		t.Fatalf("claim = %+v, want RewardLabel=1만원 할인권 ClaimedCount=1 TotalCount=5", claim)
+	}
+
+	t.Run("claiming the same coupon again is rejected", func(t *testing.T) {
+		rec := doRequest(t, handler, http.MethodPost, "/api/v1/secret-coupons/vinyl-laam/claim", body, requestHeaders())
+		if rec.Code != http.StatusConflict {
+			t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusConflict, rec.Body.String())
+		}
+	})
+
+	t.Run("unknown id is not found", func(t *testing.T) {
+		rec := doRequest(t, handler, http.MethodPost, "/api/v1/secret-coupons/does-not-exist/claim", body, requestHeaders())
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+		}
+	})
+}
+
 func TestRouter_SpecialRequests_Create(t *testing.T) {
 	handler := resetServer(t)
 

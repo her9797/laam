@@ -400,6 +400,16 @@ BEGIN
     ALTER TABLE special_requests DROP COLUMN ideal_type;
   END IF;
 END $$;
+CREATE TABLE IF NOT EXISTS secret_coupons (
+  id TEXT PRIMARY KEY,
+  reward_label TEXT NOT NULL,
+  sort_order INTEGER NOT NULL,
+  claimed_at TIMESTAMPTZ,
+  table_number TEXT NOT NULL DEFAULT ''
+);
+INSERT INTO secret_coupons (id, reward_label, sort_order) VALUES
+  ('vinyl-laam', '1만원 할인권', 1)
+ON CONFLICT (id) DO NOTHING;
 `)
 	return err
 }
@@ -2067,6 +2077,63 @@ func (r *Repository) DeleteNotice(ctx context.Context, id string) error {
 	}
 
 	return nil
+}
+
+// TotalSecretCoupons is the eventual number of hidden coupons across the
+// site, fixed regardless of how many rows secret_coupons actually has —
+// only some hiding spots are wired up to a trigger yet, but the "N/5"
+// progress notice ClaimSecretCoupon posts should count against the full
+// set from the start.
+const TotalSecretCoupons = 5
+
+// ClaimSecretCoupon marks one hidden coupon as found — first customer to
+// hit this for a given id wins it, since the UPDATE only touches a row
+// that is still unclaimed. It also posts a notice announcing the find and
+// running hunt progress, matching the promotional "찾아라" notice the
+// operator posts manually to kick off the hunt.
+func (r *Repository) ClaimSecretCoupon(ctx context.Context, id string, tableNumber string) (lamdata.SecretCouponClaim, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return lamdata.SecretCouponClaim{}, ErrInvalidInput
+	}
+
+	var rewardLabel string
+	err := r.pool.QueryRow(ctx, `
+		UPDATE secret_coupons
+		SET claimed_at = NOW(), table_number = $2
+		WHERE id = $1 AND claimed_at IS NULL
+		RETURNING reward_label
+	`, id, strings.TrimSpace(tableNumber)).Scan(&rewardLabel)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return lamdata.SecretCouponClaim{}, classifyError(err)
+		}
+
+		var exists bool
+		if err := r.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM secret_coupons WHERE id = $1)`, id).Scan(&exists); err != nil {
+			return lamdata.SecretCouponClaim{}, err
+		}
+		if !exists {
+			return lamdata.SecretCouponClaim{}, ErrNotFound
+		}
+		return lamdata.SecretCouponClaim{}, ErrAlreadyExists
+	}
+
+	var claimedCount int
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM secret_coupons WHERE claimed_at IS NOT NULL`).Scan(&claimedCount); err != nil {
+		return lamdata.SecretCouponClaim{}, err
+	}
+
+	noticeText := fmt.Sprintf("쉿크릿 쿠폰 - %s 발견! %d/%d", rewardLabel, claimedCount, TotalSecretCoupons)
+	if err := r.CreateNotice(ctx, noticeText, true); err != nil {
+		return lamdata.SecretCouponClaim{}, err
+	}
+
+	return lamdata.SecretCouponClaim{
+		RewardLabel:  rewardLabel,
+		ClaimedCount: claimedCount,
+		TotalCount:   TotalSecretCoupons,
+	}, nil
 }
 
 func (r *Repository) nextSortOrder(ctx context.Context, table string) (int, error) {

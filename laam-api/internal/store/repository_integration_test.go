@@ -447,6 +447,45 @@ func TestRepository_NoticeLifecycle(t *testing.T) {
 	}
 }
 
+func TestRepository_ClaimSecretCoupon(t *testing.T) {
+	repo := resetDB(t)
+	ctx := context.Background()
+
+	claim, err := repo.ClaimSecretCoupon(ctx, "vinyl-laam", "T-01")
+	if err != nil {
+		t.Fatalf("ClaimSecretCoupon() error = %v", err)
+	}
+	if claim.RewardLabel != "1만원 할인권" || claim.ClaimedCount != 1 || claim.TotalCount != TotalSecretCoupons {
+		t.Fatalf("claim = %+v, want RewardLabel=1만원 할인권 ClaimedCount=1 TotalCount=%d", claim, TotalSecretCoupons)
+	}
+
+	t.Run("claiming again fails", func(t *testing.T) {
+		if _, err := repo.ClaimSecretCoupon(ctx, "vinyl-laam", "T-02"); !errors.Is(err, ErrAlreadyExists) {
+			t.Errorf("second ClaimSecretCoupon() error = %v, want ErrAlreadyExists", err)
+		}
+	})
+
+	t.Run("unknown id is not found", func(t *testing.T) {
+		if _, err := repo.ClaimSecretCoupon(ctx, "does-not-exist", "T-01"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("ClaimSecretCoupon(unknown id) error = %v, want ErrNotFound", err)
+		}
+	})
+
+	t.Run("posts a progress notice", func(t *testing.T) {
+		data, err := repo.GetBootstrapData(ctx)
+		if err != nil {
+			t.Fatalf("GetBootstrapData() error = %v", err)
+		}
+		if len(data.Notices) != 1 {
+			t.Fatalf("Notices = %+v, want a single auto-posted notice", data.Notices)
+		}
+		want := fmt.Sprintf("쉿크릿 쿠폰 - 1만원 할인권 발견! 1/%d", TotalSecretCoupons)
+		if data.Notices[0].Text != want {
+			t.Errorf("Notices[0].Text = %q, want %q", data.Notices[0].Text, want)
+		}
+	})
+}
+
 func TestRepository_CustomerRequestLifecycle(t *testing.T) {
 	repo := resetDB(t)
 	ctx := context.Background()

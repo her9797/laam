@@ -76,3 +76,13 @@ test("주문 API 프록시는 QR 세션과 서버 전용 토큰을 확인한다"
   assert.match(source, /\/api\/v1\/orders/);
   assert.match(helper, /PAYMENT_API_TOKEN/);
 });
+
+test("시크릿 쿠폰 claim API 프록시는 QR 세션을 확인하고 id를 그대로 전달한다", async () => {
+  const source = await readFile(
+    new URL("../app/api/secret-coupons/[id]/claim/route.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /hasPaymentSession/);
+  assert.match(source, /\/api\/v1\/secret-coupons\/\$\{encodeURIComponent\(id\)\}\/claim/);
+});
