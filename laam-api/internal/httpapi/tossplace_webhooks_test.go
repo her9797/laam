@@ -223,6 +223,142 @@ func TestTossPlaceWebhook_CompletedEventOnCancelledOrderDoesNotOverwriteButStill
 	}
 }
 
+// mockTossPlaceOrderServer serves a single GetOrder response for orderID,
+// asserting the request path/auth headers match what tossplace.Client sends.
+func mockTossPlaceOrderServer(t *testing.T, orderID string, responseBody string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wantPath := "/api-public/openapi/v1/merchants/merchant-1/order/orders/" + orderID
+		if r.Method != http.MethodGet || r.URL.Path != wantPath {
+			t.Fatalf("request = %s %s, want GET %s", r.Method, r.URL.Path, wantPath)
+		}
+		if r.Header.Get("x-access-key") != "test-access" || r.Header.Get("x-secret-key") != "test-secret" {
+			t.Fatal("missing TossPlace authentication headers")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(responseBody))
+	}))
+}
+
+func posNativeWebhookTestCfg(t *testing.T, tossServerURL string) config.Config {
+	cfg := webhookTestCfg()
+	cfg.TossPlaceAPIBaseURL = tossServerURL
+	cfg.TossPlaceAccessKey = "test-access"
+	cfg.TossPlaceSecretKey = "test-secret"
+	cfg.TossPlaceMerchantID = "merchant-1"
+	return cfg
+}
+
+func countPaymentOrdersByPOSOrderID(t *testing.T, posOrderID string) int {
+	t.Helper()
+	var count int
+	if err := testPool.QueryRow(t.Context(), `SELECT COUNT(*) FROM payment_orders WHERE pos_order_id = $1`, posOrderID).Scan(&count); err != nil {
+		t.Fatalf("count payment_orders: %v", err)
+	}
+	return count
+}
+
+func TestTossPlaceWebhook_CompletedEventForUnknownOrderKeyCreatesPOSNativeOrder(t *testing.T) {
+	tossServer := mockTossPlaceOrderServer(t, "pos-order-99", `{
+		"resultType": "SUCCESS",
+		"success": {
+			"id": "pos-order-99",
+			"source": "POS",
+			"orderState": "COMPLETED",
+			"completedAt": "2026-01-10T12:05:00.000Z",
+			"lineItems": [
+				{
+					"item": {"title": "생맥주", "category": {"title": "맥주"}},
+					"itemPrice": {"priceValue": 6000},
+					"quantity": 2,
+					"optionChoices": []
+				}
+			]
+		}
+	}`)
+	defer tossServer.Close()
+
+	handler := resetServerWithConfig(t, posNativeWebhookTestCfg(t, tossServer.URL))
+
+	body, _ := json.Marshal(map[string]any{
+		"id":        "evt-9",
+		"type":      "order.order.completed.v1",
+		"createdAt": "2026-01-10T12:00:00.000Z",
+		"data": map[string]any{
+			"orderId":     "pos-order-99",
+			"orderKey":    "toss-native-key-1",
+			"orderNumber": "N-9",
+			"source":      "POS",
+			"completedAt": "2026-01-10T12:05:00.000Z",
+		},
+	})
+	rec := tossPlaceWebhookRequest(t, handler, tossPlaceWebhookSecret, body, false)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var menuItemName, categoryName, status string
+	var amount int64
+	if err := testPool.QueryRow(t.Context(), `
+		SELECT menu_item_name, category_name, amount, status
+		FROM payment_orders WHERE pos_order_id = $1
+	`, "pos-order-99").Scan(&menuItemName, &categoryName, &amount, &status); err != nil {
+		t.Fatalf("query created order: %v", err)
+	}
+	if menuItemName != "생맥주" || categoryName != "맥주" || amount != 12000 || status != "DONE" {
+		t.Fatalf("menuItemName=%q categoryName=%q amount=%d status=%q, want 생맥주/맥주/12000/DONE",
+			menuItemName, categoryName, amount, status)
+	}
+}
+
+func TestTossPlaceWebhook_CompletedEventForUnknownOrderKeyIsIdempotentOnRetry(t *testing.T) {
+	tossServer := mockTossPlaceOrderServer(t, "pos-order-100", `{
+		"resultType": "SUCCESS",
+		"success": {
+			"id": "pos-order-100",
+			"source": "POS",
+			"completedAt": "2026-01-10T12:05:00.000Z",
+			"lineItems": [
+				{
+					"item": {"title": "생맥주", "category": {"title": "맥주"}},
+					"itemPrice": {"priceValue": 6000},
+					"quantity": 1,
+					"optionChoices": []
+				}
+			]
+		}
+	}`)
+	defer tossServer.Close()
+
+	handler := resetServerWithConfig(t, posNativeWebhookTestCfg(t, tossServer.URL))
+
+	body, _ := json.Marshal(map[string]any{
+		"id":        "evt-10",
+		"type":      "order.order.completed.v1",
+		"createdAt": "2026-01-10T12:00:00.000Z",
+		"data": map[string]any{
+			"orderId":     "pos-order-100",
+			"orderKey":    "toss-native-key-2",
+			"orderNumber": "N-10",
+			"source":      "POS",
+			"completedAt": "2026-01-10T12:05:00.000Z",
+		},
+	})
+
+	first := tossPlaceWebhookRequest(t, handler, tossPlaceWebhookSecret, body, false)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first delivery status = %d", first.Code)
+	}
+	second := tossPlaceWebhookRequest(t, handler, tossPlaceWebhookSecret, body, false)
+	if second.Code != http.StatusOK {
+		t.Fatalf("retry delivery status = %d, want 200", second.Code)
+	}
+
+	if got := countPaymentOrdersByPOSOrderID(t, "pos-order-100"); got != 1 {
+		t.Fatalf("payment_orders rows for pos-order-100 = %d, want 1 (retry must not duplicate)", got)
+	}
+}
+
 func TestTossPlaceWebhook_CancelledEventMarksOrderCancelled(t *testing.T) {
 	handler := resetServerWithConfig(t, webhookTestCfg())
 	seedWebhookPaymentOrder(t, "order-wh-6", "READY")

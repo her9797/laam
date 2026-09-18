@@ -478,6 +478,67 @@ func (r *Repository) CompletePaymentOrderFromPOS(ctx context.Context, orderID st
 	return r.GetPaymentOrder(ctx, orderID)
 }
 
+// CreatePOSNativeOrderInput describes one line item of a TossPlace order
+// that was rung up directly on the POS — no lam-web orderKey ever pointed
+// to it. See tossplace_webhooks.go's handleTossPlaceOrderCompleted, which
+// assembles this from tossplace.Client.GetOrder after finding an
+// unrecognized orderKey.
+type CreatePOSNativeOrderInput struct {
+	MenuItemName   string
+	CategoryName   string
+	Amount         int64
+	ApprovedAt     time.Time
+	VAT            int64
+	SuppliedAmount int64
+	POSOrderID     string
+}
+
+// HasPaymentOrderWithPOSOrderID reports whether any payment_orders row
+// already carries this TossPlace order ID. A POS-native TossPlace order
+// becomes one row per line item (see CreatePOSNativeOrder), so this is the
+// idempotency check the webhook handler runs once, before inserting any of
+// an order's line items, to stay safe against a retried webhook delivery
+// re-creating the same sale.
+func (r *Repository) HasPaymentOrderWithPOSOrderID(ctx context.Context, posOrderID string) (bool, error) {
+	var exists bool
+	if err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM payment_orders WHERE pos_order_id = $1)
+	`, posOrderID).Scan(&exists); err != nil {
+		return false, classifyError(err)
+	}
+	return exists, nil
+}
+
+// CreatePOSNativeOrder records one already-completed TossPlace line item as
+// a DONE payment_orders row, so a sale rung up directly on the POS still
+// counts toward revenue reporting. menu_item_id stays NULL — a POS-native
+// line item (an ad-hoc entry, or one keyed on a TossPlace catalog item we
+// have no reliable id to map back to our own menu_items) has no dependable
+// link into our catalog, and menu_item_name/category_name (both plain
+// snapshot columns, not FKs) already carry what the admin UI needs to
+// display it. table_number stays "" for the same reason CreatePaymentOrder
+// requires callers who ordered through lam-web: TossPlace's Order response
+// does not expose which table a POS-native order was opened on.
+func (r *Repository) CreatePOSNativeOrder(ctx context.Context, input CreatePOSNativeOrderInput) (PaymentOrder, error) {
+	if input.Amount <= 0 {
+		return PaymentOrder{}, ErrInvalidInput
+	}
+
+	orderID := nextID("order")
+	if _, err := r.pool.Exec(ctx, `
+		INSERT INTO payment_orders (
+			id, menu_item_name, category_name, table_number, amount,
+			status, payment_method, approved_at, vat, supplied_amount, tax_free_amount,
+			pos_sync_status, pos_order_id
+		) VALUES ($1, $2, $3, '', $4, 'DONE', 'POS', $5, $6, $7, 0, 'SUCCEEDED', $8)
+	`, orderID, input.MenuItemName, input.CategoryName, input.Amount,
+		input.ApprovedAt, input.VAT, input.SuppliedAmount, input.POSOrderID); err != nil {
+		return PaymentOrder{}, classifyError(err)
+	}
+
+	return r.GetPaymentOrder(ctx, orderID)
+}
+
 // CancelPaymentOrder marks an order CANCELLED after a TossPlace
 // order.order.cancelled.v1 webhook — the order was rejected, or a
 // previously-completed POS sale was later refunded/voided (TossPlace fires
