@@ -34,7 +34,7 @@ import { useOrderCountQuery } from "@/features/orders/queries";
 import { useCustomerRequestPendingSummaryQuery } from "@/features/requests/queries";
 import { useSpecialRequestCountQuery } from "@/features/special-requests/queries";
 
-import { useInventorySummaryQuery } from "./queries";
+import { useInventorySummaryQuery, useTodaySalesQuery } from "./queries";
 import { buildDashboardSummary, type DashboardSummary } from "./summary";
 
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
@@ -49,7 +49,7 @@ type ShortcutCard = {
 };
 
 const DASHBOARD_CARD_ORDER_KEY = "laam-admin.dashboard-card-order";
-const DEFAULT_CARD_ORDER = ["expenses", "reorder", "general", "song", "special", "orders", "menu", "notices"];
+const DEFAULT_CARD_ORDER = ["expenses", "reorder", "sales", "general", "song", "special", "orders", "menu", "notices"];
 
 function readCardOrder(): string[] {
   try {
@@ -177,6 +177,7 @@ export function DashboardPage() {
   }, []);
   const expenseSummaryQuery = useExpenseSummaryQuery(seoulMonth(new Date()));
   const inventorySummaryQuery = useInventorySummaryQuery();
+  const todaySalesQuery = useTodaySalesQuery();
   const optionalCards: OptionalShortcutCard[] = [
     {
       key: "expenses",
@@ -195,6 +196,16 @@ export function DashboardPage() {
       descriptionKey: "cardReorderDescription",
       query: inventorySummaryQuery,
       value: inventorySummaryQuery.data ? String(inventorySummaryQuery.data.reorderCount) : null,
+    },
+    {
+      key: "sales",
+      href: "/orders/stats",
+      titleKey: "cardSalesTitle",
+      descriptionKey: "cardSalesDescription",
+      query: todaySalesQuery,
+      value: todaySalesQuery.data
+        ? t("amountValue", { amount: formatNumber(todaySalesQuery.data.totalRevenue, i18n.language) })
+        : null,
     },
   ];
   const bootstrapQuery = useBootstrapQuery();
@@ -261,7 +272,9 @@ export function DashboardPage() {
   const orderedCards = cardOrder
     .map((key) => allCards.find((card) => card.key === key))
     .filter((card): card is (typeof allCards)[number] => Boolean(card));
-  const emptyStateCards = orderedCards.filter((card) => card.key === "expenses" || card.key === "reorder");
+  const emptyStateCards = orderedCards.filter(
+    (card) => card.key === "expenses" || card.key === "reorder" || card.key === "sales",
+  );
 
   function moveCard(key: string, direction: -1 | 1) {
     setCardOrder((current) => {
