@@ -410,6 +410,12 @@ CREATE TABLE IF NOT EXISTS secret_coupons (
 INSERT INTO secret_coupons (id, reward_label, sort_order) VALUES
   ('vinyl-laam', '1만원 할인권', 1)
 ON CONFLICT (id) DO NOTHING;
+INSERT INTO secret_coupons (id, reward_label, sort_order) VALUES
+  ('table-badge', '1만원 할인권', 2)
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO notices (id, text, is_visible, sort_order)
+VALUES ('secret-coupon-progress', '쉿크릿 쿠폰 발견 갯수 (0/5)', true, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM notices))
+ON CONFLICT (id) DO NOTHING;
 `)
 	return err
 }
@@ -2086,11 +2092,16 @@ func (r *Repository) DeleteNotice(ctx context.Context, id string) error {
 // set from the start.
 const TotalSecretCoupons = 5
 
+// secretCouponNoticeID is the fixed id of the single running-progress
+// notice — ClaimSecretCoupon updates this one row in place on every claim
+// instead of posting a new notice each time, so the board shows one
+// "발견 갯수 (N/5)" line rather than a growing pile of duplicates.
+const secretCouponNoticeID = "secret-coupon-progress"
+
 // ClaimSecretCoupon marks one hidden coupon as found — first customer to
 // hit this for a given id wins it, since the UPDATE only touches a row
-// that is still unclaimed. It also posts a notice announcing the find and
-// running hunt progress, matching the promotional "찾아라" notice the
-// operator posts manually to kick off the hunt.
+// that is still unclaimed. It also updates the running hunt-progress
+// notice in place.
 func (r *Repository) ClaimSecretCoupon(ctx context.Context, id string, tableNumber string) (lamdata.SecretCouponClaim, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -2124,9 +2135,17 @@ func (r *Repository) ClaimSecretCoupon(ctx context.Context, id string, tableNumb
 		return lamdata.SecretCouponClaim{}, err
 	}
 
-	noticeText := fmt.Sprintf("쉿크릿 쿠폰 - %s 발견! %d/%d", rewardLabel, claimedCount, TotalSecretCoupons)
-	if err := r.CreateNotice(ctx, noticeText, true); err != nil {
+	noticeText := fmt.Sprintf("쉿크릿 쿠폰 발견 갯수 (%d/%d)", claimedCount, TotalSecretCoupons)
+	sortOrder, err := r.nextSortOrder(ctx, "notices")
+	if err != nil {
 		return lamdata.SecretCouponClaim{}, err
+	}
+	if _, err := r.pool.Exec(ctx, `
+		INSERT INTO notices (id, text, is_visible, sort_order)
+		VALUES ($1, $2, true, $3)
+		ON CONFLICT (id) DO UPDATE SET text = EXCLUDED.text
+	`, secretCouponNoticeID, noticeText, sortOrder); err != nil {
+		return lamdata.SecretCouponClaim{}, classifyError(err)
 	}
 
 	return lamdata.SecretCouponClaim{
