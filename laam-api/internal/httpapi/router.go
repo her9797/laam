@@ -117,6 +117,33 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 		writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
 	}))
 
+	mux.HandleFunc("/api/v1/secret-coupons/", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
+		if !requirePaymentAuth(w, r, cfg.PaymentAPIToken) {
+			return
+		}
+
+		id, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/secret-coupons/"), "/claim")
+		id = strings.Trim(id, "/")
+		if !ok || id == "" || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+
+		var payload claimSecretCouponRequest
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+
+		claim, err := repository.ClaimSecretCoupon(r.Context(), id, strings.TrimSpace(payload.TableNumber))
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, claim)
+	}))
+
 	mux.HandleFunc("/api/v1/menu-images/", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeMethodNotAllowed(w)

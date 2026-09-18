@@ -1,0 +1,32 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+test("홈 화면 LP 라벨의 laam 텍스트는 시크릿 쿠폰 트리거다", async () => {
+  const home = await readFile(
+    new URL("../components/screens/home-screen.tsx", import.meta.url),
+    "utf8",
+  );
+  const trigger = await readFile(
+    new URL("../components/easter-egg/secret-coupon-trigger.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(home, /<SecretCouponTrigger/, "홈 화면이 트리거 컴포넌트를 렌더링해야 한다");
+
+  assert.match(trigger, /"use client"/);
+  assert.match(trigger, /from "canvas-confetti"/, "폭죽 라이브러리를 써야 한다");
+  assert.match(trigger, /claimSecretCoupon\(/, "claim API를 호출해야 한다");
+  assert.match(trigger, /"vinyl-laam"/, "LP 라벨용 쿠폰 id를 써야 한다");
+  assert.match(trigger, /className="home-vinyl-secret"/, "기존 laam 텍스트와 같은 스타일을 써야 한다");
+  assert.match(trigger, />\s*laam\s*</, "버튼 텍스트는 기존과 똑같이 laam이어야 한다");
+  assert.match(trigger, /confetti\(/, "찾았을 때 폭죽을 터뜨려야 한다");
+  assert.match(trigger, /rewardLabel/, "당첨된 쿠폰 이름을 보여줘야 한다");
+  assert.match(trigger, /직원에게/, "직원에게 보여달라는 안내가 있어야 한다");
+
+  // 트리거 버튼이 LP 회전 애니메이션(vinyl-spin)이 걸린 조상 안에 있어서,
+  // 모달을 그 자리에 그대로 렌더링하면 모달까지 같이 돈다. document.body로
+  // 포탈을 태워야 한다 — menu-item-card.tsx의 상세 모달과 같은 이유.
+  assert.match(trigger, /import\s+\{\s*createPortal\s*\}\s+from\s+"react-dom"/);
+  assert.match(trigger, /createPortal\([\s\S]*document\.body,\s*\)/);
+});
