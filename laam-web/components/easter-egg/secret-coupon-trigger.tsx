@@ -47,13 +47,11 @@ export function SecretCouponTrigger() {
         <div
           className="table-session-modal-backdrop"
           role="presentation"
-          onClick={() => setClaim(null)}
         >
           <div
             className="table-session-modal secret-coupon-modal"
             role="dialog"
             aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
           >
             <p className="secret-coupon-modal-kicker">쉿크릿 쿠폰</p>
             <h2>축하합니다!</h2>

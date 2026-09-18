@@ -29,4 +29,13 @@ test("홈 화면 LP 라벨의 laam 텍스트는 시크릿 쿠폰 트리거다", 
   // 포탈을 태워야 한다 — menu-item-card.tsx의 상세 모달과 같은 이유.
   assert.match(trigger, /import\s+\{\s*createPortal\s*\}\s+from\s+"react-dom"/);
   assert.match(trigger, /createPortal\([\s\S]*document\.body,\s*\)/);
+
+  // 쿠폰 모달은 실수로 배경을 눌러서 닫히면 안 된다 — 닫기 버튼으로만 닫혀야 한다.
+  const backdropTag = trigger.match(/<div\s+className="table-session-modal-backdrop"[^>]*>/);
+  assert.ok(backdropTag, "쿠폰 모달 백드롭 div가 있어야 한다");
+  assert.doesNotMatch(
+    backdropTag[0],
+    /onClick/,
+    "배경을 클릭해도 쿠폰 모달이 닫히면 안 된다",
+  );
 });
