@@ -516,6 +516,60 @@ a {
   }
 }
 
+.home-vinyl-secret {
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+.secret-coupon-modal {
+  text-align: center;
+}
+
+.secret-coupon-modal-kicker {
+  margin: 0 0 4px;
+  color: #f9c74f;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.secret-coupon-modal h2 {
+  margin: 0 0 12px;
+  font-size: 1.6rem;
+}
+
+.secret-coupon-modal-reward {
+  margin: 0 0 6px;
+  padding: 10px 16px;
+  border: 1px solid rgba(249, 199, 79, 0.4);
+  border-radius: 16px;
+  background: rgba(249, 199, 79, 0.08);
+  color: #f9c74f;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.secret-coupon-modal-progress {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.secret-coupon-modal-guide {
+  margin: 0 0 18px;
+  color: var(--muted-strong);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
 .category-strip {
   display: flex;
   gap: 10px;

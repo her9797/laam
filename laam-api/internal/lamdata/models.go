@@ -288,3 +288,15 @@ type CatalogSyncResponse struct {
 	Updated int           `json:"updated"`
 	Data    BootstrapData `json:"data"`
 }
+
+// SecretCouponClaim is the response for
+// POST /api/v1/secret-coupons/{id}/claim. ClaimedCount/TotalCount let the
+// customer web (and the auto-posted notice, see
+// internal/store.ClaimSecretCoupon) show hunt progress like "2/5" even
+// though not every one of the eventual TotalSecretCoupons hiding spots is
+// wired up to a trigger yet.
+type SecretCouponClaim struct {
+	RewardLabel  string `json:"rewardLabel"`
+	ClaimedCount int    `json:"claimedCount"`
+	TotalCount   int    `json:"totalCount"`
+}

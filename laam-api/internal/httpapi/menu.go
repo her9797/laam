@@ -44,6 +44,10 @@ type createSpecialRequestRequest struct {
 	Text           string `json:"text"`
 }
 
+type claimSecretCouponRequest struct {
+	TableNumber string `json:"tableNumber"`
+}
+
 type updateVisibilityRequest struct {
 	IsVisible bool `json:"isVisible"`
 }

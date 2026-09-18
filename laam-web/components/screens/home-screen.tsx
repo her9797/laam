@@ -1,5 +1,6 @@
 import { FloatingHomeBadge } from "@/components/navigation/floating-home-badge";
 import { PrimaryNav } from "@/components/navigation/primary-nav";
+import { SecretCouponTrigger } from "@/components/easter-egg/secret-coupon-trigger";
 import type { MenuCategory, MenuItem, StoreInfo } from "@/data/menu-data";
 import { customerNavigationItems } from "@/lib/customer-navigation";
 import Link from "next/link";
@@ -45,7 +46,7 @@ export function HomeScreen({ store, canEditTable }: HomeScreenProps) {
           </div>
           <div className="home-vinyl-record" aria-hidden="true">
             <div className="home-vinyl-label">
-              <span>laam</span>
+              <SecretCouponTrigger />
             </div>
           </div>
           <nav className="home-feature-links" aria-label="손님 메뉴 안내">

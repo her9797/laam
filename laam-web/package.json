@@ -11,11 +11,13 @@
     "qr:urls": "node scripts/generate-qr-urls.mjs"
   },
   "dependencies": {
+    "canvas-confetti": "^1.9.4",
     "next": "16.3.0",
     "react": "19.2.0",
     "react-dom": "19.2.0"
   },
   "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
     "@types/node": "24.3.0",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
