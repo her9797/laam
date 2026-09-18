@@ -53,21 +53,38 @@ export function SecretCouponTrigger() {
             role="dialog"
             aria-modal="true"
           >
-            <p className="secret-coupon-modal-kicker">쉿크릿 쿠폰</p>
-            <h2>축하합니다!</h2>
-            <p className="secret-coupon-modal-reward">{claim.rewardLabel}</p>
-            <p className="secret-coupon-modal-progress">
-              {claim.claimedCount}/{claim.totalCount} 발견
-            </p>
+            <button
+              type="button"
+              className="secret-coupon-modal-close-x"
+              onClick={() => setClaim(null)}
+              aria-label="닫기"
+            >
+              ×
+            </button>
+            <p className="secret-coupon-modal-title">쉿!크릿 쿠폰</p>
+            <p className="secret-coupon-modal-subtitle">이건 우리끼리만! ♥</p>
+            <div className="secret-coupon-modal-photo-wrap">
+              <span className="secret-coupon-modal-photo-caption-left">쉿... ♥</span>
+              <img
+                className="secret-coupon-modal-photo"
+                src="/secret-coupon/vinyl-laam-shh.jpg"
+                alt=""
+              />
+              <span className="secret-coupon-modal-photo-caption-right">비밀이에요 ♥</span>
+            </div>
+            <div className="secret-coupon-modal-reward-box">
+              <p className="secret-coupon-modal-reward-label">♥ 할인내역 ♥</p>
+              <p className="secret-coupon-modal-reward">{claim.rewardLabel}</p>
+            </div>
             <p className="secret-coupon-modal-guide">
-              이 화면을 직원에게 보여주시면 쿠폰으로 교환해드려요.
+              본 쿠폰을 사장님께 보여주시면 실물과 교환해드립니다.
             </p>
             <button
-              className="table-session-modal-close"
+              className="secret-coupon-modal-confirm"
               type="button"
               onClick={() => setClaim(null)}
             >
-              닫기
+              확인
             </button>
           </div>
         </div>,
