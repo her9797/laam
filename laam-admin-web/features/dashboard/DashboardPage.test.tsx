@@ -11,6 +11,7 @@ const useSpecialRequestCountQueryMock = vi.fn();
 const useOrderCountQueryMock = vi.fn();
 const useExpenseSummaryQueryMock = vi.fn();
 const useInventorySummaryQueryMock = vi.fn();
+const useTodaySalesQueryMock = vi.fn();
 const bootstrapRefetchMock = vi.fn();
 const requestsRefetchMock = vi.fn();
 const specialRequestCountRefetchMock = vi.fn();
@@ -33,6 +34,7 @@ vi.mock("@/features/expenses/queries", () => ({
 }));
 vi.mock("@/features/dashboard/queries", () => ({
   useInventorySummaryQuery: () => useInventorySummaryQueryMock(),
+  useTodaySalesQuery: () => useTodaySalesQueryMock(),
 }));
 
 import { DashboardPage } from "./DashboardPage";
@@ -161,6 +163,7 @@ describe("DashboardPage", () => {
     mockOrderCount();
     useExpenseSummaryQueryMock.mockReturnValue({ data: { total: 0 }, isLoading: false, isError: false });
     useInventorySummaryQueryMock.mockReturnValue({ data: { reorderCount: 0 }, isLoading: false, isError: false });
+    useTodaySalesQueryMock.mockReturnValue({ data: { totalRevenue: 0 }, isLoading: false, isError: false });
   });
 
   afterEach(() => {
@@ -240,6 +243,7 @@ describe("DashboardPage", () => {
     expect(JSON.parse(window.localStorage.getItem("laam-admin.dashboard-card-order") ?? "null")).toEqual([
       "reorder",
       "expenses",
+      "sales",
       "general",
       "song",
       "special",
@@ -247,6 +251,16 @@ describe("DashboardPage", () => {
       "menu",
       "notices",
     ]);
+  });
+
+  it("shows a sales card linking to the sales stats page with today's revenue", () => {
+    useTodaySalesQueryMock.mockReturnValue({ data: { totalRevenue: 125000 }, isLoading: false, isError: false });
+
+    render(<DashboardPage />);
+
+    expect(screen.getByText("오늘 매출")).toBeInTheDocument();
+    expect(screen.getByText("125,000원")).toBeInTheDocument();
+    expect(screen.getByText("오늘 매출").closest("a")).toHaveAttribute("href", "/orders/stats");
   });
 
   it("does not navigate when a card is clicked in edit mode", () => {

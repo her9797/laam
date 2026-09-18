@@ -145,6 +145,87 @@ func TestRepository_CancelPaymentOrder_UnknownOrderReturnsNotFound(t *testing.T)
 	}
 }
 
+func TestRepository_CreatePOSNativeOrder_RecordsADoneSale(t *testing.T) {
+	ctx := context.Background()
+	resetPaymentOrdersTable(t, ctx)
+
+	approvedAt := time.Date(2026, 1, 10, 13, 0, 0, 0, time.UTC)
+	order, err := testRepo.CreatePOSNativeOrder(ctx, CreatePOSNativeOrderInput{
+		MenuItemName:   "하우스 하이볼",
+		CategoryName:   "하이볼",
+		Amount:         10000,
+		ApprovedAt:     approvedAt,
+		VAT:            909,
+		SuppliedAmount: 9091,
+		POSOrderID:     "pos-order-9",
+	})
+	if err != nil {
+		t.Fatalf("CreatePOSNativeOrder() error = %v", err)
+	}
+	if order.Status != "DONE" || order.PaymentMethod != "POS" {
+		t.Fatalf("status = %q paymentMethod = %q, want DONE/POS", order.Status, order.PaymentMethod)
+	}
+	if order.MenuItemID != "" {
+		t.Fatalf("MenuItemID = %q, want empty (no catalog link)", order.MenuItemID)
+	}
+	if order.MenuItemName != "하우스 하이볼" || order.CategoryName != "하이볼" {
+		t.Fatalf("menuItemName/categoryName = %q/%q", order.MenuItemName, order.CategoryName)
+	}
+	if order.Amount != 10000 || order.VAT != 909 || order.SuppliedAmount != 9091 {
+		t.Fatalf("amounts = %d/%d/%d, want 10000/909/9091", order.Amount, order.VAT, order.SuppliedAmount)
+	}
+	if order.POSOrderID != "pos-order-9" || order.POSSyncStatus != "SUCCEEDED" {
+		t.Fatalf("posOrderId = %q posSyncStatus = %q", order.POSOrderID, order.POSSyncStatus)
+	}
+}
+
+func TestRepository_CreatePOSNativeOrder_RejectsNonPositiveAmount(t *testing.T) {
+	ctx := context.Background()
+	resetPaymentOrdersTable(t, ctx)
+
+	_, err := testRepo.CreatePOSNativeOrder(ctx, CreatePOSNativeOrderInput{
+		MenuItemName: "하우스 하이볼",
+		CategoryName: "하이볼",
+		Amount:       0,
+		ApprovedAt:   time.Now(),
+		POSOrderID:   "pos-order-10",
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestRepository_HasPaymentOrderWithPOSOrderID(t *testing.T) {
+	ctx := context.Background()
+	resetPaymentOrdersTable(t, ctx)
+
+	before, err := testRepo.HasPaymentOrderWithPOSOrderID(ctx, "pos-order-11")
+	if err != nil {
+		t.Fatalf("HasPaymentOrderWithPOSOrderID() error = %v", err)
+	}
+	if before {
+		t.Fatal("HasPaymentOrderWithPOSOrderID() = true before any row exists")
+	}
+
+	if _, err := testRepo.CreatePOSNativeOrder(ctx, CreatePOSNativeOrderInput{
+		MenuItemName: "하우스 하이볼",
+		CategoryName: "하이볼",
+		Amount:       10000,
+		ApprovedAt:   time.Now(),
+		POSOrderID:   "pos-order-11",
+	}); err != nil {
+		t.Fatalf("seed CreatePOSNativeOrder() error = %v", err)
+	}
+
+	after, err := testRepo.HasPaymentOrderWithPOSOrderID(ctx, "pos-order-11")
+	if err != nil {
+		t.Fatalf("HasPaymentOrderWithPOSOrderID() error = %v", err)
+	}
+	if !after {
+		t.Fatal("HasPaymentOrderWithPOSOrderID() = false after the row was created")
+	}
+}
+
 // resetPaymentOrdersTable truncates payment_orders between test cases in this
 // file so seeded ids don't collide across tests sharing the docker-backed
 // testPool (mirroring payment_list_query_integration_test.go's approach of

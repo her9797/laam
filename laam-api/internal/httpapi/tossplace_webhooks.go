@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/her9797/laam/laam-api/internal/config"
 	"github.com/her9797/laam/laam-api/internal/store"
+	"github.com/her9797/laam/laam-api/internal/tossplace"
 )
 
 const (
@@ -45,6 +47,8 @@ type tossPlaceOrderEventData struct {
 // wrapped in withCORS nor gated by requireAdminAuth/requirePaymentAuth;
 // authentication is the TossPlace signature verified in the handler.
 func registerTossPlaceWebhookRoutes(mux *http.ServeMux, repository *store.Repository, cfg config.Config) {
+	posClient := tossplace.NewClient(cfg.TossPlaceAPIBaseURL, cfg.TossPlaceAccessKey, cfg.TossPlaceSecretKey, cfg.TossPlaceMerchantID, nil)
+
 	mux.HandleFunc("/api/v1/webhooks/tossplace/orders", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeMethodNotAllowed(w)
@@ -70,7 +74,7 @@ func registerTossPlaceWebhookRoutes(mux *http.ServeMux, repository *store.Reposi
 
 		switch envelope.Type {
 		case tossPlaceOrderCompletedEventType:
-			handleTossPlaceOrderCompleted(r, repository, envelope)
+			handleTossPlaceOrderCompleted(r, repository, posClient, envelope)
 		case tossPlaceOrderCancelledEventType:
 			handleTossPlaceOrderCancelled(r, repository, envelope)
 		default:
@@ -104,7 +108,7 @@ func verifyTossPlaceWebhookSignature(secret string, timestamp string, signature 
 	return subtle.ConstantTimeCompare([]byte(signature), []byte(expected)) == 1
 }
 
-func handleTossPlaceOrderCompleted(r *http.Request, repository *store.Repository, envelope tossPlaceWebhookEnvelope) {
+func handleTossPlaceOrderCompleted(r *http.Request, repository *store.Repository, posClient *tossplace.Client, envelope tossPlaceWebhookEnvelope) {
 	var data tossPlaceOrderEventData
 	if err := json.Unmarshal(envelope.Data, &data); err != nil {
 		log.Printf("tossplace webhook: invalid completed-event data (id=%s): %v", envelope.ID, err)
@@ -114,7 +118,11 @@ func handleTossPlaceOrderCompleted(r *http.Request, repository *store.Repository
 	order, err := repository.GetPaymentOrder(r.Context(), data.OrderKey)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			log.Printf("tossplace webhook: completed event for unknown orderKey %q (id=%s)", data.OrderKey, envelope.ID)
+			// Not one of our own orders — most likely rung up directly on
+			// the POS, with no lam-web orderKey ever assigned to it. Record
+			// it as a new sale rather than dropping it, so it still counts
+			// toward revenue reporting (see createPOSNativeOrder).
+			createPOSNativeOrder(r.Context(), repository, posClient, data, envelope.ID)
 			return
 		}
 		log.Printf("tossplace webhook: failed to load order %q (id=%s): %v", data.OrderKey, envelope.ID, err)
@@ -130,6 +138,70 @@ func handleTossPlaceOrderCompleted(r *http.Request, repository *store.Repository
 		// resurrect a cancelled order into DONE, but still ack the webhook
 		// so TossPlace does not retry indefinitely.
 		log.Printf("tossplace webhook: failed to complete order %q from POS (id=%s): %v", data.OrderKey, envelope.ID, err)
+	}
+}
+
+// createPOSNativeOrder records a TossPlace order rung up directly on the
+// POS (no matching lam-web orderKey) as one payment_orders row per line
+// item — the completed-event payload carries no line items itself, so this
+// re-fetches the full order via the Open API before recording anything.
+//
+// Each row's amount is that line item's own priceValue*quantity plus its
+// option choices, deliberately not the order's chargePrice.totalAmount
+// divided across items: TossPlace does not return a per-line-item share of
+// order-level discounts/tax, and approximating one would risk revenue
+// figures that don't reconcile against TossPlace's own reports. table_number
+// stays "" — TossPlace's Order response does not expose which table a
+// POS-native order opened on.
+func createPOSNativeOrder(ctx context.Context, repository *store.Repository, posClient *tossplace.Client, data tossPlaceOrderEventData, eventID string) {
+	if data.OrderID == "" {
+		log.Printf("tossplace webhook: completed event missing orderId for unknown orderKey %q (id=%s)", data.OrderKey, eventID)
+		return
+	}
+
+	// Idempotency for a retried webhook delivery: skip if this TossPlace
+	// order's line items were already recorded.
+	exists, err := repository.HasPaymentOrderWithPOSOrderID(ctx, data.OrderID)
+	if err != nil {
+		log.Printf("tossplace webhook: failed to check existing POS-native order %q (id=%s): %v", data.OrderID, eventID, err)
+		return
+	}
+	if exists {
+		return
+	}
+
+	order, err := posClient.GetOrder(ctx, data.OrderID)
+	if err != nil {
+		log.Printf("tossplace webhook: failed to fetch POS-native order %q (id=%s): %v", data.OrderID, eventID, err)
+		return
+	}
+	if len(order.LineItems) == 0 {
+		log.Printf("tossplace webhook: POS-native order %q has no line items (id=%s)", data.OrderID, eventID)
+		return
+	}
+
+	approvedAt := parseTossPlaceWebhookTimestamp(order.CompletedAt)
+	for _, line := range order.LineItems {
+		amount := line.ItemPrice.PriceValue * line.Quantity
+		for _, choice := range line.OptionChoices {
+			amount += choice.PriceValue * choice.Quantity
+		}
+		if amount <= 0 {
+			log.Printf("tossplace webhook: skipping non-positive line item amount for POS-native order %q (id=%s)", data.OrderID, eventID)
+			continue
+		}
+		vat := amount / 11
+		if _, err := repository.CreatePOSNativeOrder(ctx, store.CreatePOSNativeOrderInput{
+			MenuItemName:   line.Item.Title,
+			CategoryName:   line.Item.Category.Title,
+			Amount:         amount,
+			ApprovedAt:     approvedAt,
+			VAT:            vat,
+			SuppliedAmount: amount - vat,
+			POSOrderID:     data.OrderID,
+		}); err != nil {
+			log.Printf("tossplace webhook: failed to record POS-native line item for order %q (id=%s): %v", data.OrderID, eventID, err)
+		}
 	}
 }
 

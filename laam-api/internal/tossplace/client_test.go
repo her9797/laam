@@ -3,6 +3,7 @@ package tossplace
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -158,5 +159,76 @@ func TestClientCreateUnpaidOrderOmitsPayments(t *testing.T) {
 	}
 	if result.OrderID != "pos-order-unpaid" {
 		t.Fatalf("OrderID = %q", result.OrderID)
+	}
+}
+
+func TestClientGetOrder(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api-public/openapi/v1/merchants/merchant-123/order/orders/pos-order-9" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("x-access-key") != "access" || r.Header.Get("x-secret-key") != "secret" {
+			t.Fatal("missing Toss Place authentication headers")
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"resultType": "SUCCESS",
+			"success": {
+				"id": "pos-order-9",
+				"orderKey": "pos-native-key-1",
+				"source": "POS",
+				"orderState": "COMPLETED",
+				"completedAt": "2026-09-19T03:34:56Z",
+				"lineItems": [
+					{
+						"item": {"title": "하우스 하이볼", "category": {"title": "하이볼"}},
+						"itemPrice": {"priceValue": 10000},
+						"quantity": 2,
+						"optionChoices": [
+							{"title": "샷 추가", "priceValue": 500, "quantity": 1}
+						]
+					}
+				]
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "access", "secret", "merchant-123", server.Client())
+	order, err := client.GetOrder(context.Background(), "pos-order-9")
+	if err != nil {
+		t.Fatalf("GetOrder() error = %v", err)
+	}
+	if order.ID != "pos-order-9" || order.Source != "POS" || order.CompletedAt != "2026-09-19T03:34:56Z" {
+		t.Fatalf("order = %+v", order)
+	}
+	if len(order.LineItems) != 1 {
+		t.Fatalf("lineItems = %+v", order.LineItems)
+	}
+	line := order.LineItems[0]
+	if line.Item.Title != "하우스 하이볼" || line.Item.Category.Title != "하이볼" || line.ItemPrice.PriceValue != 10000 || line.Quantity != 2 {
+		t.Fatalf("line item = %+v", line)
+	}
+	if len(line.OptionChoices) != 1 || line.OptionChoices[0].Title != "샷 추가" || line.OptionChoices[0].PriceValue != 500 || line.OptionChoices[0].Quantity != 1 {
+		t.Fatalf("option choices = %+v", line.OptionChoices)
+	}
+}
+
+func TestClientGetOrderReturnsAPIErrorOnFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"resultType":"FAILURE","error":{"errorCode":"ORDER_NOT_FOUND","reason":"no such order"}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "access", "secret", "merchant-123", server.Client())
+	_, err := client.GetOrder(context.Background(), "missing")
+	if err == nil {
+		t.Fatal("GetOrder() error = nil, want an error")
+	}
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Code != "ORDER_NOT_FOUND" {
+		t.Fatalf("error = %+v, want an APIError with code ORDER_NOT_FOUND", err)
 	}
 }

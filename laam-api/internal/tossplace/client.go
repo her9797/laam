@@ -363,6 +363,93 @@ func (c *Client) sendCreateOrder(ctx context.Context, body createOrderBody) (Cre
 	return CreateOrderResult{OrderID: envelope.Success.ID}, nil
 }
 
+// Order mirrors the subset of TossPlace's Order response
+// (docs.tossplace.com/reference/open-api/order/order-model.html) that
+// GetOrder's caller needs to record a POS-native sale — line items,
+// prices, and options. It intentionally omits fields (discounts, payments,
+// requestedInfo, ...) that caller does not use.
+type Order struct {
+	ID          string          `json:"id"`
+	OrderKey    string          `json:"orderKey"`
+	Source      string          `json:"source"`
+	OrderState  string          `json:"orderState"`
+	CompletedAt string          `json:"completedAt"`
+	LineItems   []OrderLineItem `json:"lineItems"`
+}
+
+type OrderLineItem struct {
+	Item          OrderLineItemProduct        `json:"item"`
+	ItemPrice     OrderLineItemPrice          `json:"itemPrice"`
+	Quantity      int64                       `json:"quantity"`
+	OptionChoices []OrderLineItemOptionChoice `json:"optionChoices"`
+}
+
+type OrderLineItemProduct struct {
+	Title    string                `json:"title"`
+	Category OrderLineItemCategory `json:"category"`
+}
+
+type OrderLineItemCategory struct {
+	Title string `json:"title"`
+}
+
+type OrderLineItemPrice struct {
+	PriceValue int64 `json:"priceValue"`
+}
+
+type OrderLineItemOptionChoice struct {
+	Title      string `json:"title"`
+	PriceValue int64  `json:"priceValue"`
+	Quantity   int64  `json:"quantity"`
+}
+
+// GetOrder fetches a single order by its TossPlace order ID (the webhook
+// envelope's data.orderId — see tossplace_webhooks.go). Used only for
+// orders whose orderKey is not ours (rung up directly on the POS), to
+// recover the line items TossPlace's completed-event payload does not
+// include.
+func (c *Client) GetOrder(ctx context.Context, orderID string) (Order, error) {
+	if c.accessKey == "" || c.secretKey == "" || c.merchantID == "" {
+		return Order{}, ErrNotConfigured
+	}
+
+	endpoint := c.baseURL + "/api-public/openapi/v1/merchants/" + url.PathEscape(c.merchantID) + "/order/orders/" + url.PathEscape(orderID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return Order{}, err
+	}
+	req.Header.Set("x-access-key", c.accessKey)
+	req.Header.Set("x-secret-key", c.secretKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return Order{}, err
+	}
+	defer resp.Body.Close()
+
+	var envelope struct {
+		ResultType string `json:"resultType"`
+		Success    Order  `json:"success"`
+		Error      struct {
+			ErrorCode string `json:"errorCode"`
+			Reason    string `json:"reason"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&envelope); err != nil {
+		return Order{}, err
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices || envelope.ResultType != "SUCCESS" {
+		return Order{}, &APIError{
+			StatusCode: resp.StatusCode,
+			EventID:    resp.Header.Get("x-toss-event-id"),
+			Code:       envelope.Error.ErrorCode,
+			Reason:     envelope.Error.Reason,
+		}
+	}
+
+	return envelope.Success, nil
+}
+
 func paymentMemo(tableNumber string, requestNote string) string {
 	tableNumber = strings.TrimSpace(tableNumber)
 	requestNote = strings.TrimSpace(requestNote)
