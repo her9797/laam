@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
+import { SecretCouponHotspot } from "@/components/easter-egg/secret-coupon-hotspot";
 import { getStoredTableNumber, normalizeTableNumber, setStoredTableNumber } from "@/lib/table-session";
 
 function formatTableLabel(tableNumber: string) {
@@ -45,7 +46,11 @@ export function TableSessionBadge({ canEdit = false }: { canEdit?: boolean }) {
   const label = canEdit ? "STAFF" : formatTableLabel(tableNumber);
 
   if (!canEdit) {
-    return <span className="floating-table-badge">{label}</span>;
+    return (
+      <SecretCouponHotspot couponId="table-badge" className="floating-table-badge">
+        {label}
+      </SecretCouponHotspot>
+    );
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {

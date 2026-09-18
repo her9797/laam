@@ -471,15 +471,35 @@ func TestRepository_ClaimSecretCoupon(t *testing.T) {
 		}
 	})
 
-	t.Run("posts a progress notice", func(t *testing.T) {
+	t.Run("updates a single progress notice in place", func(t *testing.T) {
 		data, err := repo.GetBootstrapData(ctx)
 		if err != nil {
 			t.Fatalf("GetBootstrapData() error = %v", err)
 		}
 		if len(data.Notices) != 1 {
-			t.Fatalf("Notices = %+v, want a single auto-posted notice", data.Notices)
+			t.Fatalf("Notices = %+v, want a single progress notice", data.Notices)
 		}
-		want := fmt.Sprintf("쉿크릿 쿠폰 - 1만원 할인권 발견! 1/%d", TotalSecretCoupons)
+		want := fmt.Sprintf("쉿크릿 쿠폰 발견 갯수 (1/%d)", TotalSecretCoupons)
+		if data.Notices[0].Text != want {
+			t.Errorf("Notices[0].Text = %q, want %q", data.Notices[0].Text, want)
+		}
+
+		claim, err := repo.ClaimSecretCoupon(ctx, "table-badge", "T-01")
+		if err != nil {
+			t.Fatalf("ClaimSecretCoupon(table-badge) error = %v", err)
+		}
+		if claim.RewardLabel != "1만원 할인권" || claim.ClaimedCount != 2 || claim.TotalCount != TotalSecretCoupons {
+			t.Fatalf("claim = %+v, want RewardLabel=1만원 할인권 ClaimedCount=2 TotalCount=%d", claim, TotalSecretCoupons)
+		}
+
+		data, err = repo.GetBootstrapData(ctx)
+		if err != nil {
+			t.Fatalf("GetBootstrapData() error = %v", err)
+		}
+		if len(data.Notices) != 1 {
+			t.Fatalf("Notices = %+v, want the same single notice updated in place, not a new one", data.Notices)
+		}
+		want = fmt.Sprintf("쉿크릿 쿠폰 발견 갯수 (2/%d)", TotalSecretCoupons)
 		if data.Notices[0].Text != want {
 			t.Errorf("Notices[0].Text = %q, want %q", data.Notices[0].Text, want)
 		}
