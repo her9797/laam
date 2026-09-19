@@ -32,7 +32,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 	})
 	registerPaymentRoutes(mux, repository, cfg, broadcaster)
 	registerSongRoutes(mux, repository, cfg)
-	registerTableRoutes(mux, cfg)
+	registerTableRoutes(mux, repository, cfg)
 	registerTossPlaceWebhookRoutes(mux, repository, cfg)
 	registerExpenseRoutes(mux, repository, cfg)
 

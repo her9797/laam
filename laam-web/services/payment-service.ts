@@ -1,3 +1,5 @@
+import { orderErrorMessage, type OrderErrorBody } from "../lib/order-errors.ts";
+
 export type PaymentOrder = {
   orderId: string;
   menuItemId: string;
@@ -19,8 +21,8 @@ async function readPaymentResponse(response: Response) {
     return (await response.json()) as PaymentOrder;
   }
 
-  const body = (await response.json().catch(() => null)) as { error?: string } | null;
-  throw new Error(body?.error || "결제 요청을 처리하지 못했습니다.");
+  const body = (await response.json().catch(() => null)) as OrderErrorBody;
+  throw new Error(orderErrorMessage(body, "결제 요청을 처리하지 못했습니다."));
 }
 
 export async function createPaymentOrder(input: { menuItemId: string; tableNumber: string }) {

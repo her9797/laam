@@ -32,20 +32,16 @@ export type SortOrder = "asc" | "desc";
  * guest's name or contact info, and this screen's existing detail/delete
  * dialogs already keep that data out of the address bar and browser
  * history on purpose (see `SpecialRequestPage`'s doc comment).
+ *
+ * There is deliberately no date bound here: unlike `features/requests`, this
+ * screen lists every special request, all-time. The endpoint still accepts
+ * `from`/`to`, but nothing in this feature sends them.
  */
 export type SpecialRequestListQuery = {
   page: number;
   pageSize: number;
   gender?: SpecialRequestGender;
   search: string;
-  /**
-   * Date-only (`YYYY-MM-DD`) strings, resolved to absolute calendar-day-
-   * bounded instants at fetch time — see `@/lib/date-range.ts`. Both blank
-   * means "no date bound"; `SpecialRequestPage`'s mount effect fills in the
-   * default 7-day range once, client-side.
-   */
-  dateFrom: string;
-  dateTo: string;
   sort: SpecialRequestSort;
   order: SortOrder;
 };

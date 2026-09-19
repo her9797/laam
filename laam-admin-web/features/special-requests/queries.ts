@@ -16,10 +16,9 @@ export const specialRequestKeys = {
 
 /**
  * Dashboard's special-request-count aggregate: every `special_requests` row,
- * all-time, no filter — matching `SpecialRequestPage`'s default "no filter"
- * meaning once `dateFrom`/`dateTo` are blank (see
- * `features/special-requests/api.ts`'s `resolveCalendarDateRange`, which
- * treats a blank range as unbounded). `pageSize: 1` keeps the request cheap,
+ * all-time, no filter — the same all-time scope `SpecialRequestPage` itself
+ * now lists under (this feature sends no date bound at all; see
+ * `features/special-requests/api.ts`). `pageSize: 1` keeps the request cheap,
  * mirroring `features/orders/queries.ts`'s `useOrderCountQuery`; only
  * `total` from the paginated envelope is read, never `items`.
  */
@@ -28,8 +27,6 @@ const DASHBOARD_SPECIAL_REQUEST_COUNT_QUERY: SpecialRequestListQuery = {
   pageSize: 1,
   gender: undefined,
   search: "",
-  dateFrom: "",
-  dateTo: "",
   sort: "createdAt",
   order: "desc",
 };
@@ -45,17 +42,13 @@ export function useSpecialRequestCountQuery() {
 }
 
 /**
- * `enabled` defaults to true for direct callers, but `SpecialRequestPage`
- * passes `false` while its date-range fields are still blank/invalid (see
- * that component's mount effect) — without this, a query would fire once
- * against an unbounded or unresolved range before the real default
- * settles in.
+ * Fires on the caller's first render: there is no date range to settle
+ * client-side any more, so nothing gates this query.
  */
-export function useSpecialRequestsPageQuery(query: SpecialRequestListQuery, enabled: boolean = true) {
+export function useSpecialRequestsPageQuery(query: SpecialRequestListQuery) {
   return useQuery({
     queryKey: specialRequestKeys.list(query),
     queryFn: () => fetchSpecialRequestsPage(query),
-    enabled,
     // A revisited page or a window-focus refetch shouldn't refire against
     // the server for 30s.
     staleTime: 30_000,

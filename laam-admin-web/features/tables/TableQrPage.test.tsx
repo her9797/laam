@@ -1,13 +1,20 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AdminTable } from "./model";
+import type { AdminTable, AdminTablesData } from "./model";
 
 const useAdminTablesQueryMock = vi.fn();
 const refetchMock = vi.fn();
+const idleMutation = { mutate: vi.fn(), isPending: false };
 
+// `PosTableLinkSection` (rendered by this page) reads the POS mutations from
+// the same module; they stay idle here so this file keeps covering the QR
+// grid only — the POS panel has its own test file.
 vi.mock("./queries", () => ({
   useAdminTablesQuery: () => useAdminTablesQueryMock(),
+  usePosTableSyncMutation: () => idleMutation,
+  useUpdateTablePosLinkMutation: () => idleMutation,
+  useCreateQrTableMutation: () => idleMutation,
 }));
 
 const generateQrPngDataUrlMock = vi.fn(async (_text: string) => "data:image/png;base64,AAAA");
@@ -24,20 +31,32 @@ vi.mock("./qr-export", () => ({
 
 import { TableQrPage } from "./TableQrPage";
 
+function buildTable(id: string, area: AdminTable["area"], number: number): AdminTable {
+  return {
+    id,
+    area,
+    number,
+    qrUrl: `https://example.com/qr/enter?table=${id}&sig=abc`,
+    // Every table linked: this file covers the QR grid, and the unlinked
+    // warning banner belongs to `PosTableLinkSection.test.tsx`.
+    posTableId: 100 + number,
+    posTableTitle: `${id} POS`,
+    hallName: null,
+    linkedAt: "2026-09-19T00:00:00Z",
+  };
+}
+
 function buildTables(): AdminTable[] {
-  const bTables: AdminTable[] = Array.from({ length: 5 }, (_, i) => ({
-    id: `B-0${i + 1}`,
-    area: "B",
-    number: i + 1,
-    qrUrl: `https://example.com/qr/enter?table=B-0${i + 1}&sig=abc`,
-  }));
-  const tTables: AdminTable[] = Array.from({ length: 10 }, (_, i) => ({
-    id: `T-${String(i + 1).padStart(2, "0")}`,
-    area: "T",
-    number: i + 1,
-    qrUrl: `https://example.com/qr/enter?table=T-${String(i + 1).padStart(2, "0")}&sig=def`,
-  }));
-  return [...bTables, ...tTables];
+  return [
+    ...Array.from({ length: 5 }, (_, i) => buildTable(`B-0${i + 1}`, "B", i + 1)),
+    ...Array.from({ length: 10 }, (_, i) =>
+      buildTable(`T-${String(i + 1).padStart(2, "0")}`, "T", i + 1),
+    ),
+  ];
+}
+
+function buildData(tables: AdminTable[] = buildTables()): AdminTablesData {
+  return { tables, posOnlyTables: [], lastSyncedAt: null, pendingSync: null };
 }
 
 describe("TableQrPage", () => {
@@ -49,7 +68,7 @@ describe("TableQrPage", () => {
     downloadTableSvgMock.mockClear();
     downloadTablesZipMock.mockClear();
     useAdminTablesQueryMock.mockReturnValue({
-      data: buildTables(),
+      data: buildData(),
       isLoading: false,
       isError: false,
       error: null,

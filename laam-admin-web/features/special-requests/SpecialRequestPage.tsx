@@ -2,7 +2,7 @@
 
 import "@/i18n/client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -22,7 +22,6 @@ import { ListTotalCount } from "@/components/list/ListTotalCount";
 import { ListUpdatingRegion } from "@/components/list/ListUpdatingRegion";
 import { Pagination } from "@/components/list/Pagination";
 import { EmptyState, ErrorState, ListSkeletonState } from "@/components/states/PageStates";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -41,7 +40,6 @@ import {
 } from "@/components/ui/table";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useRetainedListQuery } from "@/hooks/use-retained-list-query";
-import { defaultDateRangeDays, resolveCalendarDateRange } from "@/lib/date-range";
 import { formatDateTime } from "@/lib/utils";
 
 import type { SpecialRequest, SpecialRequestGender, SpecialRequestListQuery, SpecialRequestSort } from "./model";
@@ -66,23 +64,14 @@ const DETAIL_FIELDS: Array<{ key: keyof SpecialRequest; labelKey: string }> = [
 
 const SEARCH_DEBOUNCE_MS = 300;
 
-// Default date-filter span for this screen, per this feature's plan —
-// unlike the sales-stats screen (30 days), request lists default to the
-// last 7 days.
-const DEFAULT_DATE_RANGE_SPAN_DAYS = 7;
-
-// `dateFrom`/`dateTo` start blank — deterministic on both the server's
-// render and the client's first render — and are filled in by the mount
-// effect below, exactly once, client-side only. See `SalesStatsPage`'s
-// identical mount-effect comment for why: a `new Date()` read during
-// render here could disagree between the server and client passes.
+// Fully deterministic across the server's render and the client's first
+// one — there is no date default to compute, so unlike `RequestListPage`
+// this screen needs no client-only mount effect to settle its query.
 const DEFAULT_QUERY: SpecialRequestListQuery = {
   page: 1,
   pageSize: 10,
   gender: undefined,
   search: "",
-  dateFrom: "",
-  dateTo: "",
   sort: "createdAt",
   order: "desc",
 };
@@ -109,27 +98,10 @@ export function SpecialRequestPage() {
     setQuery((prev) => ({ ...prev, search: debouncedSearch, page: 1 }));
   }
 
-  useEffect(() => {
-    if (!query.dateFrom || !query.dateTo) {
-      const defaults = defaultDateRangeDays(DEFAULT_DATE_RANGE_SPAN_DAYS);
-      // Same deliberate exception `SalesStatsPage`'s mount effect documents:
-      // there is no render-time computation of "today" that both the
-      // server and the client can agree on, so applying it after mount
-      // (accepting the one extra render pass) is the fix, not the problem.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setQuery((prev) => ({ ...prev, dateFrom: defaults.from, dateTo: defaults.to, page: 1 }));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const dateRangeResult = resolveCalendarDateRange(query.dateFrom, query.dateTo);
-  // Wrapped so a failed page/filter/sort/date change keeps the rows the
-  // operator was already reading — `keepPreviousData` alone drops them the
-  // moment the new key's request fails. See `useRetainedListQuery`.
-  const requestsQuery = useRetainedListQuery(
-    useSpecialRequestsPageQuery(query, dateRangeResult.ok),
-    query,
-  );
+  // Wrapped so a failed page/filter/sort change keeps the rows the operator
+  // was already reading — `keepPreviousData` alone drops them the moment the
+  // new key's request fails. See `useRetainedListQuery`.
+  const requestsQuery = useRetainedListQuery(useSpecialRequestsPageQuery(query), query);
   const deleteMutation = useDeleteSpecialRequestMutation();
   // Both dialogs are driven by in-memory ids only (never a URL/query param),
   // so a guest's personal fields never end up in the address bar or browser
@@ -137,16 +109,8 @@ export function SpecialRequestPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
-  if (!query.dateFrom || !query.dateTo || requestsQuery.isLoading) {
+  if (requestsQuery.isLoading) {
     return <ListSkeletonState columns={7} label={t("loading")} />;
-  }
-
-  if (!dateRangeResult.ok) {
-    return (
-      <p role="alert" className="text-sm text-destructive">
-        {t("dateInvalidRange")}
-      </p>
-    );
   }
 
   // A failure with rows already on screen — a page click, a filter change, a
@@ -220,28 +184,6 @@ export function SpecialRequestPage() {
         searchPlaceholder={t("searchPlaceholder")}
         className="items-end"
       >
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="special-request-date-from">{t("dateFromLabel")}</Label>
-          <Input
-            id="special-request-date-from"
-            type="date"
-            value={query.dateFrom}
-            onChange={(event) =>
-              setQuery((prev) => ({ ...prev, dateFrom: event.target.value, page: 1 }))
-            }
-          />
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="special-request-date-to">{t("dateToLabel")}</Label>
-          <Input
-            id="special-request-date-to"
-            type="date"
-            value={query.dateTo}
-            onChange={(event) => setQuery((prev) => ({ ...prev, dateTo: event.target.value, page: 1 }))}
-          />
-        </div>
-
         <div className="flex flex-col gap-2">
           <Label htmlFor="special-request-gender-filter">{t("genderFilterLabel")}</Label>
           <Select

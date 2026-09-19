@@ -1,3 +1,5 @@
+import { orderErrorMessage, type OrderErrorBody } from "../lib/order-errors.ts";
+
 export type CustomerOrder = {
   orderId: string;
   menuItemId: string;
@@ -25,9 +27,9 @@ export async function createOrder(input: { menuItemId: string; tableNumber: stri
     body: JSON.stringify(input),
   });
 
-  const body = (await response.json().catch(() => null)) as CustomerOrder | { error?: string } | null;
+  const body = (await response.json().catch(() => null)) as CustomerOrder | OrderErrorBody;
   if (!response.ok) {
-    throw new Error((body as { error?: string } | null)?.error || "주문을 등록하지 못했습니다.");
+    throw new Error(orderErrorMessage(body as OrderErrorBody, "주문을 등록하지 못했습니다."));
   }
 
   const order = body as CustomerOrder;

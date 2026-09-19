@@ -1,4 +1,4 @@
-import type { ClaimedOrder } from "./order-sync";
+import type { ClaimedOrder, TableMappings } from "./order-sync";
 
 interface PluginHTTPResponse {
   body: string;
@@ -13,6 +13,28 @@ export interface PluginHTTP {
     headers?: [string, string][],
     options?: { timeoutMs?: number }
   ): Promise<PluginHTTPResponse>;
+  get(
+    url: string,
+    headers?: [string, string][],
+    options?: { timeoutMs?: number }
+  ): Promise<PluginHTTPResponse>;
+}
+
+export interface POSHallSnapshot {
+  id: number;
+  name: string;
+}
+
+export interface POSTableSnapshot {
+  id: number;
+  title: string;
+  hallId: number | null;
+  capacity: number | null;
+}
+
+export interface TableSnapshot {
+  halls: POSHallSnapshot[];
+  tables: POSTableSnapshot[];
 }
 
 export class POSAPIClient {
@@ -66,6 +88,67 @@ export class POSAPIClient {
       { timeoutMs: 10000 }
     );
     this.requireSuccess(response);
+  }
+
+  async claimTableSync(): Promise<string | undefined> {
+    const response = await this.http.post(
+      `${this.baseURL}/api/v1/pos-plugin/tables/claim`,
+      {},
+      this.headers,
+      { timeoutMs: 10000 }
+    );
+    if (response.code === 204) {
+      return undefined;
+    }
+    this.requireSuccess(response);
+    const claim = JSON.parse(response.body) as { syncId?: unknown };
+    if (typeof claim.syncId !== "string" || !claim.syncId) {
+      throw new Error("POS 테이블 동기화 claim 응답 형식이 올바르지 않음");
+    }
+    return claim.syncId;
+  }
+
+  async completeTableSync(syncID: string, snapshot: TableSnapshot): Promise<void> {
+    const response = await this.http.post(
+      `${this.baseURL}/api/v1/pos-plugin/tables/${encodeURIComponent(syncID)}/complete`,
+      { halls: snapshot.halls, tables: snapshot.tables },
+      this.headers,
+      { timeoutMs: 10000 }
+    );
+    this.requireSuccess(response);
+  }
+
+  async failTableSync(syncID: string, message: string): Promise<void> {
+    const response = await this.http.post(
+      `${this.baseURL}/api/v1/pos-plugin/tables/${encodeURIComponent(syncID)}/fail`,
+      { error: message },
+      this.headers,
+      { timeoutMs: 10000 }
+    );
+    this.requireSuccess(response);
+  }
+
+  async fetchTableMappings(): Promise<TableMappings> {
+    const response = await this.http.get(
+      `${this.baseURL}/api/v1/pos-plugin/table-mappings`,
+      this.headers,
+      { timeoutMs: 10000 }
+    );
+    this.requireSuccess(response);
+    const payload = JSON.parse(response.body) as { mappings?: unknown };
+    const raw = payload.mappings;
+    if (!raw || Array.isArray(raw) || typeof raw !== "object") {
+      throw new Error("POS 테이블 매핑 응답 형식이 올바르지 않음");
+    }
+
+    // 서버 항목 하나가 깨져도 나머지 매핑은 살린다.
+    const mappings: TableMappings = {};
+    for (const [qrTableID, posTableID] of Object.entries(raw)) {
+      if (Number.isSafeInteger(posTableID) && Number(posTableID) > 0) {
+        mappings[qrTableID] = Number(posTableID);
+      }
+    }
+    return mappings;
   }
 
   private requireSuccess(response: PluginHTTPResponse): void {

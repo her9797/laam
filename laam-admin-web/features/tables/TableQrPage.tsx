@@ -10,14 +10,21 @@ import { Button } from "@/components/ui/button";
 
 import type { AdminTable, TableArea } from "./model";
 import { groupTablesByArea } from "./model";
+import { PosTableLinkSection } from "./PosTableLinkSection";
 import { downloadTablePng, downloadTableSvg, downloadTablesZip, generateQrPngDataUrl } from "./qr-export";
 import { useAdminTablesQuery } from "./queries";
 
-// Translation keys in the `tables` namespace, not rendered text.
+// Translation keys in the `tables` namespace, not rendered text. Areas the
+// POS sync introduces are not in here and fall back to `areaLabelOther`.
 const AREA_LABEL_KEY: Record<TableArea, string> = {
   B: "areaLabelB",
   T: "areaLabelT",
 };
+
+function areaLabel(t: (key: string, options?: Record<string, unknown>) => string, area: TableArea) {
+  const key = AREA_LABEL_KEY[area];
+  return key ? t(key) : t("areaLabelOther", { area });
+}
 
 function TableQrCard({ table }: { table: AdminTable }) {
   const { t } = useTranslation("tables");
@@ -138,7 +145,13 @@ export function TableQrPage() {
     );
   }
 
-  const tables = tablesQuery.data ?? [];
+  const data = tablesQuery.data ?? {
+    tables: [],
+    posOnlyTables: [],
+    lastSyncedAt: null,
+    pendingSync: null,
+  };
+  const tables = data.tables;
   const groups = groupTablesByArea(tables);
 
   async function handleDownloadAllZip() {
@@ -177,13 +190,15 @@ export function TableQrPage() {
         </p>
       ) : null}
 
+      <PosTableLinkSection data={data} />
+
       {groups.length === 0 ? (
         <EmptyState title={t("errorTitle")} />
       ) : (
         groups.map((group) => (
           <section key={group.area} className="flex flex-col gap-3">
             <h2 className="text-sm font-semibold text-muted-foreground print:text-foreground">
-              {t(AREA_LABEL_KEY[group.area])}
+              {areaLabel(t, group.area)}
             </h2>
             {/* Five columns only from `xl`: from `md` on the desktop sidebar takes
                 its width, and five columns under ~1200px are narrower than a

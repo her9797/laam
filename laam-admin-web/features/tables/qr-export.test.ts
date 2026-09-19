@@ -14,9 +14,28 @@ vi.mock("qrcode", () => ({
 
 import { buildTablesZipBlob, dataUrlToBlob, generateQrPngDataUrl, generateQrSvgMarkup } from "./qr-export";
 
+/** POS link state is irrelevant to QR export — every table here is unlinked. */
 const TABLES: AdminTable[] = [
-  { id: "B-01", area: "B", number: 1, qrUrl: "https://example.com/qr/enter?table=B-01&sig=abc" },
-  { id: "T-01", area: "T", number: 1, qrUrl: "https://example.com/qr/enter?table=T-01&sig=def" },
+  {
+    id: "B-01",
+    area: "B",
+    number: 1,
+    qrUrl: "https://example.com/qr/enter?table=B-01&sig=abc",
+    posTableId: null,
+    posTableTitle: null,
+    hallName: null,
+    linkedAt: null,
+  },
+  {
+    id: "T-01",
+    area: "T",
+    number: 1,
+    qrUrl: "https://example.com/qr/enter?table=T-01&sig=def",
+    posTableId: null,
+    posTableTitle: null,
+    hallName: null,
+    linkedAt: null,
+  },
 ];
 
 describe("qr-export", () => {
