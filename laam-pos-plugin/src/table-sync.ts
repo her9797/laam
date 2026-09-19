@@ -21,8 +21,13 @@ function buildSnapshot(
   halls: PluginHall[],
   tables: Array<PluginTable & { order?: PluginOrder }>
 ): TableSnapshot {
+  // A store with no halls (floor/section grouping) configured resolves
+  // getHalls() to `undefined` at runtime, not `[]`, despite the SDK's own
+  // type declaring Promise<PluginHall[]> — seen live as "halls.map is not
+  // a function". Treat anything that isn't an array as no halls.
+  const hallList = Array.isArray(halls) ? halls : [];
   return {
-    halls: halls.map((hall) => ({ id: hall.id, name: hall.title })),
+    halls: hallList.map((hall) => ({ id: hall.id, name: hall.title })),
     // 주문 정보는 올리지 않는다. 관리자 화면이 쓰는 값만 담는다.
     tables: tables.map((table) => ({
       id: table.id,
