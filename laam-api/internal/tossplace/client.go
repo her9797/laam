@@ -369,10 +369,13 @@ func (c *Client) sendCreateOrder(ctx context.Context, body createOrderBody) (Cre
 // prices, and options. It intentionally omits fields (discounts, payments,
 // requestedInfo, ...) that caller does not use.
 type Order struct {
-	ID          string          `json:"id"`
-	OrderKey    string          `json:"orderKey"`
-	Source      string          `json:"source"`
-	OrderState  string          `json:"orderState"`
+	ID         string `json:"id"`
+	OrderKey   string `json:"orderKey"`
+	Source     string `json:"source"`
+	OrderState string `json:"orderState"`
+	// OpenedAt is when the POS opened the order ("주문 수락 시각"), which is
+	// the order time the admin screens show. TossPlace may omit it.
+	OpenedAt    string          `json:"openedAt"`
 	CompletedAt string          `json:"completedAt"`
 	LineItems   []OrderLineItem `json:"lineItems"`
 }

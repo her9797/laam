@@ -240,3 +240,60 @@ func resetPaymentOrdersTable(t *testing.T, ctx context.Context) {
 		t.Fatalf("truncate payment_orders: %v", err)
 	}
 }
+
+// A POS-native order's created_at must be the moment the POS opened the
+// order (TossPlace's openedAt), not the moment our webhook handler ran —
+// the admin order list reads created_at as "주문 시각".
+func TestRepository_CreatePOSNativeOrder_UsesOrderedAtAsCreatedAt(t *testing.T) {
+	ctx := context.Background()
+	resetPaymentOrdersTable(t, ctx)
+
+	orderedAt := time.Date(2026, 1, 10, 12, 40, 0, 0, time.UTC)
+	order, err := testRepo.CreatePOSNativeOrder(ctx, CreatePOSNativeOrderInput{
+		MenuItemName:   "하우스 하이볼",
+		CategoryName:   "하이볼",
+		Amount:         10000,
+		OrderedAt:      orderedAt,
+		ApprovedAt:     orderedAt.Add(20 * time.Minute),
+		VAT:            909,
+		SuppliedAmount: 9091,
+		POSOrderID:     "pos-order-ordered-at",
+	})
+	if err != nil {
+		t.Fatalf("CreatePOSNativeOrder() error = %v", err)
+	}
+	if order.CreatedAt != orderedAt.Format(time.RFC3339) {
+		t.Fatalf("createdAt = %q, want %q", order.CreatedAt, orderedAt.Format(time.RFC3339))
+	}
+	if order.ApprovedAt != orderedAt.Add(20*time.Minute).Format(time.RFC3339) {
+		t.Fatalf("approvedAt = %q, want the completion time", order.ApprovedAt)
+	}
+}
+
+// TossPlace may omit openedAt; the row must still land with a sane
+// created_at rather than the zero time.
+func TestRepository_CreatePOSNativeOrder_FallsBackToNowWhenOrderedAtMissing(t *testing.T) {
+	ctx := context.Background()
+	resetPaymentOrdersTable(t, ctx)
+
+	before := time.Now().UTC().Add(-time.Minute)
+	order, err := testRepo.CreatePOSNativeOrder(ctx, CreatePOSNativeOrderInput{
+		MenuItemName:   "하우스 하이볼",
+		CategoryName:   "하이볼",
+		Amount:         10000,
+		ApprovedAt:     time.Now().UTC(),
+		VAT:            909,
+		SuppliedAmount: 9091,
+		POSOrderID:     "pos-order-no-opened-at",
+	})
+	if err != nil {
+		t.Fatalf("CreatePOSNativeOrder() error = %v", err)
+	}
+	createdAt, err := time.Parse(time.RFC3339, order.CreatedAt)
+	if err != nil {
+		t.Fatalf("createdAt = %q, not RFC3339: %v", order.CreatedAt, err)
+	}
+	if createdAt.Before(before) {
+		t.Fatalf("createdAt = %q, want a recent timestamp", order.CreatedAt)
+	}
+}

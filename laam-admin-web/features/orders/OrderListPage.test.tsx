@@ -3,6 +3,8 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { formatDateTime } from "@/lib/utils";
+
 import type { OrderListQuery, OrderPageResult, PaymentOrder } from "./model";
 
 const replaceMock = vi.fn();
@@ -488,5 +490,19 @@ describe("OrderListPage", () => {
 
     expect(screen.getByLabelText("시작일")).toHaveValue("2026-01-01");
     expect(screen.getByLabelText("종료일")).toHaveValue("2026-01-10");
+  });
+
+  it("shows the order time, not the payment time, in the list", () => {
+    render(<OrderListPage />);
+
+    // order-1 was ordered 12:00 and paid 12:10; the column reads the order time.
+    expect(screen.getByText(formatDateTime("2026-01-10T12:00:00Z", "ko"))).toBeInTheDocument();
+    expect(screen.queryByText(formatDateTime("2026-01-10T12:10:00Z", "ko"))).not.toBeInTheDocument();
+  });
+
+  it("labels the time column as the order time", () => {
+    render(<OrderListPage />);
+
+    expect(screen.getByRole("columnheader", { name: "주문 시각" })).toBeInTheDocument();
   });
 });

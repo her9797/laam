@@ -488,9 +488,13 @@ func (r *Repository) CompletePaymentOrderFromPOS(ctx context.Context, orderID st
 // assembles this from tossplace.Client.GetOrder after finding an
 // unrecognized orderKey.
 type CreatePOSNativeOrderInput struct {
-	MenuItemName   string
-	CategoryName   string
-	Amount         int64
+	MenuItemName string
+	CategoryName string
+	Amount       int64
+	// OrderedAt is when the POS opened the order (TossPlace's openedAt),
+	// which the admin screens show as the order time. Zero when TossPlace
+	// did not report it, in which case the row falls back to NOW().
+	OrderedAt      time.Time
 	ApprovedAt     time.Time
 	VAT            int64
 	SuppliedAmount int64
@@ -533,10 +537,11 @@ func (r *Repository) CreatePOSNativeOrder(ctx context.Context, input CreatePOSNa
 		INSERT INTO payment_orders (
 			id, menu_item_name, category_name, table_number, amount,
 			status, payment_method, approved_at, vat, supplied_amount, tax_free_amount,
-			pos_sync_status, pos_order_id
-		) VALUES ($1, $2, $3, '', $4, 'DONE', 'POS', $5, $6, $7, 0, 'SUCCEEDED', $8)
+			pos_sync_status, pos_order_id, created_at
+		) VALUES ($1, $2, $3, '', $4, 'DONE', 'POS', $5, $6, $7, 0, 'SUCCEEDED', $8, COALESCE($9, NOW()))
 	`, orderID, input.MenuItemName, input.CategoryName, input.Amount,
-		input.ApprovedAt, input.VAT, input.SuppliedAmount, input.POSOrderID); err != nil {
+		input.ApprovedAt, input.VAT, input.SuppliedAmount, input.POSOrderID,
+		nullableTime(input.OrderedAt)); err != nil {
 		return PaymentOrder{}, classifyError(err)
 	}
 
@@ -1297,4 +1302,14 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 	}
 
 	return stats, nil
+}
+
+// nullableTime turns a zero time into a SQL NULL so a COALESCE default can
+// take over — TossPlace does not always report when a POS-native order was
+// opened.
+func nullableTime(value time.Time) any {
+	if value.IsZero() {
+		return nil
+	}
+	return value
 }
