@@ -4,9 +4,14 @@ import { POSAPIClient } from "./api-client";
 import { syncClaim, type TableMappings } from "./order-sync";
 import { processNextClaim } from "./processor";
 import { ensureWorkerGlobal } from "./runtime-global";
+import { TableMappingCache } from "./table-mappings";
+import { processTableSync } from "./table-sync";
 
 const POLL_INTERVAL_MS = 3_000;
 const processedKey = (orderID: string) => `lam:processed-order:${orderID}`;
+
+// 폴링 주기마다 매핑을 다시 받지 않도록 폴링 루프 밖에서 캐시를 유지한다.
+const mappingCache = new TableMappingCache();
 
 // Hardcoded independently of the plugin's own settings screen so a crash
 // that happens before those settings can even be read (SDK import,
@@ -73,10 +78,10 @@ async function configureSettings(sdk: PosPluginSdk): Promise<void> {
     {
       id: "tableMappings",
       type: "text",
-      label: "테이블 매핑 JSON (선택)",
+      label: "예비 테이블 매핑 JSON (서버 연결을 못 쓸 때만 사용)",
       required: false,
       default: "{}",
-      placeholder: "{\"T-01\": 12345}"
+      placeholder: "평소에는 비워 둡니다. 예: {\"T-01\": 12345}"
     }
   ]);
 }
@@ -89,27 +94,39 @@ async function runOnce(sdk: PosPluginSdk): Promise<void> {
     return;
   }
 
-  const mappings = parseTableMappings(settings.tableMappings);
+  const fallbackMappings = parseTableMappings(settings.tableMappings);
   const api = new POSAPIClient(sdk.http, baseURL, token);
-  await processNextClaim({
-    claim: () => api.claim(),
-    complete: (orderID, claimToken, posOrderID) => api.complete(orderID, claimToken, posOrderID),
-    fail: (orderID, claimToken, message) => api.fail(orderID, claimToken, message),
-    getProcessedPOSOrderID: (orderID) => sdk.secureStore.get(processedKey(orderID)),
-    rememberProcessedPOSOrderID: (orderID, posOrderID) =>
-      sdk.secureStore.set(processedKey(orderID), posOrderID),
-    syncToPOS: (claim) =>
-      syncClaim(
-        {
-          getTables: () => sdk.table.getTables(),
-          getCatalog: (id) => sdk.catalog.getCatalog(id),
-          add: (order) => sdk.order.add(order),
-          addMenu: (orderID, order) => sdk.order.addMenu(orderID, order)
-        },
-        claim,
-        mappings
-      )
-  });
+
+  try {
+    await processNextClaim({
+      claim: () => api.claim(),
+      complete: (orderID, claimToken, posOrderID) => api.complete(orderID, claimToken, posOrderID),
+      fail: (orderID, claimToken, message) => api.fail(orderID, claimToken, message),
+      getProcessedPOSOrderID: (orderID) => sdk.secureStore.get(processedKey(orderID)),
+      rememberProcessedPOSOrderID: (orderID, posOrderID) =>
+        sdk.secureStore.set(processedKey(orderID), posOrderID),
+      syncToPOS: async (claim) =>
+        syncClaim(
+          {
+            getTables: () => sdk.table.getTables(),
+            getCatalog: (id) => sdk.catalog.getCatalog(id),
+            add: (order) => sdk.order.add(order),
+            addMenu: (orderID, order) => sdk.order.addMenu(orderID, order)
+          },
+          claim,
+          await mappingCache.resolve(() => api.fetchTableMappings(), fallbackMappings)
+        )
+    });
+  } finally {
+    // 테이블 동기화는 절대 주문 처리를 막지 않는다. processTableSync는 예외를 던지지 않는다.
+    await processTableSync({
+      claimTableSync: () => api.claimTableSync(),
+      completeTableSync: (syncID, snapshot) => api.completeTableSync(syncID, snapshot),
+      failTableSync: (syncID, message) => api.failTableSync(syncID, message),
+      getHalls: () => sdk.table.getHalls(),
+      getTables: () => sdk.table.getTables()
+    });
+  }
 }
 
 async function start(): Promise<void> {

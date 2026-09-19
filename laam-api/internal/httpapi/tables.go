@@ -4,71 +4,197 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/her9797/laam/laam-api/internal/config"
+	"github.com/her9797/laam/laam-api/internal/store"
 )
 
 type adminTable struct {
-	ID     string `json:"id"`
-	Area   string `json:"area"`
-	Number int    `json:"number"`
-	QrURL  string `json:"qrUrl"`
+	ID            string     `json:"id"`
+	Area          string     `json:"area"`
+	Number        int        `json:"number"`
+	QrURL         string     `json:"qrUrl"`
+	POSTableID    *int64     `json:"posTableId"`
+	POSTableTitle *string    `json:"posTableTitle"`
+	HallName      *string    `json:"hallName"`
+	LinkedAt      *time.Time `json:"linkedAt"`
 }
 
 type adminTablesResponse struct {
-	Tables []adminTable `json:"tables"`
+	Tables        []adminTable        `json:"tables"`
+	POSOnlyTables []store.POSTable    `json:"posOnlyTables"`
+	LastSyncedAt  *time.Time          `json:"lastSyncedAt"`
+	PendingSync   *store.POSTableSync `json:"pendingSync"`
 }
 
-// tableLayout mirrors laam-web/app/qr/enter/route.ts's normalizeQrTable,
-// which caps "B" tables at 5 and "T" tables at 12 — this endpoint only
-// exposes the subset of table numbers currently in physical use (B-01..05,
-// T-01..10).
-var tableLayout = []struct {
-	area  string
-	count int
-}{
-	{"B", 5},
-	{"T", 10},
+type createAdminTableRequest struct {
+	POSTableID int64  `json:"posTableId"`
+	ID         string `json:"id"`
 }
 
-func registerTableRoutes(mux *http.ServeMux, cfg config.Config) {
+type updateTablePOSLinkRequest struct {
+	POSTableID *int64 `json:"posTableId"`
+}
+
+func registerTableRoutes(mux *http.ServeMux, repository *store.Repository, cfg config.Config) {
 	mux.HandleFunc("/api/v1/admin/tables", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
 		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
 			return
 		}
+		if !requireQrConfig(w, cfg) {
+			return
+		}
 
-		if r.Method != http.MethodGet {
+		switch r.Method {
+		case http.MethodGet:
+			overview, err := repository.GetTableLinkOverview(r.Context())
+			if err != nil {
+				writeStoreError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, adminTablesResponse{
+				Tables:        adminTables(cfg, overview.Tables),
+				POSOnlyTables: overview.POSOnlyTables,
+				LastSyncedAt:  overview.LastSyncedAt,
+				PendingSync:   overview.PendingSync,
+			})
+		case http.MethodPost:
+			var payload createAdminTableRequest
+			if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
+				writeError(w, http.StatusBadRequest, errors.New("invalid table request"))
+				return
+			}
+			if payload.POSTableID <= 0 {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("%w: posTableId is required", store.ErrInvalidInput))
+				return
+			}
+			table, err := repository.CreateQrTable(r.Context(), payload.ID, payload.POSTableID)
+			if err != nil {
+				writeStoreError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusCreated, adminTableOf(cfg, table))
+		default:
+			writeMethodNotAllowed(w)
+		}
+	}))
+
+	mux.HandleFunc("/api/v1/admin/tables/", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
+		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
+			return
+		}
+
+		path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/admin/tables/"), "/")
+
+		if path == "pos-sync" {
+			if r.Method != http.MethodPost {
+				writeMethodNotAllowed(w)
+				return
+			}
+			sync, created, err := repository.RequestPOSTableSync(r.Context())
+			if err != nil {
+				writeStoreError(w, err)
+				return
+			}
+			status := http.StatusOK
+			if created {
+				status = http.StatusCreated
+			}
+			writeJSON(w, status, sync)
+			return
+		}
+
+		if syncID, ok := strings.CutPrefix(path, "pos-sync/"); ok {
+			if r.Method != http.MethodGet {
+				writeMethodNotAllowed(w)
+				return
+			}
+			if syncID == "" || strings.Contains(syncID, "/") {
+				http.NotFound(w, r)
+				return
+			}
+			sync, err := repository.GetPOSTableSync(r.Context(), syncID)
+			if err != nil {
+				writeStoreError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, sync)
+			return
+		}
+
+		qrTableID, ok := strings.CutSuffix(path, "/pos-link")
+		if !ok || qrTableID == "" || strings.Contains(qrTableID, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPatch {
 			writeMethodNotAllowed(w)
 			return
 		}
-
-		if cfg.QRSigningSecret == "" || cfg.CustomerWebBaseURL == "" {
-			writeError(w, http.StatusInternalServerError, errors.New("qr signing secret or customer web base url is not configured"))
+		if !requireQrConfig(w, cfg) {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, adminTablesResponse{Tables: buildAdminTables(cfg)})
+		var payload updateTablePOSLinkRequest
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
+			writeError(w, http.StatusBadRequest, errors.New("invalid POS link request"))
+			return
+		}
+		if payload.POSTableID != nil && *payload.POSTableID <= 0 {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("%w: posTableId must be positive or null", store.ErrInvalidInput))
+			return
+		}
+
+		table, err := repository.LinkQrTablePOSTable(r.Context(), qrTableID, payload.POSTableID)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, adminTableOf(cfg, table))
 	}))
 }
 
-func buildAdminTables(cfg config.Config) []adminTable {
-	var tables []adminTable
-	for _, layout := range tableLayout {
-		for number := 1; number <= layout.count; number++ {
-			id := fmt.Sprintf("%s-%02d", layout.area, number)
-			sig := signQrTable(cfg.QRSigningSecret, id)
-			tables = append(tables, adminTable{
-				ID:     id,
-				Area:   layout.area,
-				Number: number,
-				QrURL:  fmt.Sprintf("%s/qr/enter?table=%s&sig=%s", cfg.CustomerWebBaseURL, id, sig),
-			})
-		}
+// requireQrConfig guards the responses that carry a signed QR URL. Signing
+// with an empty secret would hand out QR codes laam-web rejects, so the
+// endpoint reports a server misconfiguration instead.
+func requireQrConfig(w http.ResponseWriter, cfg config.Config) bool {
+	if cfg.QRSigningSecret == "" || cfg.CustomerWebBaseURL == "" {
+		writeError(w, http.StatusInternalServerError, errors.New("qr signing secret or customer web base url is not configured"))
+		return false
 	}
-	return tables
+	return true
+}
+
+func adminTables(cfg config.Config, tables []store.QrTable) []adminTable {
+	out := make([]adminTable, 0, len(tables))
+	for _, table := range tables {
+		out = append(out, adminTableOf(cfg, table))
+	}
+	return out
+}
+
+func adminTableOf(cfg config.Config, table store.QrTable) adminTable {
+	return adminTable{
+		ID:            table.ID,
+		Area:          table.Area,
+		Number:        table.Number,
+		QrURL:         qrTableURL(cfg, table.ID),
+		POSTableID:    table.POSTableID,
+		POSTableTitle: table.POSTableTitle,
+		HallName:      table.HallName,
+		LinkedAt:      table.LinkedAt,
+	}
+}
+
+func qrTableURL(cfg config.Config, id string) string {
+	return fmt.Sprintf("%s/qr/enter?table=%s&sig=%s", cfg.CustomerWebBaseURL, id, signQrTable(cfg.QRSigningSecret, id))
 }
 
 // signQrTable matches laam-web/lib/auth.ts's createQrTableSignature exactly:

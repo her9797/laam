@@ -131,6 +131,10 @@ func (r *Repository) CreatePaymentOrder(ctx context.Context, menuItemID string, 
 	}
 	defer tx.Rollback(ctx)
 
+	if err := ensureOrderTableLinked(ctx, tx, strings.TrimSpace(tableNumber)); err != nil {
+		return PaymentOrder{}, err
+	}
+
 	var itemName string
 	var categoryName string
 	var price string

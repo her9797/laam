@@ -30,6 +30,21 @@ type confirmPaymentRequest struct {
 	Amount     int64  `json:"amount"`
 }
 
+// writeCreateOrderError adds the machine-readable code the customer web
+// needs to tell "this table is not connected to the POS yet" apart from
+// every other rejected order, since only that one asks the guest to call
+// staff instead of retrying.
+func writeCreateOrderError(w http.ResponseWriter, err error) {
+	if errors.Is(err, store.ErrTableNotLinked) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": store.ErrTableNotLinked.Error(),
+			"code":  "table_not_linked",
+		})
+		return
+	}
+	writeStoreError(w, err)
+}
+
 // registerPaymentRoutes takes broadcaster so a completed sale can signal
 // the admin web the same way a new customer request does (see
 // sendNewOrderBroadcastAsync in router.go). It is safe to pass an
@@ -55,7 +70,7 @@ func registerPaymentRoutes(mux *http.ServeMux, repository *store.Repository, cfg
 
 		order, err := repository.CreatePaymentOrder(r.Context(), payload.MenuItemID, payload.TableNumber, payload.RequestNote, payload.OptionChoices)
 		if err != nil {
-			writeStoreError(w, err)
+			writeCreateOrderError(w, err)
 			return
 		}
 		if cfg.POSOrderProvider == "plugin" {
@@ -89,7 +104,7 @@ func registerPaymentRoutes(mux *http.ServeMux, repository *store.Repository, cfg
 
 		order, err := repository.CreatePaymentOrder(r.Context(), payload.MenuItemID, payload.TableNumber, payload.RequestNote, payload.OptionChoices)
 		if err != nil {
-			writeStoreError(w, err)
+			writeCreateOrderError(w, err)
 			return
 		}
 		writeJSON(w, http.StatusCreated, order)
@@ -210,6 +225,7 @@ func registerPaymentRoutes(mux *http.ServeMux, repository *store.Repository, cfg
 	}))
 
 	registerPOSPluginRoutes(mux, repository, cfg, broadcaster)
+	registerPOSPluginTableRoutes(mux, repository, cfg)
 }
 
 func requirePaymentAuth(w http.ResponseWriter, r *http.Request, token string) bool {
