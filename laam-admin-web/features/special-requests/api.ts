@@ -1,5 +1,4 @@
 import { fetchJson } from "@/lib/api/fetch-json";
-import { resolveCalendarDateRange } from "@/lib/date-range";
 
 import type { SpecialRequest, SpecialRequestListQuery, SpecialRequestPageResult } from "./model";
 
@@ -30,11 +29,9 @@ export function fetchSpecialRequestsPage(
     params.set("q", query.search);
   }
 
-  const range = resolveCalendarDateRange(query.dateFrom, query.dateTo);
-  if (range.ok) {
-    params.set("from", range.from.toISOString());
-    params.set("to", range.to.toISOString());
-  }
+  // No `from`/`to`: this screen lists every special request, all-time. The
+  // endpoint still accepts the bounds — see `features/requests/api.ts`, which
+  // does send them — but this feature never does.
 
   return fetchJson<SpecialRequestPageResult>(`${SPECIAL_REQUESTS_PATH}?${params.toString()}`, {
     method: "GET",

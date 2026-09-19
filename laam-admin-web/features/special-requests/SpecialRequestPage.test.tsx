@@ -15,8 +15,7 @@ const mutateMock = vi.fn();
 const refetchMock = vi.fn();
 
 vi.mock("./queries", () => ({
-  useSpecialRequestsPageQuery: (query: unknown, enabled: unknown) =>
-    useSpecialRequestsPageQueryMock(query, enabled),
+  useSpecialRequestsPageQuery: (query: unknown) => useSpecialRequestsPageQueryMock(query),
   useDeleteSpecialRequestMutation: () => useDeleteSpecialRequestMutationMock(),
 }));
 
@@ -80,8 +79,8 @@ function renderWithQueryClient(ui: ReactElement) {
  */
 async function useTheRealSpecialRequestsPageQuery() {
   const actual = await vi.importActual<typeof import("./queries")>("./queries");
-  function useRealSpecialRequestsPageQuery(listQuery: SpecialRequestListQuery, enabled: boolean) {
-    return actual.useSpecialRequestsPageQuery(listQuery, enabled);
+  function useRealSpecialRequestsPageQuery(listQuery: SpecialRequestListQuery) {
+    return actual.useSpecialRequestsPageQuery(listQuery);
   }
   useSpecialRequestsPageQueryMock.mockImplementation(useRealSpecialRequestsPageQuery);
 }
@@ -272,23 +271,42 @@ describe("SpecialRequestPage", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
-  it("requests the default query (no gender, empty search, createdAt desc, page 1, a 7-day date range) on first render", () => {
+  it("requests the default query (no gender, empty search, createdAt desc, page 1) on first render", () => {
     render(<SpecialRequestPage />);
 
-    expect(useSpecialRequestsPageQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        page: 1,
-        pageSize: 10,
-        gender: undefined,
-        search: "",
-        sort: "createdAt",
-        order: "desc",
-      }),
-      true,
-    );
-    const [lastQuery] = useSpecialRequestsPageQueryMock.mock.calls.at(-1) as [{ dateFrom: string; dateTo: string }];
-    expect(lastQuery.dateFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(lastQuery.dateTo).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(useSpecialRequestsPageQueryMock).toHaveBeenLastCalledWith({
+      page: 1,
+      pageSize: 10,
+      gender: undefined,
+      search: "",
+      sort: "createdAt",
+      order: "desc",
+    });
+  });
+
+  // This screen lists every special request, all-time: the date filter was
+  // removed, so neither input may render any more.
+  it("renders no date-range inputs", () => {
+    render(<SpecialRequestPage />);
+
+    expect(screen.queryByLabelText("시작일")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("종료일")).not.toBeInTheDocument();
+    expect(document.querySelectorAll('input[type="date"]')).toHaveLength(0);
+  });
+
+  // The old mount effect filled in a default 7-day range and the list was
+  // held behind `enabled` until it landed. Rows must now load on the very
+  // first render, and the request must carry no date bound at all.
+  it("loads the list immediately and sends no from/to bound", async () => {
+    await useTheRealSpecialRequestsPageQuery();
+    vi.mocked(fetchSpecialRequestsPage).mockResolvedValue(pageFixture(ITEMS));
+
+    renderWithQueryClient(<SpecialRequestPage />);
+
+    expect(await screen.findByText("홍길동")).toBeInTheDocument();
+    const [listQuery] = vi.mocked(fetchSpecialRequestsPage).mock.calls[0];
+    expect(listQuery).not.toHaveProperty("dateFrom");
+    expect(listQuery).not.toHaveProperty("dateTo");
   });
 
   it("shows the original empty state when the result is empty with no active filter", () => {
@@ -444,7 +462,6 @@ describe("SpecialRequestPage", () => {
 
     expect(useSpecialRequestsPageQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ search: "홍길동", page: 1 }),
-      true,
     );
     expect(window.location.search).not.toContain("홍길동");
     expect(pushStateSpy).not.toHaveBeenCalled();
@@ -492,7 +509,6 @@ describe("SpecialRequestPage", () => {
 
     expect(useSpecialRequestsPageQueryMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ page: 2 }),
-      true,
     );
   });
 });

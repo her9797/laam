@@ -23,8 +23,6 @@ const QUERY: SpecialRequestListQuery = {
   pageSize: 10,
   gender: undefined,
   search: "",
-  dateFrom: "2026-01-01",
-  dateTo: "2026-01-10",
   sort: "createdAt",
   order: "desc",
 };
