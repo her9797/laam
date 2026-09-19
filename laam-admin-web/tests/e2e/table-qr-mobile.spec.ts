@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import type { AdminTable } from "@/features/tables/model";
+import type { AdminTable, AdminTablesData, PosTable } from "@/features/tables/model";
 
 import { loginAsAdmin, mockDashboardData } from "./fixtures";
 
@@ -19,11 +19,25 @@ const VIEWPORTS = [
   { width: 1024, height: 768 },
 ];
 
-/** The fixed physical layout `features/tables/model.ts` documents: B-01..05, T-01..10. */
+/**
+ * The 15-table layout the QR grid has always shown (B-01..05, T-01..10).
+ * The first T table is left unlinked so the POS panel renders both row
+ * states — linked and "needs linking" — plus its warning banner.
+ */
 function buildTables(): AdminTable[] {
   const buildTable = (area: AdminTable["area"], number: number): AdminTable => {
     const id = `${area}-${String(number).padStart(2, "0")}`;
-    return { id, area, number, qrUrl: `https://example.com/qr/enter?table=${id}&sig=e2e` };
+    const linked = !(area === "T" && number === 1);
+    return {
+      id,
+      area,
+      number,
+      qrUrl: `https://example.com/qr/enter?table=${id}&sig=e2e`,
+      posTableId: linked ? 100 + number : null,
+      posTableTitle: linked ? `${number}번 테이블` : null,
+      hallName: linked ? "1층 홀" : null,
+      linkedAt: linked ? "2026-09-19T00:00:00Z" : null,
+    };
   };
   return [
     ...Array.from({ length: 5 }, (_, index) => buildTable("B", index + 1)),
@@ -31,10 +45,31 @@ function buildTables(): AdminTable[] {
   ];
 }
 
-/** Mocks the table list route (`GET /api/admin/tables`, see `features/tables/api.ts`). */
+/** One POS table with no QR table of its own, so the POS-only section has a row. */
+function buildPosOnlyTables(): PosTable[] {
+  return [
+    {
+      posTableId: 900,
+      title: "룸1",
+      hallId: 2,
+      hallName: "2층 홀",
+      capacity: 6,
+      syncedAt: "2026-09-19T00:00:00Z",
+      qrTableId: null,
+    },
+  ];
+}
+
+/** Mocks the table screen route (`GET /api/admin/tables`, see `features/tables/api.ts`). */
 async function mockAdminTables(page: Page, tables: AdminTable[]): Promise<void> {
+  const payload: AdminTablesData = {
+    tables,
+    posOnlyTables: buildPosOnlyTables(),
+    lastSyncedAt: "2026-09-19T00:00:00Z",
+    pendingSync: null,
+  };
   await page.route("**/api/admin/tables", async (route) => {
-    await route.fulfill({ json: { tables } });
+    await route.fulfill({ json: payload });
   });
 }
 

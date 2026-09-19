@@ -147,8 +147,13 @@ func resetServerWithConfig(t *testing.T, cfg config.Config) http.Handler {
 	}
 
 	ctx := context.Background()
-	if _, err := testPool.Exec(ctx, `TRUNCATE payment_orders, menu_item_images, menu_items, menu_categories, request_guides, notices, song_playback_queue, customer_requests, special_requests, system_error_logs, store_profile RESTART IDENTITY CASCADE`); err != nil {
+	if _, err := testPool.Exec(ctx, `TRUNCATE payment_orders, menu_item_images, menu_items, menu_categories, request_guides, notices, song_playback_queue, customer_requests, special_requests, system_error_logs, store_profile, pos_table_sync_requests, pos_tables, qr_tables RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("truncate tables: %v", err)
+	}
+	// qr_tables is seeded only while empty, so re-seeding after the truncate
+	// restores the fixed B-01..T-10 layout every test starts from.
+	if err := testRepo.SeedQrTables(ctx); err != nil {
+		t.Fatalf("re-seed qr_tables: %v", err)
 	}
 	if _, err := testPool.Exec(ctx, `
 		INSERT INTO store_profile (id, name, subtitle, address, song_request_copy, request_copy, event_copy)

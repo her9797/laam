@@ -35,6 +35,14 @@ laam-api
 - `POST /api/v1/pos-plugin/orders/claim`
 - `POST /api/v1/pos-plugin/orders/{orderId}/complete`
 - `POST /api/v1/pos-plugin/orders/{orderId}/fail`
+- `POST /api/v1/pos-plugin/tables/claim`
+- `POST /api/v1/pos-plugin/tables/{syncId}/complete`
+- `POST /api/v1/pos-plugin/tables/{syncId}/fail`
+- `GET /api/v1/pos-plugin/table-mappings`
+- `GET|POST /api/v1/admin/tables`
+- `POST /api/v1/admin/tables/pos-sync`
+- `GET /api/v1/admin/tables/pos-sync/{syncId}`
+- `PATCH /api/v1/admin/tables/{qrTableId}/pos-link`
 - `POST /api/v1/admin/song-requests/{requestId}/approve`
 - `GET /api/v1/admin/song-player/queue`
 - `PATCH /api/v1/admin/song-player/queue/{queueId}/status`
@@ -93,6 +101,10 @@ POS_PLUGIN_API_TOKEN=플러그인과_API가_공유할_별도의_긴_임의값
 ```
 
 `plugin` 모드에서는 Open API 주문 생성을 건너뛰고 주문을 `PENDING`으로 보관합니다. POS 플러그인이 전용 Bearer 토큰으로 주문 한 건을 가져가 실제 토스 테이블을 찾은 다음, 빈 테이블에는 신규 주문을 만들고 진행 중 주문이 있는 테이블에는 메뉴만 추가합니다. 플러그인 설치 전에는 이 모드를 켜지 마세요. 설정과 패키징 방법은 [`../laam-pos-plugin/README.md`](../laam-pos-plugin/README.md)를 참고합니다.
+
+QR 테이블(`T-01`, `B-03`)과 POS 테이블(토스 내부 숫자 id)의 연결은 관리자 테이블 화면에서 관리합니다. 관리자가 `POST /api/v1/admin/tables/pos-sync`로 동기화를 요청하면 POS 플러그인이 `POST /api/v1/pos-plugin/tables/claim`으로 가져가 매장 테이블 목록을 올리고, 서버가 기존 스냅샷을 통째로 교체한 뒤 이름 규칙(`t11`·`테이블 11` → `T-11`, `바3`·`바자리3` → `B-03`)으로 아직 연결되지 않은 테이블을 자동 연결합니다. 후보가 둘 이상이면 연결하지 않고 관리자가 지정합니다. 30초 안에 플러그인이 응답하지 않으면 요청은 `TIMED_OUT`이 됩니다.
+
+연결이 하나라도 있으면 주문 생성(`POST /api/v1/orders`, `POST /api/v1/payments/orders`)은 연결된 QR 테이블에서만 허용하고, 그 외에는 `400`과 `{"error": "table is not linked to POS", "code": "table_not_linked"}`를 반환합니다. 연결이 하나도 없으면 이 검사를 건너뛰므로 플러그인 배포 전 동작은 그대로입니다. 일반·특별 요청과 노래 신청은 이 검사의 영향을 받지 않습니다.
 
 토스플레이스가 설정되어 있으면 API 시작 시 POS 카탈로그를 한 번 동기화합니다. 이후 변경 사항은 관리자 메뉴의 `다시 동기화` 버튼으로 반영합니다.
 

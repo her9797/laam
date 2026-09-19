@@ -18,6 +18,10 @@ var (
 	ErrInvalidInput  = errors.New("invalid input")
 	ErrAlreadyExists = errors.New("resource already exists")
 	ErrNotFound      = errors.New("resource not found")
+	// ErrTableNotLinked is its own sentinel because the customer web needs
+	// to tell "this table is not connected to the POS yet" apart from every
+	// other bad-request reason, so it can show the operator-facing message.
+	ErrTableNotLinked = errors.New("table is not linked to POS")
 )
 
 // idSeq backstops nextID's timestamp against two calls landing in the same
@@ -416,7 +420,75 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO notices (id, text, is_visible, sort_order)
 VALUES ('secret-coupon-progress', '쉿크릿 쿠폰 발견 갯수 (0/5)', true, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM notices))
 ON CONFLICT (id) DO NOTHING;
+CREATE TABLE IF NOT EXISTS qr_tables (
+  id TEXT PRIMARY KEY,
+  area TEXT NOT NULL,
+  number INTEGER NOT NULL,
+  sort_order INTEGER NOT NULL,
+  pos_table_id BIGINT UNIQUE,
+  linked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_qr_tables_area_number ON qr_tables (area, number);
+CREATE TABLE IF NOT EXISTS pos_tables (
+  pos_table_id BIGINT PRIMARY KEY,
+  title TEXT NOT NULL,
+  hall_id BIGINT,
+  hall_name TEXT,
+  capacity INTEGER,
+  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pos_tables_title ON pos_tables (title);
+CREATE TABLE IF NOT EXISTS pos_table_sync_requests (
+  id TEXT PRIMARY KEY,
+  status TEXT NOT NULL CHECK (status IN ('PENDING', 'RUNNING', 'DONE', 'FAILED', 'TIMED_OUT')),
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  linked_count INTEGER NOT NULL DEFAULT 0,
+  unlinked_count INTEGER NOT NULL DEFAULT 0,
+  pos_only_count INTEGER NOT NULL DEFAULT 0,
+  error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pos_table_sync_requests_status ON pos_table_sync_requests (status, requested_at DESC);
 `)
+	if err != nil {
+		return err
+	}
+	return r.SeedQrTables(ctx)
+}
+
+// qrTableSeedSQL inserts the fixed QR table layout the store uses today
+// (B-01..B-05, T-01..T-10 — the same set laam-web's /qr/enter accepts). It
+// only runs while qr_tables is empty, so operator edits, links and tables
+// added later are never reset or duplicated.
+const qrTableSeedSQL = `
+INSERT INTO qr_tables (id, area, number, sort_order)
+SELECT seed.id, seed.area, seed.number, seed.sort_order
+FROM (VALUES
+  ('B-01', 'B', 1, 1),
+  ('B-02', 'B', 2, 2),
+  ('B-03', 'B', 3, 3),
+  ('B-04', 'B', 4, 4),
+  ('B-05', 'B', 5, 5),
+  ('T-01', 'T', 1, 6),
+  ('T-02', 'T', 2, 7),
+  ('T-03', 'T', 3, 8),
+  ('T-04', 'T', 4, 9),
+  ('T-05', 'T', 5, 10),
+  ('T-06', 'T', 6, 11),
+  ('T-07', 'T', 7, 12),
+  ('T-08', 'T', 8, 13),
+  ('T-09', 'T', 9, 14),
+  ('T-10', 'T', 10, 15)
+) AS seed(id, area, number, sort_order)
+WHERE NOT EXISTS (SELECT 1 FROM qr_tables);
+`
+
+// SeedQrTables applies qrTableSeedSQL. EnsureSchema already calls it; it is
+// separate so the initial data is not tangled into the DDL statement.
+func (r *Repository) SeedQrTables(ctx context.Context) error {
+	_, err := r.pool.Exec(ctx, qrTableSeedSQL)
 	return err
 }
 
