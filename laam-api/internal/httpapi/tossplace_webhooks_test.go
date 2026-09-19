@@ -447,3 +447,62 @@ func TestTossPlaceWebhook_AcceptsTimestampWithoutTimezone(t *testing.T) {
 		t.Fatalf("Status = %q, want DONE", order.Status)
 	}
 }
+
+// A POS-native order's created_at must come from TossPlace's openedAt (the
+// moment the POS opened the order), not from when this webhook arrived —
+// the admin order screens read created_at as the order time.
+func TestTossPlaceWebhook_POSNativeOrderUsesOpenedAtAsCreatedAt(t *testing.T) {
+	tossServer := mockTossPlaceOrderServer(t, "pos-order-100", `{
+		"resultType": "SUCCESS",
+		"success": {
+			"id": "pos-order-100",
+			"source": "POS",
+			"orderState": "COMPLETED",
+			"openedAt": "2026-01-10T11:40:00.000Z",
+			"completedAt": "2026-01-10T12:05:00.000Z",
+			"lineItems": [
+				{
+					"item": {"title": "생맥주", "category": {"title": "맥주"}},
+					"itemPrice": {"priceValue": 6000},
+					"quantity": 1,
+					"optionChoices": []
+				}
+			]
+		}
+	}`)
+	defer tossServer.Close()
+
+	handler := resetServerWithConfig(t, posNativeWebhookTestCfg(t, tossServer.URL))
+
+	body, _ := json.Marshal(map[string]any{
+		"id":        "evt-10",
+		"type":      "order.order.completed.v1",
+		"createdAt": "2026-01-10T12:00:00.000Z",
+		"data": map[string]any{
+			"orderId":     "pos-order-100",
+			"orderKey":    "toss-native-key-2",
+			"orderNumber": "N-10",
+			"source":      "POS",
+			"completedAt": "2026-01-10T12:05:00.000Z",
+		},
+	})
+	rec := tossPlaceWebhookRequest(t, handler, tossPlaceWebhookSecret, body, false)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var createdAt, approvedAt time.Time
+	if err := testPool.QueryRow(t.Context(), `
+		SELECT created_at, approved_at FROM payment_orders WHERE pos_order_id = $1
+	`, "pos-order-100").Scan(&createdAt, &approvedAt); err != nil {
+		t.Fatalf("query created order: %v", err)
+	}
+	wantCreated := time.Date(2026, 1, 10, 11, 40, 0, 0, time.UTC)
+	wantApproved := time.Date(2026, 1, 10, 12, 5, 0, 0, time.UTC)
+	if !createdAt.UTC().Equal(wantCreated) {
+		t.Fatalf("created_at = %s, want %s (openedAt)", createdAt.UTC(), wantCreated)
+	}
+	if !approvedAt.UTC().Equal(wantApproved) {
+		t.Fatalf("approved_at = %s, want %s (completedAt)", approvedAt.UTC(), wantApproved)
+	}
+}

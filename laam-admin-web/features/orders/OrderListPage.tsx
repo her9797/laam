@@ -334,7 +334,7 @@ export function OrderListPage() {
           <Table className="min-w-[60rem]">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-28">{t("columnApprovedAt")}</TableHead>
+                <TableHead className="w-28">{t("columnOrderedAt")}</TableHead>
                 <TableHead className="w-20">{t("common:columnTable")}</TableHead>
                 <TableHead className="w-[18%]">{t("columnMenuItem")}</TableHead>
                 <TableHead>{t("columnRequestNote")}</TableHead>
@@ -348,7 +348,10 @@ export function OrderListPage() {
               {orders.map((order) => (
                 <TableRow key={order.orderId}>
                   <TableCell>
-                    {formatDateTime(order.approvedAt ?? order.createdAt, i18n.language)}
+                    {/* The order time, not the payment time: a POS order carries
+                        TossPlace's openedAt here, and an unpaid order still has
+                        a time to show. The payment time lives on the detail. */}
+                    {formatDateTime(order.createdAt, i18n.language)}
                   </TableCell>
                   <TableCell>{order.tableNumber || "-"}</TableCell>
                   <TableCell title={`${order.menuItemName} (${order.categoryName})`}>

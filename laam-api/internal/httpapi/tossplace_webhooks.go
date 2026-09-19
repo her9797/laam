@@ -181,6 +181,12 @@ func createPOSNativeOrder(ctx context.Context, repository *store.Repository, pos
 	}
 
 	approvedAt := parseTossPlaceWebhookTimestamp(order.CompletedAt)
+	// openedAt is optional in TossPlace's response; leave OrderedAt zero so
+	// the row falls back to NOW() rather than to the completion time.
+	var orderedAt time.Time
+	if order.OpenedAt != "" {
+		orderedAt = parseTossPlaceWebhookTimestamp(order.OpenedAt)
+	}
 	for _, line := range order.LineItems {
 		amount := line.ItemPrice.PriceValue * line.Quantity
 		for _, choice := range line.OptionChoices {
@@ -195,6 +201,7 @@ func createPOSNativeOrder(ctx context.Context, repository *store.Repository, pos
 			MenuItemName:   line.Item.Title,
 			CategoryName:   line.Item.Category.Title,
 			Amount:         amount,
+			OrderedAt:      orderedAt,
 			ApprovedAt:     approvedAt,
 			VAT:            vat,
 			SuppliedAmount: amount - vat,
