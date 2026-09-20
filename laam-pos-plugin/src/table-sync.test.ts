@@ -53,6 +53,23 @@ it("uploads halls and tables only, without any order information", async () => {
   expect(deps.failTableSync).not.toHaveBeenCalled();
 });
 
+it("treats a non-array getHalls() result as no halls, instead of throwing", async () => {
+  // Some stores have no halls (floor/section grouping) configured at all —
+  // seen live, TossPlace's own SDK then resolves getHalls() to `undefined`
+  // rather than `[]`, despite its type declaring Promise<PluginHall[]>.
+  const deps = dependencies({ getHalls: jest.fn().mockResolvedValue(undefined) });
+
+  await expect(processTableSync(deps)).resolves.toBe(true);
+  expect(deps.completeTableSync).toHaveBeenCalledWith("sync-1", {
+    halls: [],
+    tables: [
+      { id: 12345, title: "T01", hallId: 7, capacity: 4 },
+      { id: 12346, title: "바1", hallId: 8, capacity: null }
+    ]
+  });
+  expect(deps.failTableSync).not.toHaveBeenCalled();
+});
+
 it("reports the reason when the POS table snapshot cannot be read", async () => {
   const deps = dependencies({
     getTables: jest.fn().mockRejectedValue(new Error("테이블 API 사용 불가"))
