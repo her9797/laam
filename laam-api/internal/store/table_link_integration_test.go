@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -218,8 +219,8 @@ func TestRepository_CompletePOSTableSync_ReplacesSnapshotAndAutoLinks(t *testing
 	if done.Status != "DONE" {
 		t.Fatalf("Status = %q, want DONE", done.Status)
 	}
-	if done.LinkedCount != 3 || done.UnlinkedCount != 12 || done.POSOnlyCount != 3 {
-		t.Fatalf("counts = (%d, %d, %d), want (3, 12, 3)", done.LinkedCount, done.UnlinkedCount, done.POSOnlyCount)
+	if done.LinkedCount != 3 || done.UnlinkedCount != 0 || done.POSOnlyCount != 3 {
+		t.Fatalf("counts = (%d, %d, %d), want (3, 0, 3)", done.LinkedCount, done.UnlinkedCount, done.POSOnlyCount)
 	}
 	if done.CompletedAt == nil {
 		t.Fatal("CompletedAt = nil, want a timestamp")
@@ -604,5 +605,158 @@ func TestRepository_CreatePaymentOrder_BlocksUnlinkedTableOnlyWhenLinksExist(t *
 	}
 	if _, err := repo.CreatePaymentOrder(ctx, menuItemID, "없는 테이블", "", nil); !errors.Is(err, ErrTableNotLinked) {
 		t.Fatalf("CreatePaymentOrder() for an unknown table error = %v, want ErrTableNotLinked", err)
+	}
+}
+
+// An operator must be able to correct a QR table's own code — the seeded
+// layout guessed wrong, or a table created from POS landed on the wrong
+// number — without losing the POS link it already carries.
+func TestRepository_RenameQrTable_KeepsPOSLink(t *testing.T) {
+	ctx := context.Background()
+	repo := resetDB(t)
+	seedPOSSnapshot(t, ctx, POSTableInput{ID: 401, Title: "바6"})
+
+	if _, err := repo.LinkQrTablePOSTable(ctx, "T-10", ptrInt64(401)); err != nil {
+		t.Fatalf("LinkQrTablePOSTable() error = %v", err)
+	}
+
+	renamed, err := repo.RenameQrTable(ctx, "T-10", "B-06")
+	if err != nil {
+		t.Fatalf("RenameQrTable() error = %v", err)
+	}
+	if renamed.ID != "B-06" || renamed.Area != "B" || renamed.Number != 6 {
+		t.Fatalf("renamed = %+v, want B-06", renamed)
+	}
+	if renamed.POSTableID == nil || *renamed.POSTableID != 401 {
+		t.Fatalf("pos table = %v, want the link to survive the rename", renamed.POSTableID)
+	}
+	if renamed.POSTableTitle == nil || *renamed.POSTableTitle != "바6" {
+		t.Fatalf("pos title = %v, want 바6", renamed.POSTableTitle)
+	}
+	if renamed.LinkedAt == nil {
+		t.Fatalf("linkedAt = nil, want the original link timestamp")
+	}
+
+	if _, err := repo.LinkQrTablePOSTable(ctx, "T-10", nil); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("old id lookup error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestRepository_RenameQrTable_RejectsBadAndDuplicateIDs(t *testing.T) {
+	ctx := context.Background()
+	repo := resetDB(t)
+
+	if _, err := repo.RenameQrTable(ctx, "T-01", "t1"); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("malformed id error = %v, want ErrInvalidInput", err)
+	}
+	if _, err := repo.RenameQrTable(ctx, "T-01", "T-02"); !errors.Is(err, ErrAlreadyExists) {
+		t.Fatalf("duplicate id error = %v, want ErrAlreadyExists", err)
+	}
+	if _, err := repo.RenameQrTable(ctx, "Z-99", "T-20"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown table error = %v, want ErrNotFound", err)
+	}
+
+	// Renaming to its own id is a no-op, not a conflict.
+	same, err := repo.RenameQrTable(ctx, "T-01", "T-01")
+	if err != nil {
+		t.Fatalf("self rename error = %v", err)
+	}
+	if same.ID != "T-01" {
+		t.Fatalf("same = %+v, want T-01", same)
+	}
+}
+
+// The POS is the source of truth for which tables exist: a sync creates a QR
+// table for every POS table whose name converts, and drops QR tables the POS
+// no longer has. Our side only owns the code.
+func TestRepository_CompletePOSTableSync_MirrorsPOSTables(t *testing.T) {
+	ctx := context.Background()
+	repo := resetDB(t)
+
+	// The seeded layout has B-01..B-05 and T-01..T-10; the POS only has three
+	// of them plus a room whose name follows no rule.
+	request, _, err := repo.RequestPOSTableSync(ctx)
+	if err != nil {
+		t.Fatalf("RequestPOSTableSync() error = %v", err)
+	}
+	if _, err := repo.ClaimPOSTableSync(ctx); err != nil {
+		t.Fatalf("ClaimPOSTableSync() error = %v", err)
+	}
+	if err := repo.CompletePOSTableSync(ctx, request.ID, POSTableSnapshotInput{
+		Halls: []POSHallInput{{ID: 1, Name: "1층 홀"}},
+		Tables: []POSTableInput{
+			{ID: 601, Title: "테이블 1", HallID: ptrInt64(1)},
+			{ID: 602, Title: "테이블 2", HallID: ptrInt64(1)},
+			{ID: 611, Title: "바1", HallID: ptrInt64(1)},
+			{ID: 621, Title: "룸 A", HallID: ptrInt64(1)},
+		},
+	}); err != nil {
+		t.Fatalf("CompletePOSTableSync() error = %v", err)
+	}
+
+	overview, err := repo.GetTableLinkOverview(ctx)
+	if err != nil {
+		t.Fatalf("GetTableLinkOverview() error = %v", err)
+	}
+
+	gotIDs := make([]string, 0, len(overview.Tables))
+	for _, table := range overview.Tables {
+		gotIDs = append(gotIDs, table.ID)
+		if table.POSTableID == nil {
+			t.Fatalf("%s has no POS table; unlinked QR tables must be dropped", table.ID)
+		}
+	}
+	want := "B-01,T-01,T-02"
+	if strings.Join(gotIDs, ",") != want {
+		t.Fatalf("tables = %v, want %v", gotIDs, want)
+	}
+
+	// A POS table whose name follows no rule still needs an operator to pick
+	// the code, so it stays in the POS-only list.
+	if len(overview.POSOnlyTables) != 1 || overview.POSOnlyTables[0].Title != "룸 A" {
+		t.Fatalf("posOnlyTables = %+v, want just 룸 A", overview.POSOnlyTables)
+	}
+}
+
+// A code an operator corrected must survive the next sync: the POS table is
+// still there, so the link — and the code we gave it — stays.
+func TestRepository_CompletePOSTableSync_KeepsOperatorCodes(t *testing.T) {
+	ctx := context.Background()
+	repo := resetDB(t)
+
+	snapshot := POSTableSnapshotInput{
+		Halls:  []POSHallInput{{ID: 1, Name: "1층 홀"}},
+		Tables: []POSTableInput{{ID: 701, Title: "바6", HallID: ptrInt64(1)}},
+	}
+	syncOnce := func() {
+		t.Helper()
+		request, _, err := repo.RequestPOSTableSync(ctx)
+		if err != nil {
+			t.Fatalf("RequestPOSTableSync() error = %v", err)
+		}
+		if _, err := repo.ClaimPOSTableSync(ctx); err != nil {
+			t.Fatalf("ClaimPOSTableSync() error = %v", err)
+		}
+		if err := repo.CompletePOSTableSync(ctx, request.ID, snapshot); err != nil {
+			t.Fatalf("CompletePOSTableSync() error = %v", err)
+		}
+	}
+
+	syncOnce()
+	renamed, err := repo.RenameQrTable(ctx, "B-06", "R-01")
+	if err != nil {
+		t.Fatalf("RenameQrTable() error = %v", err)
+	}
+	if renamed.ID != "R-01" {
+		t.Fatalf("renamed = %+v, want R-01", renamed)
+	}
+
+	syncOnce()
+	overview, err := repo.GetTableLinkOverview(ctx)
+	if err != nil {
+		t.Fatalf("GetTableLinkOverview() error = %v", err)
+	}
+	if len(overview.Tables) != 1 || overview.Tables[0].ID != "R-01" {
+		t.Fatalf("tables = %+v, want the operator code R-01 to survive", overview.Tables)
 	}
 }

@@ -43,6 +43,10 @@ type updateTablePOSLinkRequest struct {
 	POSTableID *int64 `json:"posTableId"`
 }
 
+type renameQrTableRequest struct {
+	ID string `json:"id"`
+}
+
 func registerTableRoutes(mux *http.ServeMux, repository *store.Repository, cfg config.Config) {
 	mux.HandleFunc("/api/v1/admin/tables", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
 		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
@@ -126,6 +130,37 @@ func registerTableRoutes(mux *http.ServeMux, repository *store.Repository, cfg c
 				return
 			}
 			writeJSON(w, http.StatusOK, sync)
+			return
+		}
+
+		// PATCH /admin/tables/{id} renames the QR table itself. The seeded
+		// layout and the id derived from a POS table name are guesses, so an
+		// operator corrects one here; the POS link rides along unchanged.
+		if renameID, ok := strings.CutSuffix(path, "/code"); ok {
+			if renameID == "" || strings.Contains(renameID, "/") {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodPatch {
+				writeMethodNotAllowed(w)
+				return
+			}
+			if !requireQrConfig(w, cfg) {
+				return
+			}
+
+			var payload renameQrTableRequest
+			if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&payload); err != nil {
+				writeError(w, http.StatusBadRequest, errors.New("invalid table code request"))
+				return
+			}
+
+			table, err := repository.RenameQrTable(r.Context(), renameID, payload.ID)
+			if err != nil {
+				writeStoreError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, adminTableOf(cfg, table))
 			return
 		}
 
