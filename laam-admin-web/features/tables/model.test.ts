@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { countUnlinkedTables, formatPosTableSummary, groupTablesByArea } from "./model";
+import {
+  countUnlinkedTables,
+  formatPosTableSummary,
+  groupTablesByArea,
+  linkedTables,
+  normalizeTableCode,
+} from "./model";
 import type { AdminTable } from "./model";
 
 /** An unlinked QR table — the shape `GET /admin/tables` returns per entry. */
@@ -91,5 +97,27 @@ describe("formatPosTableSummary", () => {
 
   it("returns an empty string when there is no title", () => {
     expect(formatPosTableSummary(null, "1층 홀")).toBe("");
+  });
+});
+
+describe("linkedTables", () => {
+  it("keeps only the tables a POS table is linked to", () => {
+    const tables = [
+      buildTable({ id: "B-01", area: "B", number: 1, posTableId: 11 }),
+      buildTable({ id: "T-01", area: "T", number: 1 }),
+      buildTable({ id: "T-02", area: "T", number: 2, posTableId: 12 }),
+    ];
+
+    expect(linkedTables(tables).map((table) => table.id)).toEqual(["B-01", "T-02"]);
+  });
+});
+
+describe("normalizeTableCode", () => {
+  it("uppercases and trims what the operator typed", () => {
+    expect(normalizeTableCode("  b-06 ")).toBe("B-06");
+  });
+
+  it("leaves an already-normalized code untouched", () => {
+    expect(normalizeTableCode("T-01")).toBe("T-01");
   });
 });

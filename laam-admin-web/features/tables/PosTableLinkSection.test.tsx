@@ -19,14 +19,17 @@ type MutateOptions = {
 const syncMutate = vi.fn();
 const linkMutate = vi.fn();
 const createMutate = vi.fn();
+const codeMutate = vi.fn();
 const syncPending = { current: false };
 const linkPending = { current: false };
 const createPending = { current: false };
+const codePending = { current: false };
 
 vi.mock("./queries", () => ({
   usePosTableSyncMutation: () => ({ mutate: syncMutate, isPending: syncPending.current }),
   useUpdateTablePosLinkMutation: () => ({ mutate: linkMutate, isPending: linkPending.current }),
   useCreateQrTableMutation: () => ({ mutate: createMutate, isPending: createPending.current }),
+  useUpdateTableCodeMutation: () => ({ mutate: codeMutate, isPending: codePending.current }),
 }));
 
 import { PosTableLinkSection } from "./PosTableLinkSection";
@@ -109,9 +112,11 @@ describe("PosTableLinkSection", () => {
     syncMutate.mockReset();
     linkMutate.mockReset();
     createMutate.mockReset();
+    codeMutate.mockReset();
     syncPending.current = false;
     linkPending.current = false;
     createPending.current = false;
+    codePending.current = false;
   });
 
   afterEach(() => {
@@ -264,6 +269,119 @@ describe("PosTableLinkSection", () => {
         expect.anything(),
       );
     });
+  });
+
+  // Operations hit rows whose QR code was typed onto the wrong POS table
+  // (e.g. "T-10" stuck on the POS's "바6"), so the code itself has to be
+  // editable in place — and a code change re-issues that table's QR, which
+  // is what the confirmation step exists to say out loud.
+  it("opens a code editor prefilled with the table's current code", async () => {
+    render(<PosTableLinkSection data={buildData()} />);
+
+    const row = screen.getByRole("listitem", { name: "T-01 테이블" });
+    fireEvent.click(within(row).getByRole("button", { name: "코드 수정" }));
+
+    const input = await within(row).findByLabelText("테이블 코드");
+    expect(input).toHaveValue("T-01");
+    expect(
+      within(row).getByText("T-01처럼 구역 문자와 두 자리 번호로 입력해 주세요."),
+    ).toBeInTheDocument();
+  });
+
+  it("warns that the QR is re-issued before saving a new code", async () => {
+    render(<PosTableLinkSection data={buildData()} />);
+
+    const row = screen.getByRole("listitem", { name: "T-01 테이블" });
+    fireEvent.click(within(row).getByRole("button", { name: "코드 수정" }));
+    fireEvent.change(await within(row).findByLabelText("테이블 코드"), {
+      target: { value: "b-06" },
+    });
+    fireEvent.click(within(row).getByRole("button", { name: "코드 저장" }));
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent(
+      "코드를 바꾸면 이 테이블의 QR이 새로 발급돼요. 붙여 둔 QR을 다시 출력해야 합니다.",
+    );
+    expect(dialog).toHaveTextContent(
+      "이미 저장된 주문·요청 기록의 테이블 표기는 예전 코드로 남아요.",
+    );
+    // Nothing is sent until the operator confirms.
+    expect(codeMutate).not.toHaveBeenCalled();
+  });
+
+  it("sends the uppercased code once the operator confirms", async () => {
+    render(<PosTableLinkSection data={buildData()} />);
+
+    const row = screen.getByRole("listitem", { name: "T-01 테이블" });
+    fireEvent.click(within(row).getByRole("button", { name: "코드 수정" }));
+    fireEvent.change(await within(row).findByLabelText("테이블 코드"), {
+      target: { value: "b-06" },
+    });
+    fireEvent.click(within(row).getByRole("button", { name: "코드 저장" }));
+    fireEvent.click(await screen.findByRole("button", { name: "코드 바꾸기" }));
+
+    expect(codeMutate).toHaveBeenCalledWith(
+      { currentId: "T-01", nextId: "B-06" },
+      expect.anything(),
+    );
+
+    resolveMutation(codeMutate, buildTable({ id: "B-06", area: "B", number: 6, posTableId: 11 }));
+
+    await waitFor(() => {
+      expect(toastAddMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "테이블 코드를 바꿨어요." }),
+      );
+    });
+    expect(within(row).queryByLabelText("테이블 코드")).not.toBeInTheDocument();
+  });
+
+  it("explains the required code format when the server rejects it as malformed", async () => {
+    render(<PosTableLinkSection data={buildData()} />);
+
+    const row = screen.getByRole("listitem", { name: "T-01 테이블" });
+    fireEvent.click(within(row).getByRole("button", { name: "코드 수정" }));
+    fireEvent.change(await within(row).findByLabelText("테이블 코드"), {
+      target: { value: "B6" },
+    });
+    fireEvent.click(within(row).getByRole("button", { name: "코드 저장" }));
+    fireEvent.click(await screen.findByRole("button", { name: "코드 바꾸기" }));
+    rejectMutation(codeMutate, new FetchJsonError(400, "invalid id"));
+
+    await waitFor(() => {
+      expect(toastAddMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "T-01처럼 구역 문자와 두 자리 번호로 입력해 주세요.",
+        }),
+      );
+    });
+  });
+
+  it("tells the operator when the new code is already taken", async () => {
+    render(<PosTableLinkSection data={buildData()} />);
+
+    const row = screen.getByRole("listitem", { name: "T-01 테이블" });
+    fireEvent.click(within(row).getByRole("button", { name: "코드 수정" }));
+    fireEvent.change(await within(row).findByLabelText("테이블 코드"), {
+      target: { value: "T-02" },
+    });
+    fireEvent.click(within(row).getByRole("button", { name: "코드 저장" }));
+    fireEvent.click(await screen.findByRole("button", { name: "코드 바꾸기" }));
+    rejectMutation(codeMutate, new FetchJsonError(409, "duplicate id"));
+
+    await waitFor(() => {
+      expect(toastAddMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "이미 있는 코드예요." }),
+      );
+    });
+  });
+
+  it("can edit the code of a table that is not linked to the POS either", async () => {
+    render(<PosTableLinkSection data={buildData()} />);
+
+    const row = screen.getByRole("listitem", { name: "T-02 테이블" });
+    fireEvent.click(within(row).getByRole("button", { name: "코드 수정" }));
+
+    expect(await within(row).findByLabelText("테이블 코드")).toHaveValue("T-02");
   });
 
   it("keeps the POS-only row closed when the first add succeeds", () => {

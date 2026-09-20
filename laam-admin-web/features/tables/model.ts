@@ -87,6 +87,25 @@ export function groupTablesByArea(tables: AdminTable[]): AdminTableGroup[] {
     }));
 }
 
+/**
+ * The tables a guest can actually order from. Only these get a QR code:
+ * an unlinked table takes no orders, so a printed QR stuck on it would send
+ * the guest to a screen that cannot do anything.
+ */
+export function linkedTables(tables: AdminTable[]): AdminTable[] {
+  return tables.filter((table) => table.posTableId !== null);
+}
+
+/**
+ * The table code an operator typed, in the shape the API takes: trimmed and
+ * upper case (`b-06` → `B-06`). Whether the result is a *valid* code (area
+ * letter + two digits) stays the server's call — it answers 400 — so this
+ * deliberately only normalizes.
+ */
+export function normalizeTableCode(code: string): string {
+  return code.trim().toUpperCase();
+}
+
 /** How many QR tables still have no POS table behind them — i.e. cannot be ordered from. */
 export function countUnlinkedTables(tables: AdminTable[]): number {
   return tables.filter((table) => table.posTableId === null).length;

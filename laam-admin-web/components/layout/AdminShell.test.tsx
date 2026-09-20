@@ -192,6 +192,41 @@ describe("AdminShell", () => {
     expect(screen.getByRole("link", { name: "품목·분류" })).toHaveAttribute("href", "/inventory/items");
   });
 
+  it("exposes 테이블 관리 as a collapsed dropdown with the table and QR screens", () => {
+    render(
+      <AdminShell>
+        <p>page content</p>
+      </AdminShell>,
+    );
+
+    const toggle = screen.getByRole("button", { name: "테이블 관리" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("link", { name: "테이블" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "QR" })).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("link", { name: "테이블" })).toHaveAttribute("href", "/tables");
+    expect(screen.getByRole("link", { name: "QR" })).toHaveAttribute("href", "/tables/qr");
+  });
+
+  it("marks QR, not 테이블, as the current page on /tables/qr", () => {
+    currentPathname = "/tables/qr";
+    render(
+      <AdminShell>
+        <p>page content</p>
+      </AdminShell>,
+    );
+
+    expect(screen.getByRole("button", { name: "테이블 관리" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    const breadcrumb = screen.getByRole("navigation", { name: "breadcrumb" });
+    expect(within(breadcrumb).getByText("QR")).toHaveAttribute("aria-current", "page");
+  });
+
   it("marks 품목·분류, not 재고, as the current page on /inventory/items", () => {
     currentPathname = "/inventory/items";
     render(

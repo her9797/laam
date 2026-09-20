@@ -2,15 +2,16 @@
 
 import "@/i18n/client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { EmptyState, ErrorState, LoadingState } from "@/components/states/PageStates";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 import type { AdminTable, TableArea } from "./model";
-import { groupTablesByArea } from "./model";
-import { PosTableLinkSection } from "./PosTableLinkSection";
+import { countUnlinkedTables, groupTablesByArea, linkedTables } from "./model";
 import { downloadTablePng, downloadTableSvg, downloadTablesZip, generateQrPngDataUrl } from "./qr-export";
 import { useAdminTablesQuery } from "./queries";
 
@@ -125,6 +126,14 @@ function TableQrCard({ table }: { table: AdminTable }) {
   );
 }
 
+/**
+ * `/tables/qr` — the printable QR codes, for the linked tables only.
+ *
+ * A table with no POS table behind it takes no orders, so its QR would send
+ * the guest to a screen that cannot do anything: those tables are left out
+ * of the grid, the ZIP and the print sheet alike, and the operator is sent
+ * to `/tables` to link them instead.
+ */
 export function TableQrPage() {
   const { t } = useTranslation("tables");
   const tablesQuery = useAdminTablesQuery();
@@ -145,13 +154,9 @@ export function TableQrPage() {
     );
   }
 
-  const data = tablesQuery.data ?? {
-    tables: [],
-    posOnlyTables: [],
-    lastSyncedAt: null,
-    pendingSync: null,
-  };
-  const tables = data.tables;
+  const allTables = tablesQuery.data?.tables ?? [];
+  const tables = linkedTables(allTables);
+  const unlinkedCount = countUnlinkedTables(allTables);
   const groups = groupTablesByArea(tables);
 
   async function handleDownloadAllZip() {
@@ -170,18 +175,26 @@ export function TableQrPage() {
     window.print();
   }
 
+  const tablesScreenLink = (
+    <Link href="/tables" className={buttonVariants({ variant: "outline", size: "sm" })}>
+      {t("goToTables")}
+    </Link>
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <h1 className="text-lg font-semibold text-foreground">{t("title")}</h1>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" onClick={handleDownloadAllZip} disabled={isZipping}>
-            {t("downloadAllZip")}
-          </Button>
-          <Button type="button" variant="outline" onClick={handlePrint}>
-            {t("printSheet")}
-          </Button>
-        </div>
+        <h1 className="text-lg font-semibold text-foreground">{t("qrTitle")}</h1>
+        {tables.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" onClick={handleDownloadAllZip} disabled={isZipping}>
+              {t("downloadAllZip")}
+            </Button>
+            <Button type="button" variant="outline" onClick={handlePrint}>
+              {t("printSheet")}
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       {zipError ? (
@@ -190,10 +203,26 @@ export function TableQrPage() {
         </p>
       ) : null}
 
-      <PosTableLinkSection data={data} />
+      {/* Only when at least one table *is* linked: with none linked the empty
+          state below already says the same thing, and says it as the whole
+          screen rather than as a note above an empty grid. */}
+      {unlinkedCount > 0 && tables.length > 0 ? (
+        <div className="flex flex-col items-start gap-2 rounded-2xl border border-border bg-muted/40 p-4 print:hidden">
+          <p className="text-sm text-foreground">{t("qrUnlinkedNotice", { count: unlinkedCount })}</p>
+          {tablesScreenLink}
+        </div>
+      ) : null}
 
       {groups.length === 0 ? (
-        <EmptyState title={t("errorTitle")} />
+        <EmptyState
+          title={t("qrEmptyTitle")}
+          description={t("qrEmptyDescription")}
+          action={
+            <Link href="/tables" className={cn(buttonVariants(), "mt-2")}>
+              {t("goToTables")}
+            </Link>
+          }
+        />
       ) : (
         groups.map((group) => (
           <section key={group.area} className="flex flex-col gap-3">

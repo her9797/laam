@@ -3,18 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AdminTable, AdminTablesData } from "./model";
 
+vi.mock("next/link", () => ({
+  default: ({ href, children, ...props }: React.ComponentProps<"a"> & { href: string }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  ),
+}));
+
 const useAdminTablesQueryMock = vi.fn();
 const refetchMock = vi.fn();
-const idleMutation = { mutate: vi.fn(), isPending: false };
 
-// `PosTableLinkSection` (rendered by this page) reads the POS mutations from
-// the same module; they stay idle here so this file keeps covering the QR
-// grid only — the POS panel has its own test file.
 vi.mock("./queries", () => ({
   useAdminTablesQuery: () => useAdminTablesQueryMock(),
-  usePosTableSyncMutation: () => idleMutation,
-  useUpdateTablePosLinkMutation: () => idleMutation,
-  useCreateQrTableMutation: () => idleMutation,
 }));
 
 const generateQrPngDataUrlMock = vi.fn(async (_text: string) => "data:image/png;base64,AAAA");
@@ -31,18 +32,22 @@ vi.mock("./qr-export", () => ({
 
 import { TableQrPage } from "./TableQrPage";
 
-function buildTable(id: string, area: AdminTable["area"], number: number): AdminTable {
+/** Linked by default: an unlinked table has no usable QR, so it is opted into. */
+function buildTable(
+  id: string,
+  area: AdminTable["area"],
+  number: number,
+  linked = true,
+): AdminTable {
   return {
     id,
     area,
     number,
     qrUrl: `https://example.com/qr/enter?table=${id}&sig=abc`,
-    // Every table linked: this file covers the QR grid, and the unlinked
-    // warning banner belongs to `PosTableLinkSection.test.tsx`.
-    posTableId: 100 + number,
-    posTableTitle: `${id} POS`,
+    posTableId: linked ? 100 + number : null,
+    posTableTitle: linked ? `${id} POS` : null,
     hallName: null,
-    linkedAt: "2026-09-19T00:00:00Z",
+    linkedAt: linked ? "2026-09-19T00:00:00Z" : null,
   };
 }
 
@@ -138,6 +143,77 @@ describe("TableQrPage", () => {
     expect(images[0]).toHaveAttribute("src", "data:image/png;base64,AAAA");
   });
 
+  // An unlinked table cannot take orders, so its QR code would send the guest
+  // to a table that can't be ordered from — it is left out of this screen
+  // entirely rather than printed and stuck on a table.
+  it("leaves unlinked tables out of the QR grid", () => {
+    const tables = [
+      buildTable("B-01", "B", 1),
+      buildTable("T-01", "T", 1, false),
+      buildTable("T-02", "T", 2),
+    ];
+    useAdminTablesQueryMock.mockReturnValue({
+      data: buildData(tables),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchMock,
+    });
+
+    render(<TableQrPage />);
+
+    expect(screen.getByText("B-01 테이블")).toBeInTheDocument();
+    expect(screen.getByText("T-02 테이블")).toBeInTheDocument();
+    expect(screen.queryByText("T-01 테이블")).not.toBeInTheDocument();
+  });
+
+  it("points the operator at the table screen when some tables are unlinked", () => {
+    const tables = [
+      buildTable("B-01", "B", 1),
+      buildTable("T-01", "T", 1, false),
+      buildTable("T-02", "T", 2, false),
+    ];
+    useAdminTablesQueryMock.mockReturnValue({
+      data: buildData(tables),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchMock,
+    });
+
+    render(<TableQrPage />);
+
+    expect(
+      screen.getByText("연결되지 않은 테이블 2개는 QR이 나오지 않아요. 테이블 화면에서 연결해 주세요."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "테이블 화면으로 이동" })).toHaveAttribute(
+      "href",
+      "/tables",
+    );
+  });
+
+  it("does not nag about unlinked tables when every table is linked", () => {
+    render(<TableQrPage />);
+
+    expect(screen.queryByRole("link", { name: "테이블 화면으로 이동" })).not.toBeInTheDocument();
+  });
+
+  it("shows an empty state with a link to the table screen when nothing is linked", () => {
+    useAdminTablesQueryMock.mockReturnValue({
+      data: buildData([buildTable("T-01", "T", 1, false)]),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchMock,
+    });
+
+    render(<TableQrPage />);
+
+    expect(screen.getByText("QR을 만들 수 있는 테이블이 없어요.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "테이블 화면으로 이동" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "PNG" })).not.toBeInTheDocument();
+  });
+
   it("downloads a single table's PNG when its button is clicked", async () => {
     render(<TableQrPage />);
 
@@ -149,13 +225,22 @@ describe("TableQrPage", () => {
     });
   });
 
-  it("downloads all tables as a zip when the bulk button is clicked", async () => {
+  it("puts only the linked tables in the bulk zip", async () => {
+    const tables = [buildTable("B-01", "B", 1), buildTable("T-01", "T", 1, false)];
+    useAdminTablesQueryMock.mockReturnValue({
+      data: buildData(tables),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchMock,
+    });
+
     render(<TableQrPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "전체 ZIP 다운로드" }));
 
     await waitFor(() => {
-      expect(downloadTablesZipMock).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ id: "B-01" })]));
+      expect(downloadTablesZipMock).toHaveBeenCalledWith([expect.objectContaining({ id: "B-01" })]);
     });
   });
 

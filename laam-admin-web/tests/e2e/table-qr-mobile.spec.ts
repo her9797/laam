@@ -20,9 +20,9 @@ const VIEWPORTS = [
 ];
 
 /**
- * The 15-table layout the QR grid has always shown (B-01..05, T-01..10).
- * The first T table is left unlinked so the POS panel renders both row
- * states — linked and "needs linking" — plus its warning banner.
+ * The 15-table layout the table list has always held (B-01..05, T-01..10).
+ * The first T table is left unlinked, so the QR screen has to leave it out
+ * of the grid and say so instead.
  */
 function buildTables(): AdminTable[] {
   const buildTable = (area: AdminTable["area"], number: number): AdminTable => {
@@ -58,6 +58,11 @@ function buildPosOnlyTables(): PosTable[] {
       qrTableId: null,
     },
   ];
+}
+
+/** The tables the QR screen renders: only a linked table gets a QR code. */
+function qrTablesOf(tables: AdminTable[]): AdminTable[] {
+  return tables.filter((table) => table.posTableId !== null);
 }
 
 /** Mocks the table screen route (`GET /api/admin/tables`, see `features/tables/api.ts`). */
@@ -116,18 +121,19 @@ test.describe("테이블 QR 좁은 화면 레이아웃", () => {
       await mockDashboardData(page);
       await loginAsAdmin(page);
       await mockAdminTables(page, tables);
-      await page.goto("/tables");
+      await page.goto("/tables/qr");
+      const qrTables = qrTablesOf(tables);
 
       // Measure the final layout only: every preview placeholder has become
       // its copy-link <button><img> and the web font has replaced the
       // fallback font the button labels were first laid out with.
-      await expect(page.getByAltText(/^[BT]-\d{2} 테이블$/)).toHaveCount(tables.length);
+      await expect(page.getByAltText(/^[BT]-\d{2} 테이블$/)).toHaveCount(qrTables.length);
       await page.evaluate(async () => {
         await document.fonts.ready;
       });
 
       const cardOverflows: string[] = [];
-      for (const table of tables) {
+      for (const table of qrTables) {
         const label = `${table.id} 테이블`;
         // The label is the card's first child — the same lookup
         // `TableQrPage.test.tsx` uses (`getByText(label).closest("div")`).
@@ -148,6 +154,72 @@ test.describe("테이블 QR 좁은 화면 레이아웃", () => {
         pageClient: document.documentElement.clientWidth,
       }));
       expect.soft(widths.pageScroll, "페이지 가로 스크롤 폭").toBeLessThanOrEqual(widths.pageClient);
+    });
+  }
+
+  test("연결되지 않은 테이블은 QR이 나오지 않고 테이블 화면으로 안내한다", async ({ page }) => {
+    const tables = buildTables();
+    await mockDashboardData(page);
+    await loginAsAdmin(page);
+    await mockAdminTables(page, tables);
+    await page.goto("/tables/qr");
+
+    await expect(page.getByAltText(/^[BT]-\d{2} 테이블$/)).toHaveCount(qrTablesOf(tables).length);
+    await expect(page.getByText("T-01 테이블", { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByText(
+        "연결되지 않은 테이블 1개는 QR이 나오지 않아요. 테이블 화면에서 연결해 주세요.",
+      ),
+    ).toBeVisible();
+    await page.getByRole("link", { name: "테이블 화면으로 이동" }).click();
+    await expect(page).toHaveURL(/\/tables$/);
+    await expect(page.getByText("POS 연결", { exact: true })).toBeVisible();
+  });
+
+  test("연결된 테이블이 없으면 빈 상태와 테이블 화면 링크만 보여 준다", async ({ page }) => {
+    const tables = buildTables().map((table) => ({
+      ...table,
+      posTableId: null,
+      posTableTitle: null,
+      hallName: null,
+      linkedAt: null,
+    }));
+    await mockDashboardData(page);
+    await loginAsAdmin(page);
+    await mockAdminTables(page, tables);
+    await page.goto("/tables/qr");
+
+    await expect(page.getByText("QR을 만들 수 있는 테이블이 없어요.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "전체 ZIP 다운로드" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "테이블 화면으로 이동" })).toBeVisible();
+  });
+});
+
+test.describe("테이블 QR 레이아웃 스크린샷", () => {
+  for (const [label, viewport] of [
+    ["phone-390", { width: 390, height: 844 }],
+    ["desktop-1280", { width: 1280, height: 800 }],
+  ] as const) {
+    test(`${label}: QR 화면`, async ({ page }, testInfo) => {
+      await page.setViewportSize(viewport);
+      const tables = buildTables();
+      await mockDashboardData(page);
+      await loginAsAdmin(page);
+      await mockAdminTables(page, tables);
+      await page.goto("/tables/qr");
+
+      await expect(page.getByAltText(/^[BT]-\d{2} 테이블$/)).toHaveCount(qrTablesOf(tables).length);
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+      });
+
+      const widths = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+      }));
+      expect.soft(widths.scroll, "페이지 가로 스크롤 폭").toBeLessThanOrEqual(widths.client);
+
+      await page.screenshot({ path: testInfo.outputPath(`tables-qr-${label}.png`), fullPage: true });
     });
   }
 });

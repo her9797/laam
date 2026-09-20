@@ -5,6 +5,7 @@ import {
   fetchAdminTables,
   fetchPosTableSync,
   startPosTableSync,
+  updateTableCode,
   updateTablePosLink,
 } from "./api";
 import type { AdminTable, AdminTablesData, PosTable, PosTableSync } from "./model";
@@ -179,6 +180,29 @@ describe("tables api", () => {
       "/api/admin/tables",
       expect.objectContaining({ method: "POST", body: JSON.stringify({ posTableId: 11 }) }),
     );
+  });
+
+  it("renames a QR table by patching its code", async () => {
+    const renamed = buildTable({ id: "B-06", area: "B", number: 6, posTableId: 11 });
+    const fetchMock = mockFetch(jsonResponse(renamed));
+
+    await expect(updateTableCode("T-10", "B-06")).resolves.toEqual(renamed);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/tables/T-10/code",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify({ id: "B-06" }) }),
+    );
+  });
+
+  it("rejects with 409 when the new code already belongs to another table", async () => {
+    mockFetch(jsonResponse({ error: "duplicate id" }, 409));
+
+    await expect(updateTableCode("T-10", "B-06")).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("rejects with 400 when the new code is malformed", async () => {
+    mockFetch(jsonResponse({ error: "invalid id" }, 400));
+
+    await expect(updateTableCode("T-10", "B6")).rejects.toMatchObject({ status: 400 });
   });
 
   it("creates a QR table with the id the operator typed", async () => {

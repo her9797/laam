@@ -50,6 +50,20 @@ export function updateTablePosLink(
   });
 }
 
+/**
+ * Changes a QR table's own code (`T-10` → `B-06`), keeping whatever POS
+ * table it is linked to. 400 when the code is malformed, 409 when another
+ * table already uses it. The QR URL is signed over the id, so the answer
+ * carries a *new* `qrUrl` — the printed code has to be replaced.
+ */
+export function updateTableCode(currentId: string, nextId: string): Promise<AdminTable> {
+  return fetchJson<AdminTable>(`${TABLES_PATH}/${encodeURIComponent(currentId)}/code`, {
+    method: "PATCH",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ id: nextId }),
+  });
+}
+
 export type CreateQrTableInput = {
   posTableId: number;
   /** Omitted on the first try: the server derives the id from the POS name, and answers 400 when it can't. */
