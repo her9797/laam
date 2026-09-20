@@ -1,8 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { approveSongRequest } from "@/features/player/api";
-import { songQueueKeys } from "@/features/player/keys";
-
 import {
   fetchCustomerRequestPendingSummary,
   fetchCustomerRequestsPage,
@@ -107,18 +104,6 @@ export function useUpdateCustomerRequestStatusesMutation() {
       updateCustomerRequestStatuses(ids, status),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: requestsKeys.all });
-    },
-  });
-}
-
-export function useApproveSongRequestMutation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ requestId }: { requestId: string }) => approveSongRequest(requestId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: requestsKeys.all });
-      queryClient.invalidateQueries({ queryKey: songQueueKeys.all });
     },
   });
 }

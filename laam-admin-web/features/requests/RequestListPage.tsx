@@ -37,11 +37,7 @@ import { formatDateTime } from "@/lib/utils";
 
 import { buildRequestListSearchParams, parseRequestListQuery } from "./list-query-url";
 import type { CustomerRequest, CustomerRequestListQuery, CustomerRequestSort, CustomerRequestStatus } from "./model";
-import {
-  useApproveSongRequestMutation,
-  useCustomerRequestsPageQuery,
-  useUpdateCustomerRequestStatusMutation,
-} from "./queries";
+import { useCustomerRequestsPageQuery, useUpdateCustomerRequestStatusMutation } from "./queries";
 
 // Translation keys in the `requests` namespace, not rendered text.
 const STATUS_LABEL_KEY: Record<CustomerRequestStatus, string> = {
@@ -164,7 +160,6 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
     query,
   );
   const statusMutation = useUpdateCustomerRequestStatusMutation();
-  const approveMutation = useApproveSongRequestMutation();
   const copyKeys = COPY_KEYS[kind];
 
   if (!query.dateFrom || !query.dateTo || requestsQuery.isLoading) {
@@ -211,17 +206,10 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
   };
 
   function isRowMutating(id: string): boolean {
-    return (
-      (statusMutation.isPending && statusMutation.variables?.id === id) ||
-      (approveMutation.isPending && approveMutation.variables?.requestId === id)
-    );
+    return statusMutation.isPending && statusMutation.variables?.id === id;
   }
 
   function handleAdvance(request: CustomerRequest) {
-    if (kind === "song" && request.status === "pending") {
-      approveMutation.mutate({ requestId: request.id });
-      return;
-    }
     const next = NEXT_STATUS[request.status];
     if (!next) {
       return;
@@ -230,12 +218,6 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
   }
 
   function mutationErrorMessage(): string {
-    const approvalError = approveMutation.error;
-    if (approvalError && typeof approvalError === "object" && "status" in approvalError) {
-      if (approvalError.status === 503) return t("songApprovalNotConfigured");
-      if (approvalError.status === 404) return t("songApprovalNoResults");
-    }
-    if (approvalError instanceof Error) return approvalError.message;
     if (statusMutation.error instanceof Error) return statusMutation.error.message;
     return t("statusChangeFailed");
   }
@@ -338,7 +320,7 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
         />
       ) : null}
 
-      {statusMutation.isError || approveMutation.isError ? (
+      {statusMutation.isError ? (
         <p role="alert" className="text-sm text-destructive">
           {mutationErrorMessage()}
         </p>
@@ -379,18 +361,8 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
             </TableHeader>
             <TableBody>
               {requests.map((request) => {
-                const next =
-                  kind === "song"
-                    ? request.status === "pending"
-                      ? { status: "checked" as const, labelKey: "actionApproveAndPlay" }
-                      : undefined
-                    : NEXT_STATUS[request.status];
-                const statusLabel =
-                  kind === "song" && request.status === "checked"
-                    ? t("songStatusQueued")
-                    : kind === "song" && request.status === "completed"
-                      ? t("songStatusCompleted")
-                      : t(STATUS_LABEL_KEY[request.status]);
+                const next = NEXT_STATUS[request.status];
+                const statusLabel = t(STATUS_LABEL_KEY[request.status]);
                 return (
                   <TableRow key={request.id}>
                     <TableCell>{formatDateTime(request.createdAt, i18n.language)}</TableCell>
