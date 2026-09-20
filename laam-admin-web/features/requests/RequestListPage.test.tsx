@@ -20,16 +20,13 @@ vi.mock("next/navigation", () => ({
 
 const useCustomerRequestsPageQueryMock = vi.fn();
 const useUpdateCustomerRequestStatusMutationMock = vi.fn();
-const useApproveSongRequestMutationMock = vi.fn();
 const mutateMock = vi.fn();
-const approveMutateMock = vi.fn();
 const refetchMock = vi.fn();
 
 vi.mock("./queries", () => ({
   useCustomerRequestsPageQuery: (query: unknown, enabled: unknown) =>
     useCustomerRequestsPageQueryMock(query, enabled),
   useUpdateCustomerRequestStatusMutation: () => useUpdateCustomerRequestStatusMutationMock(),
-  useApproveSongRequestMutation: () => useApproveSongRequestMutationMock(),
 }));
 
 vi.mock("./api", async () => {
@@ -147,18 +144,10 @@ describe("RequestListPage", () => {
     refetchMock.mockClear();
     replaceMock.mockClear();
     useCustomerRequestsPageQueryMock.mockClear();
-    approveMutateMock.mockClear();
     currentSearchParams = new URLSearchParams(DATED_SEARCH_PARAMS);
     vi.mocked(fetchCustomerRequestsPage).mockReset();
     mockQuery();
     mockMutation();
-    useApproveSongRequestMutationMock.mockReturnValue({
-      mutate: approveMutateMock,
-      isPending: false,
-      isError: false,
-      error: null,
-      variables: undefined,
-    });
   });
 
   afterEach(() => {
@@ -381,38 +370,23 @@ describe("RequestListPage", () => {
     expect(mutateMock).toHaveBeenCalledWith({ id: "r1", status: "checked" });
   });
 
-  it("approves a pending song into the playback queue instead of merely checking it", () => {
+  it("advances a pending song request to checked, same as a general request", () => {
     mockQuery({ data: pageFixture(SONG_ITEMS) });
 
     render(<RequestListPage kind="song" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "승인 및 재생" }));
-    expect(approveMutateMock).toHaveBeenCalledWith({ requestId: "r3" });
-    expect(mutateMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "확인" }));
+    expect(mutateMock).toHaveBeenCalledWith({ id: "r3", status: "checked" });
   });
 
-  it("shows an approved song as queued without a manual completion action", () => {
+  it("shows a checked song request with a manual completion action, same as a general request", () => {
     mockQuery({ data: pageFixture([{ ...SONG_ITEMS[0], status: "checked" }]) });
 
     render(<RequestListPage kind="song" />);
 
-    expect(screen.getByText("재생 대기")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "처리완료" })).not.toBeInTheDocument();
-  });
-
-  it("explains that the server key is missing when song approval is unavailable", () => {
-    mockQuery({ data: pageFixture(SONG_ITEMS) });
-    useApproveSongRequestMutationMock.mockReturnValue({
-      mutate: approveMutateMock,
-      isPending: false,
-      isError: true,
-      error: Object.assign(new Error("youtube search is not configured"), { status: 503 }),
-      variables: undefined,
-    });
-
-    render(<RequestListPage kind="song" />);
-
-    expect(screen.getByRole("alert")).toHaveTextContent("YouTube API 키가 설정되지 않았습니다.");
+    expect(screen.getByText("확인")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "처리완료" }));
+    expect(mutateMock).toHaveBeenCalledWith({ id: "r3", status: "completed" });
   });
 
   it("advances a checked request to completed when its action button is clicked", () => {

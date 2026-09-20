@@ -12,12 +12,10 @@ import i18n from "./client";
 
 const useCustomerRequestsPageQueryMock = vi.fn();
 const useUpdateCustomerRequestStatusMutationMock = vi.fn();
-const useApproveSongRequestMutationMock = vi.fn();
 
 vi.mock("@/features/requests/queries", () => ({
   useCustomerRequestsPageQuery: () => useCustomerRequestsPageQueryMock(),
   useUpdateCustomerRequestStatusMutation: () => useUpdateCustomerRequestStatusMutationMock(),
-  useApproveSongRequestMutation: () => useApproveSongRequestMutationMock(),
 }));
 
 // RequestListPage reads/writes the URL for its search/filter/sort/page
@@ -93,14 +91,6 @@ describe("feature pages in English", () => {
       error: null,
       variables: undefined,
     });
-    useApproveSongRequestMutationMock.mockReturnValue({
-      mutate: vi.fn(),
-      isPending: false,
-      isError: false,
-      error: null,
-      variables: undefined,
-    });
-
     render(<RequestListPage kind="general" />);
 
     expect(screen.getByRole("heading", { name: "Guest requests" })).toBeInTheDocument();
@@ -145,14 +135,6 @@ describe("feature pages in English", () => {
       error: null,
       variables: undefined,
     });
-    useApproveSongRequestMutationMock.mockReturnValue({
-      mutate: vi.fn(),
-      isPending: false,
-      isError: false,
-      error: null,
-      variables: undefined,
-    });
-
     render(<RequestListPage kind="general" />);
 
     // ko-KR renders "09. 03. 19:00"; en-US renders "09/03, 19:00". The exact
