@@ -5,6 +5,7 @@ import {
   fetchAdminTables,
   fetchPosTableSync,
   startPosTableSync,
+  updateTableCode,
   updateTablePosLink,
   type CreateQrTableInput,
 } from "./api";
@@ -49,6 +50,20 @@ export function useUpdateTablePosLinkMutation() {
   return useMutation({
     mutationFn: ({ qrTableId, posTableId }: { qrTableId: string; posTableId: number | null }) =>
       updateTablePosLink(qrTableId, posTableId),
+    onSuccess: () => refreshTables(),
+  });
+}
+
+/**
+ * Renames one QR table. Both table screens (`/tables` and `/tables/qr`)
+ * read this one query, so invalidating it refreshes the QR grid — whose
+ * codes and signed URLs just changed — along with the link list.
+ */
+export function useUpdateTableCodeMutation() {
+  const refreshTables = useRefreshTables();
+  return useMutation({
+    mutationFn: ({ currentId, nextId }: { currentId: string; nextId: string }) =>
+      updateTableCode(currentId, nextId),
     onSuccess: () => refreshTables(),
   });
 }

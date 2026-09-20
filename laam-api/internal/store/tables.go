@@ -373,6 +373,65 @@ func (r *Repository) LinkQrTablePOSTable(ctx context.Context, qrTableID string, 
 	return table, nil
 }
 
+// RenameQrTable changes a QR table's own code (its id), keeping whatever
+// POS table it is linked to. The seeded layout and the id derived from a
+// POS table name are both guesses, so an operator must be able to correct
+// one — a table sitting in the bar area but seeded as "T-10", say. The QR
+// URL is signed over the id, so a renamed table's printed QR must be
+// replaced; callers are expected to say so.
+//
+// Existing orders and requests keep the old code: they store table_number
+// as plain text and are a record of what the guest actually scanned.
+func (r *Repository) RenameQrTable(ctx context.Context, qrTableID string, newID string) (QrTable, error) {
+	qrTableID = strings.TrimSpace(qrTableID)
+	newID = strings.ToUpper(strings.TrimSpace(newID))
+	if qrTableID == "" {
+		return QrTable{}, ErrInvalidInput
+	}
+	area, number, ok := parseQrTableID(newID)
+	if !ok {
+		return QrTable{}, fmt.Errorf("%w: QR table id %q must look like T-01", ErrInvalidInput, newID)
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return QrTable{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	var existingID string
+	if err := tx.QueryRow(ctx, `SELECT id FROM qr_tables WHERE id = $1 FOR UPDATE`, qrTableID).Scan(&existingID); err != nil {
+		return QrTable{}, classifyError(err)
+	}
+
+	if newID != qrTableID {
+		var owner string
+		err := tx.QueryRow(ctx, `SELECT id FROM qr_tables WHERE id = $1`, newID).Scan(&owner)
+		switch {
+		case err == nil:
+			return QrTable{}, fmt.Errorf("%w: QR table %s already exists", ErrAlreadyExists, owner)
+		case classifyError(err) == ErrNotFound:
+		default:
+			return QrTable{}, err
+		}
+
+		if _, err := tx.Exec(ctx, `
+			UPDATE qr_tables SET id = $2, area = $3, number = $4, sort_order = $4 WHERE id = $1
+		`, qrTableID, newID, area, number); err != nil {
+			return QrTable{}, classifyError(err)
+		}
+	}
+
+	table, err := getQrTable(ctx, tx, newID)
+	if err != nil {
+		return QrTable{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return QrTable{}, err
+	}
+	return table, nil
+}
+
 // CreateQrTable adds a QR table for a POS table that has no QR counterpart.
 // An empty id is derived from the POS table name; a name that follows none
 // of the naming rules is rejected so an operator can pick the id instead.
@@ -629,6 +688,18 @@ func (r *Repository) CompletePOSTableSync(ctx context.Context, id string, snapsh
 		return err
 	}
 
+	if err := createQrTablesForPOSTables(ctx, tx); err != nil {
+		return err
+	}
+
+	// The POS owns which tables exist; we own their codes. A QR table with no
+	// POS counterpart is a table the store no longer has, so it goes — its QR
+	// could not route an order anyway. Past orders keep their table_number
+	// text, so the history is unaffected.
+	if _, err := tx.Exec(ctx, `DELETE FROM qr_tables WHERE pos_table_id IS NULL`); err != nil {
+		return classifyError(err)
+	}
+
 	var linked, unlinked, posOnly int
 	if err := tx.QueryRow(ctx, `
 		SELECT
@@ -795,6 +866,58 @@ func ensureOrderTableLinked(ctx context.Context, q tableQuerier, tableNumber str
 	}
 	if anyLinked && !thisLinked {
 		return ErrTableNotLinked
+	}
+	return nil
+}
+
+// createQrTablesForPOSTables gives every still unmatched POS table a QR
+// table of its own, using the code its name converts to. A name that
+// follows none of the rules — 룸, 테라스 — has no obvious code, so it is
+// left for an operator to name; so is a name whose code another table
+// already uses, since guessing a different one would be arbitrary.
+func createQrTablesForPOSTables(ctx context.Context, tx pgx.Tx) error {
+	rows, err := tx.Query(ctx, `
+		SELECT p.pos_table_id, p.title
+		FROM pos_tables p
+		WHERE NOT EXISTS (SELECT 1 FROM qr_tables q WHERE q.pos_table_id = p.pos_table_id)
+		ORDER BY p.pos_table_id
+	`)
+	if err != nil {
+		return classifyError(err)
+	}
+	type candidate struct {
+		posTableID int64
+		qrTableID  string
+	}
+	var candidates []candidate
+	for rows.Next() {
+		var posTableID int64
+		var title string
+		if err := rows.Scan(&posTableID, &title); err != nil {
+			rows.Close()
+			return err
+		}
+		if qrTableID, ok := qrTableIDFromPOSTitle(title); ok {
+			candidates = append(candidates, candidate{posTableID: posTableID, qrTableID: qrTableID})
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, entry := range candidates {
+		area, number, ok := parseQrTableID(entry.qrTableID)
+		if !ok {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO qr_tables (id, area, number, sort_order, pos_table_id, linked_at)
+			VALUES ($1, $2, $3, $3, $4, NOW())
+			ON CONFLICT (id) DO NOTHING
+		`, entry.qrTableID, area, number, entry.posTableID); err != nil {
+			return classifyError(err)
+		}
 	}
 	return nil
 }

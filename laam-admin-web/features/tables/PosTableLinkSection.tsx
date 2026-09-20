@@ -5,6 +5,16 @@ import "@/i18n/client";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,10 +24,11 @@ import { FetchJsonError } from "@/lib/api/fetch-json";
 import { formatDateTime } from "@/lib/utils";
 
 import type { AdminTable, AdminTablesData, PosTable, PosTableSync } from "./model";
-import { countUnlinkedTables, formatPosTableSummary } from "./model";
+import { countUnlinkedTables, formatPosTableSummary, normalizeTableCode } from "./model";
 import {
   useCreateQrTableMutation,
   usePosTableSyncMutation,
+  useUpdateTableCodeMutation,
   useUpdateTablePosLinkMutation,
 } from "./queries";
 
@@ -29,22 +40,35 @@ function hasStatus(error: unknown, status: number): boolean {
   return error instanceof FetchJsonError && error.status === status;
 }
 
+/** The pending "rename this table" the confirmation dialog is asking about. */
+type CodeChange = { currentId: string; nextId: string };
+
 /**
  * The POS side of the table screen: pull the POS's table list, then link
  * each QR table to a POS table. A QR table with no POS table behind it is
  * not orderable, so the unlinked count is surfaced as a warning above the
  * list rather than only as a per-row state.
+ *
+ * Each row's QR code is editable here too. Operations hits tables whose code
+ * was put on the wrong POS table (our `T-10` linked to the POS's `바6`), and
+ * the id a POS table name was derived from is a guess — so the code itself
+ * has to be correctable without deleting and re-adding the table.
  */
 export function PosTableLinkSection({ data }: { data: AdminTablesData }) {
   const { t, i18n } = useTranslation("tables");
   const syncMutation = usePosTableSyncMutation();
   const linkMutation = useUpdateTablePosLinkMutation();
   const createMutation = useCreateQrTableMutation();
+  const codeMutation = useUpdateTableCodeMutation();
 
   /** POS table the operator picked in an unlinked row's select, per QR table id. */
   const [linkDrafts, setLinkDrafts] = useState<Record<string, string>>({});
   /** POS tables whose "add as QR table" needs an operator-typed id (the server's 400). */
   const [nameDrafts, setNameDrafts] = useState<Record<number, string>>({});
+  /** Open code editors, by the table's *current* id — absent means closed. */
+  const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
+  /** The rename waiting on the confirmation dialog, if any. */
+  const [codeChange, setCodeChange] = useState<CodeChange | null>(null);
 
   const unlinkedCount = countUnlinkedTables(data.tables);
   const isSyncing = syncMutation.isPending || data.pendingSync !== null;
@@ -136,6 +160,50 @@ export function PosTableLinkSection({ data }: { data: AdminTablesData }) {
     );
   }
 
+  function closeCodeEditor(qrTableId: string) {
+    setCodeDrafts((current) => {
+      const next = { ...current };
+      delete next[qrTableId];
+      return next;
+    });
+  }
+
+  function handleConfirmCodeChange() {
+    if (codeChange === null) {
+      return;
+    }
+    const { currentId, nextId } = codeChange;
+    codeMutation.mutate(
+      { currentId, nextId },
+      {
+        onSuccess: () => {
+          setCodeChange(null);
+          closeCodeEditor(currentId);
+          toast.add({ title: t("editCodeSaved") });
+        },
+        onError: (error: unknown) => {
+          // The dialog closes either way: the typed code stays in the still-open
+          // editor, so a rejected code is corrected there rather than behind a
+          // dialog that has to be dismissed first.
+          setCodeChange(null);
+          if (hasStatus(error, 400)) {
+            toast.add({ title: t("editCodeInvalid") });
+            return;
+          }
+          if (hasStatus(error, 409)) {
+            toast.add({ title: t("editCodeConflict") });
+            return;
+          }
+          if (hasStatus(error, 404)) {
+            toast.add({ title: t("editCodeNotFound") });
+            return;
+          }
+          toast.add({ title: t("editCodeFailed"), description: errorMessage(error) });
+        },
+      },
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4 print:hidden">
       {unlinkedCount > 0 ? (
@@ -189,6 +257,16 @@ export function PosTableLinkSection({ data }: { data: AdminTablesData }) {
                   setLinkDrafts((current) => ({ ...current, [table.id]: value }))
                 }
                 onLink={handleLink}
+                codeDraft={codeDrafts[table.id]}
+                isCodePending={codeMutation.isPending}
+                onEditCode={() =>
+                  setCodeDrafts((current) => ({ ...current, [table.id]: table.id }))
+                }
+                onCodeDraftChange={(value) =>
+                  setCodeDrafts((current) => ({ ...current, [table.id]: value }))
+                }
+                onCancelCodeEdit={() => closeCodeEditor(table.id)}
+                onSubmitCode={(nextId) => setCodeChange({ currentId: table.id, nextId })}
               />
             ))}
           </ul>
@@ -228,6 +306,37 @@ export function PosTableLinkSection({ data }: { data: AdminTablesData }) {
           )}
         </CardContent>
       </Card>
+
+      {/* One dialog for the whole list: the QR URL is signed over the table
+          code, so a rename invalidates the code already printed and stuck on
+          that table — the operator has to hear that before saving. */}
+      <AlertDialog
+        open={codeChange !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCodeChange(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("editCodeConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription className="flex flex-col gap-2">
+              <span>{t("editCodeConfirmQr")}</span>
+              <span>{t("editCodeConfirmHistory")}</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common:cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={codeMutation.isPending}
+              onClick={handleConfirmCodeChange}
+            >
+              {t("editCodeConfirmSubmit")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -239,6 +348,12 @@ function TableLinkRow({
   isPending,
   onDraftChange,
   onLink,
+  codeDraft,
+  isCodePending,
+  onEditCode,
+  onCodeDraftChange,
+  onCancelCodeEdit,
+  onSubmitCode,
 }: {
   table: AdminTable;
   posOnlyTables: PosTable[];
@@ -246,77 +361,126 @@ function TableLinkRow({
   isPending: boolean;
   onDraftChange: (value: string) => void;
   onLink: (qrTableId: string, posTableId: number | null) => void;
+  /** `undefined` while this row's code editor is closed. */
+  codeDraft: string | undefined;
+  isCodePending: boolean;
+  onEditCode: () => void;
+  onCodeDraftChange: (value: string) => void;
+  onCancelCodeEdit: () => void;
+  onSubmitCode: (nextId: string) => void;
 }) {
   const { t } = useTranslation("tables");
   const isLinked = table.posTableId !== null;
   const selectId = `pos-link-${table.id}`;
+  const codeInputId = `table-code-${table.id}`;
+  const codeHintId = `${codeInputId}-hint`;
+  const isEditingCode = codeDraft !== undefined;
+  const nextCode = normalizeTableCode(codeDraft ?? "");
 
   return (
     <li
       aria-label={t("tableLabel", { id: table.id })}
-      className="flex flex-col gap-2 rounded-2xl border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
+      className="flex flex-col gap-2 rounded-2xl border border-border p-3"
     >
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-sm font-medium text-foreground">{table.id}</span>
-        {isLinked ? (
-          <span className="truncate text-sm text-muted-foreground">
-            {formatPosTableSummary(table.posTableTitle, table.hallName)}
-          </span>
-        ) : null}
-      </div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <span className="text-sm font-medium text-foreground">{table.id}</span>
+          {isLinked ? (
+            <span className="truncate text-sm text-muted-foreground">
+              {formatPosTableSummary(table.posTableTitle, table.hallName)}
+            </span>
+          ) : null}
+        </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span
-          className={
-            isLinked ? "text-xs text-muted-foreground" : "text-xs font-semibold text-destructive"
-          }
-        >
-          {isLinked ? t("linkStatusLinked") : t("linkStatusUnlinked")}
-        </span>
-        {isLinked ? (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={isPending}
-            onClick={() => onLink(table.id, null)}
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={
+              isLinked ? "text-xs text-muted-foreground" : "text-xs font-semibold text-destructive"
+            }
           >
-            {t("linkUnlink")}
-          </Button>
-        ) : (
-          <>
-            {/* Native select, like the menu/inventory forms: it opens the
-                phone's own picker and needs no floating popup inside a row. */}
-            <select
-              id={selectId}
-              aria-label={t("posTableSelectLabel", { id: table.id })}
-              className="h-9 max-w-44 rounded-3xl border border-transparent bg-input/50 px-3 text-sm text-foreground"
-              value={draft}
-              disabled={posOnlyTables.length === 0}
-              onChange={(event) => onDraftChange(event.target.value)}
-            >
-              <option value="">
-                {posOnlyTables.length === 0
-                  ? t("posTableSelectEmpty")
-                  : t("posTableSelectPlaceholder")}
-              </option>
-              {posOnlyTables.map((posTable) => (
-                <option key={posTable.posTableId} value={String(posTable.posTableId)}>
-                  {formatPosTableSummary(posTable.title, posTable.hallName)}
-                </option>
-              ))}
-            </select>
+            {isLinked ? t("linkStatusLinked") : t("linkStatusUnlinked")}
+          </span>
+          {isEditingCode ? null : (
+            <Button type="button" size="sm" variant="outline" onClick={onEditCode}>
+              {t("editCode")}
+            </Button>
+          )}
+          {isLinked ? (
             <Button
               type="button"
               size="sm"
-              disabled={isPending || draft === ""}
-              onClick={() => onLink(table.id, Number(draft))}
+              variant="outline"
+              disabled={isPending}
+              onClick={() => onLink(table.id, null)}
             >
-              {t("linkSave")}
+              {t("linkUnlink")}
             </Button>
-          </>
-        )}
+          ) : (
+            <>
+              {/* Native select, like the menu/inventory forms: it opens the
+                  phone's own picker and needs no floating popup inside a row. */}
+              <select
+                id={selectId}
+                aria-label={t("posTableSelectLabel", { id: table.id })}
+                className="h-9 max-w-44 rounded-3xl border border-transparent bg-input/50 px-3 text-sm text-foreground"
+                value={draft}
+                disabled={posOnlyTables.length === 0}
+                onChange={(event) => onDraftChange(event.target.value)}
+              >
+                <option value="">
+                  {posOnlyTables.length === 0
+                    ? t("posTableSelectEmpty")
+                    : t("posTableSelectPlaceholder")}
+                </option>
+                {posOnlyTables.map((posTable) => (
+                  <option key={posTable.posTableId} value={String(posTable.posTableId)}>
+                    {formatPosTableSummary(posTable.title, posTable.hallName)}
+                  </option>
+                ))}
+              </select>
+              <Button
+                type="button"
+                size="sm"
+                disabled={isPending || draft === ""}
+                onClick={() => onLink(table.id, Number(draft))}
+              >
+                {t("linkSave")}
+              </Button>
+            </>
+          )}
+        </div>
       </div>
+
+      {isEditingCode ? (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={codeInputId}>{t("editCodeLabel")}</Label>
+          <p id={codeHintId} className="text-xs text-muted-foreground">
+            {t("editCodeHint")}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              id={codeInputId}
+              aria-describedby={codeHintId}
+              className="max-w-36"
+              value={codeDraft}
+              onChange={(event) => onCodeDraftChange(event.target.value)}
+            />
+            <Button
+              type="button"
+              size="sm"
+              // An unchanged code is a no-op the server would happily accept,
+              // so it is not offered as a save.
+              disabled={isCodePending || nextCode === "" || nextCode === table.id}
+              onClick={() => onSubmitCode(nextCode)}
+            >
+              {t("editCodeSubmit")}
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={onCancelCodeEdit}>
+              {t("common:cancel")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </li>
   );
 }

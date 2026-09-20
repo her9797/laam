@@ -4,12 +4,12 @@ import type { AdminTable, AdminTablesData, PosTable, PosTableSync } from "@/feat
 
 import { loginAsAdmin, mockDashboardData } from "./fixtures";
 
-// The POS panel on `/tables` drives three admin endpoints that only exist
-// upstream (`POST /admin/tables/pos-sync`, `GET .../pos-sync/{id}`,
-// `PATCH /admin/tables/{id}/pos-link`). Here they are mocked at the BFF
-// boundary, so what these tests actually prove is the browser-side flow:
-// the sync button really polls until the sync settles, and the row controls
-// really send what the API contract expects.
+// The `/tables` screen drives four admin endpoints that only exist upstream
+// (`POST /admin/tables/pos-sync`, `GET .../pos-sync/{id}`,
+// `PATCH /admin/tables/{id}/pos-link`, `PATCH /admin/tables/{id}/code`).
+// Here they are mocked at the BFF boundary, so what these tests actually
+// prove is the browser-side flow: the sync button really polls until the sync
+// settles, and the row controls really send what the API contract expects.
 
 function buildTable(
   overrides: Partial<AdminTable> & Pick<AdminTable, "id" | "area" | "number">,
@@ -166,6 +166,74 @@ test.describe("POS 테이블 연결", () => {
     expect(patchBody).toEqual({ posTableId: 900 });
   });
 
+  // Operations hit rows whose code was typed onto the wrong POS table, so the
+  // code is editable in place — behind a confirmation, because the QR URL is
+  // signed over the code and the printed sticker stops working.
+  test("테이블 코드를 고치면 QR 재발급을 안내하고 대문자로 보낸다", async ({ page }) => {
+    let patchBody: unknown;
+    await page.route("**/api/admin/tables/T-01/code", async (route) => {
+      patchBody = route.request().postDataJSON();
+      await route.fulfill({
+        json: buildTable({ id: "B-06", area: "B", number: 6 }),
+      });
+    });
+
+    await openTablesPage(page, buildData());
+
+    const row = page.getByRole("listitem", { name: "T-01 테이블" });
+    await row.getByRole("button", { name: "코드 수정" }).click();
+    const codeInput = row.getByLabel("테이블 코드");
+    await expect(codeInput).toHaveValue("T-01");
+    await codeInput.fill("b-06");
+    await row.getByRole("button", { name: "코드 저장" }).click();
+
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText(
+      "코드를 바꾸면 이 테이블의 QR이 새로 발급돼요. 붙여 둔 QR을 다시 출력해야 합니다.",
+    );
+    await expect(dialog).toContainText(
+      "이미 저장된 주문·요청 기록의 테이블 표기는 예전 코드로 남아요.",
+    );
+
+    await dialog.getByRole("button", { name: "코드 바꾸기" }).click();
+
+    await expect(page.getByText("테이블 코드를 바꿨어요.")).toBeVisible();
+    expect(patchBody).toEqual({ id: "B-06" });
+  });
+
+  test("이미 있는 코드로 바꾸려 하면 중복 안내를 보여 준다", async ({ page }) => {
+    await page.route("**/api/admin/tables/T-01/code", async (route) => {
+      await route.fulfill({ status: 409, json: { error: "duplicate id" } });
+    });
+
+    await openTablesPage(page, buildData());
+
+    const row = page.getByRole("listitem", { name: "T-01 테이블" });
+    await row.getByRole("button", { name: "코드 수정" }).click();
+    await row.getByLabel("테이블 코드").fill("B-01");
+    await row.getByRole("button", { name: "코드 저장" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "코드 바꾸기" }).click();
+
+    await expect(page.getByText("이미 있는 코드예요.")).toBeVisible();
+    // The editor stays open with the rejected code, ready to be corrected.
+    await expect(row.getByLabel("테이블 코드")).toHaveValue("B-01");
+  });
+
+  test("사이드바 테이블 관리 그룹에서 테이블 화면과 QR 화면으로 이동한다", async ({ page }) => {
+    await openTablesPage(page, buildData());
+
+    const sidebar = page.getByRole("navigation", { name: "주 메뉴" });
+    await expect(sidebar.getByRole("link", { name: "테이블", exact: true })).toHaveAttribute(
+      "href",
+      "/tables",
+    );
+    await sidebar.getByRole("link", { name: "QR", exact: true }).click();
+
+    await expect(page).toHaveURL(/\/tables\/qr$/);
+    await expect(page.getByRole("heading", { name: "테이블 QR" })).toBeVisible();
+    await expect(page.getByText("POS 연결", { exact: true })).toHaveCount(0);
+  });
+
   test("POS에만 있는 테이블은 자동 이름 실패 시 이름을 받아 다시 보낸다", async ({ page }) => {
     const bodies: unknown[] = [];
     await page.route("**/api/admin/tables", async (route) => {
@@ -224,7 +292,7 @@ test.describe("POS 연결 레이아웃 스크린샷", () => {
 
       // Every POS control must sit inside the viewport, not just inside a
       // scrollable page — a row that overflows is unusable on a phone.
-      for (const name of ["POS 테이블 가져오기", "저장", "QR 테이블로 추가"]) {
+      for (const name of ["POS 테이블 가져오기", "저장", "코드 수정", "QR 테이블로 추가"]) {
         const box = await page.getByRole("button", { name }).first().boundingBox();
         expect(box, `${name} 버튼 위치`).not.toBeNull();
         expect.soft(box!.x, `${name} 버튼 좌측`).toBeGreaterThanOrEqual(0);

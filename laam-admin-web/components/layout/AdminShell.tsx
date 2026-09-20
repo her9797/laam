@@ -23,6 +23,7 @@ import {
   RiShoppingBag3Line,
   RiShoppingCart2Line,
   RiStarLine,
+  RiTableLine,
   RiUserVoiceLine,
   RiWallet3Line,
 } from "@remixicon/react";
@@ -117,15 +118,27 @@ const INVENTORY_NAV_GROUP: NavGroup = {
   ],
 };
 
+// A labeled sub-section rather than its own link: the table list and the QR
+// sheet are two screens over the same tables, and only the linked ones get a
+// QR — so printing codes is a separate screen from fixing the POS links.
+const TABLE_NAV_GROUP: NavGroup = {
+  labelKey: "navTablesGroup",
+  icon: RiTableLine,
+  items: [
+    { href: "/tables", labelKey: "navTables", icon: RiTableLine },
+    { href: "/tables/qr", labelKey: "navTableQr", icon: RiQrCodeLine },
+  ],
+};
+
 const NAV_GROUPS: NavGroup[] = [
   REQUEST_NAV_GROUP,
   ORDER_NAV_GROUP,
   PRODUCT_NAV_GROUP,
   INVENTORY_NAV_GROUP,
+  TABLE_NAV_GROUP,
 ];
 
 const BOTTOM_NAV_ITEMS: NavItem[] = [
-  { href: "/tables", labelKey: "navTables", icon: RiQrCodeLine },
   { href: "/notices", labelKey: "navNotices", icon: RiMegaphoneLine },
   { href: "/store-copy", labelKey: "navStoreCopy", icon: RiFileTextLine },
   // A standalone top-level item, not folded into any of the grouped
