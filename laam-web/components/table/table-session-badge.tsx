@@ -3,25 +3,8 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import { SecretCouponHotspot } from "@/components/easter-egg/secret-coupon-hotspot";
+import { formatTableLabel } from "@/lib/table-label";
 import { getStoredTableNumber, normalizeTableNumber, setStoredTableNumber } from "@/lib/table-session";
-
-function formatTableLabel(tableNumber: string) {
-  if (!tableNumber) {
-    return "TABLE";
-  }
-
-  const normalized = tableNumber.toUpperCase();
-  if (/^[TB]-\d{1,2}$/.test(normalized)) {
-    const [area, number] = normalized.split("-");
-    return `${area}-${number.padStart(2, "0")}`;
-  }
-
-  if (/^\d{1,2}$/.test(normalized)) {
-    return `T-${normalized.padStart(2, "0")}`;
-  }
-
-  return `T-${normalized}`;
-}
 
 export function TableSessionBadge({ canEdit = false }: { canEdit?: boolean }) {
   const [tableNumber, setTableNumber] = useState("");
