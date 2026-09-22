@@ -1,13 +1,16 @@
 "use client";
 
 import { FormEvent, useEffect, useState, useTransition } from "react";
+import confetti from "canvas-confetti";
 
+import { SecretCouponModal } from "@/components/easter-egg/secret-coupon-hotspot";
 import { FloatingHomeBadge } from "@/components/navigation/floating-home-badge";
 import { PrimaryNav } from "@/components/navigation/primary-nav";
 import { ScrollTopButton } from "@/components/navigation/scroll-top-button";
 import type { StoreInfo } from "@/data/menu-data";
 import { getStoredTableNumber } from "@/lib/table-session";
 import { createCustomerRequest } from "@/services/customer-request-service";
+import type { SecretCouponClaim } from "@/services/secret-coupon-service";
 
 type SongRequestsScreenProps = {
   store: StoreInfo;
@@ -18,6 +21,7 @@ export function SongRequestsScreen({ store }: SongRequestsScreenProps) {
   const [song, setSong] = useState("");
   const [artist, setArtist] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [secretCoupon, setSecretCoupon] = useState<SecretCouponClaim | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -39,13 +43,21 @@ export function SongRequestsScreen({ store }: SongRequestsScreenProps) {
 
     startTransition(async () => {
       try {
-        await createCustomerRequest({
+        const result = await createCustomerRequest({
           tableNumber,
           text: `[노래 신청] ${song.trim()}${artist.trim() ? ` - ${artist.trim()}` : ""}`,
         });
         setSong("");
         setArtist("");
         setFeedback("노래 신청을 전달했어요.");
+        setSecretCoupon(result.secretCoupon ?? null);
+        if (result.secretCoupon) {
+          confetti({
+            particleCount: 140,
+            spread: 90,
+            origin: { y: 0.6 },
+          });
+        }
       } catch (error) {
         setFeedback(error instanceof Error ? error.message : "노래 신청 전달에 실패했습니다.");
       }
@@ -92,6 +104,7 @@ export function SongRequestsScreen({ store }: SongRequestsScreenProps) {
           {feedback}
         </div>
       ) : null}
+      {secretCoupon ? <SecretCouponModal claim={secretCoupon} onClose={() => setSecretCoupon(null)} /> : null}
     </main>
   );
 }

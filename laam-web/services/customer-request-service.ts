@@ -1,3 +1,5 @@
+import type { SecretCouponClaim } from "./secret-coupon-service";
+
 export type CustomerRequestGender = "male" | "female";
 
 export type CustomerRequestInput = {
@@ -17,6 +19,11 @@ export type SpecialRequestInput = {
   idealAgeRange: string;
   idealDetails: string;
   text: string;
+};
+
+export type CustomerRequestResult = {
+  status: "ok";
+  secretCoupon?: SecretCouponClaim;
 };
 
 async function readError(response: Response) {
@@ -39,6 +46,8 @@ export async function createCustomerRequest(payload: CustomerRequestInput) {
   if (!response.ok) {
     throw new Error(await readError(response));
   }
+
+  return (await response.json()) as CustomerRequestResult;
 }
 
 export async function createSpecialRequest(payload: SpecialRequestInput) {
