@@ -81,17 +81,26 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 			return
 		}
 
+		tableNumber := strings.TrimSpace(payload.TableNumber)
+		text := strings.TrimSpace(payload.Text)
 		if err := repository.CreateCustomerRequest(
 			r.Context(),
-			strings.TrimSpace(payload.TableNumber),
-			strings.TrimSpace(payload.Text),
+			tableNumber,
+			text,
 		); err != nil {
 			writeStoreError(w, err)
 			return
 		}
 
+		claim, claimErr := repository.ClaimCrushSongSecretCoupon(r.Context(), tableNumber, text)
+		if claimErr != nil {
+			log.Printf("customer requests: failed to claim Crush song coupon: %v", claimErr)
+		}
 		sendNewRequestBroadcastAsync(broadcaster)
-		writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
+		writeJSON(w, http.StatusCreated, struct {
+			Status       string                     `json:"status"`
+			SecretCoupon *lamdata.SecretCouponClaim `json:"secretCoupon,omitempty"`
+		}{Status: "ok", SecretCoupon: claim})
 	}))
 
 	mux.HandleFunc("/api/v1/special-requests", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {

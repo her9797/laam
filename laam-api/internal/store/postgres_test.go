@@ -96,6 +96,29 @@ func TestIsValidSongPlaybackStatus(t *testing.T) {
 	}
 }
 
+func TestIsCrushSongRequest(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{name: "English artist", text: "[노래 신청] Rush Hour - Crush", want: true},
+		{name: "English artist ignores case", text: "[노래 신청] Beautiful - CRUSH", want: true},
+		{name: "Korean artist", text: "[노래 신청] 잊어버리지마 - 크러쉬", want: true},
+		{name: "Crush only in title", text: "[노래 신청] Crush - IVE", want: false},
+		{name: "different artist", text: "[노래 신청] Ditto - NewJeans", want: false},
+		{name: "general request", text: "크러쉬 노래 틀어주세요", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isCrushSongRequest(tt.text); got != tt.want {
+				t.Fatalf("isCrushSongRequest(%q) = %t, want %t", tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsValidCustomerRequestGender(t *testing.T) {
 	cases := []struct {
 		gender string

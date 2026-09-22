@@ -421,6 +421,9 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO secret_coupons (id, reward_label, sort_order) VALUES
   ('first-order-8pm', '1만원 할인권', 3)
 ON CONFLICT (id) DO NOTHING;
+INSERT INTO secret_coupons (id, reward_label, sort_order) VALUES
+  ('crush-song-request', '한 잔 무료 쿠폰', 4)
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO notices (id, text, is_visible, sort_order)
 VALUES ('secret-coupon-progress', '쉿크릿 쿠폰 발견 갯수 (0/5)', true, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM notices))
 ON CONFLICT (id) DO NOTHING;
@@ -2174,6 +2177,8 @@ const TotalSecretCoupons = 5
 // "발견 갯수 (N/5)" line rather than a growing pile of duplicates.
 const secretCouponNoticeID = "secret-coupon-progress"
 
+const crushSongCouponID = "crush-song-request"
+
 // ClaimSecretCoupon marks one hidden coupon as found — first customer to
 // hit this for a given id wins it, since the UPDATE only touches a row
 // that is still unclaimed. It also updates the running hunt-progress
@@ -2193,6 +2198,36 @@ func (r *Repository) ClaimSecretCoupon(ctx context.Context, id string, tableNumb
 		return lamdata.SecretCouponClaim{}, err
 	}
 	return claim, nil
+}
+
+func isCrushSongRequest(text string) bool {
+	text = strings.TrimSpace(text)
+	if !strings.HasPrefix(text, songRequestPrefix) {
+		return false
+	}
+
+	request := strings.TrimSpace(strings.TrimPrefix(text, songRequestPrefix))
+	separator := strings.LastIndex(request, " - ")
+	if separator < 0 {
+		return false
+	}
+	artist := strings.TrimSpace(request[separator+3:])
+	return strings.EqualFold(artist, "crush") || artist == "크러쉬"
+}
+
+func (r *Repository) ClaimCrushSongSecretCoupon(ctx context.Context, tableNumber string, text string) (*lamdata.SecretCouponClaim, error) {
+	if !isCrushSongRequest(text) {
+		return nil, nil
+	}
+
+	claim, err := r.ClaimSecretCoupon(ctx, crushSongCouponID, tableNumber)
+	if errors.Is(err, ErrAlreadyExists) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &claim, nil
 }
 
 func claimSecretCoupon(ctx context.Context, tx pgx.Tx, id string, tableNumber string) (lamdata.SecretCouponClaim, error) {
