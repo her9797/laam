@@ -16,6 +16,9 @@ func tableLinkConfig() config.Config {
 	cfg.QRSigningSecret = "test-qr-signing-secret"
 	cfg.CustomerWebBaseURL = "https://example.test"
 	cfg.POSPluginAPIToken = "test-plugin-token"
+	// Table sync only exists in plugin mode: the POS plugin is the only
+	// thing that can read the table list.
+	cfg.POSOrderProvider = "plugin"
 	return cfg
 }
 
@@ -637,5 +640,43 @@ func TestRouter_AdminTables_RenamesQrTableCode(t *testing.T) {
 	rec = doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/R-02/code", []byte(`{"id":"b6"}`), adminHeaders())
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("malformed rename status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+// In open-api mode no plugin ever claims a table sync, so asking for one and
+// waiting 30 seconds for a timeout tells the operator nothing. The request is
+// refused right away with a reason instead.
+func TestRouter_AdminTablesPOSSync_RefusedWhenPluginModeIsOff(t *testing.T) {
+	cfg := tableLinkConfig()
+	cfg.POSOrderProvider = "open-api"
+	handler := resetServerWithConfig(t, cfg)
+
+	rec := doRequest(t, handler, http.MethodPost, "/api/v1/admin/tables/pos-sync", nil, adminHeaders())
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "pos_plugin_disabled") {
+		t.Fatalf("body = %s, want the pos_plugin_disabled code", rec.Body.String())
+	}
+
+	// Nothing may be left behind for a plugin that will never arrive.
+	rec = doRequest(t, handler, http.MethodGet, "/api/v1/admin/tables", nil, adminHeaders())
+	var body adminTablesBody
+	decodeTableJSON(t, rec.Body.Bytes(), &body)
+	if body.PendingSync != nil {
+		t.Fatalf("pendingSync = %+v, want null", body.PendingSync)
+	}
+}
+
+// The plugin token is what the POS authenticates with; without it every claim
+// is rejected and the sync can only time out.
+func TestRouter_AdminTablesPOSSync_RefusedWhenPluginTokenMissing(t *testing.T) {
+	cfg := tableLinkConfig()
+	cfg.POSPluginAPIToken = ""
+	handler := resetServerWithConfig(t, cfg)
+
+	rec := doRequest(t, handler, http.MethodPost, "/api/v1/admin/tables/pos-sync", nil, adminHeaders())
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
 	}
 }
