@@ -115,7 +115,7 @@ describe("AdminShell", () => {
     cleanup();
   });
 
-  it("brands the sidebar header with the logo next to the service name", () => {
+  it("brands the sidebar header with the logo alone, named for screen readers", () => {
     render(
       <AdminShell>
         <p>page content</p>
@@ -123,12 +123,12 @@ describe("AdminShell", () => {
     );
 
     const header = getSidebarHeader();
-    const logo = header.querySelector("img");
-    expect(logo?.getAttribute("src")).toContain("logo.png");
-    // Decorative: the service name sits right beside it as real text, so an
-    // alt text here would only make screen readers announce the name twice.
-    expect(logo).toHaveAttribute("alt", "");
-    expect(within(header).getByText("LAM 관리자")).toBeInTheDocument();
+    // The mark stands on its own — the service name is carried by the logo's
+    // alt text, so screen readers still get it without the header repeating
+    // what the browser tab title already says.
+    const logo = within(header).getByRole("img", { name: "LAM 관리자" });
+    expect(logo.getAttribute("src")).toContain("logo.png");
+    expect(within(header).queryByText("LAM 관리자")).not.toBeInTheDocument();
   });
 
   it("renders every primary navigation item as a reachable link", () => {
