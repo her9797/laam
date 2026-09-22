@@ -1,4 +1,5 @@
 import { orderErrorMessage, type OrderErrorBody } from "../lib/order-errors.ts";
+import type { SecretCouponClaim } from "./secret-coupon-service";
 
 export type CustomerOrder = {
   orderId: string;
@@ -12,6 +13,7 @@ export type CustomerOrder = {
   posSyncStatus: "PENDING" | "SUCCEEDED" | "FAILED" | "NOT_CONFIGURED";
   posOrderId?: string;
   createdAt: string;
+  secretCoupon?: SecretCouponClaim;
 };
 
 export type OrderOptionChoiceInput = {

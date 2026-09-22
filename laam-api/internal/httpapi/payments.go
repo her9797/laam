@@ -84,6 +84,14 @@ func registerPaymentRoutes(mux *http.ServeMux, repository *store.Repository, cfg
 				sendNewOrderBroadcastAsync(broadcaster)
 			}
 		}
+		if cfg.POSOrderProvider == "plugin" || order.POSSyncStatus == "SUCCEEDED" {
+			claim, claimErr := repository.ClaimFirstOrderTimedSecretCoupon(r.Context(), order.TableNumber)
+			if claimErr != nil {
+				log.Printf("orders: failed to claim first-order coupon for order %s: %v", order.OrderID, claimErr)
+			} else {
+				order.SecretCoupon = claim
+			}
+		}
 		writeJSON(w, http.StatusCreated, order)
 	}))
 

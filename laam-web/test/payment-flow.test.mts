@@ -25,6 +25,23 @@ test("메뉴 주문은 결제 화면 없이 토스 POS 주문을 등록하고 �
   assert.match(service, /optionChoices/);
 });
 
+test("오전 쿠폰 첫 주문은 시크릿 모달과 폭죽을 표시한다", async () => {
+  const card = await readFile(
+    new URL("../components/menu/menu-item-card.tsx", import.meta.url),
+    "utf8",
+  );
+  const service = await readFile(
+    new URL("../services/order-service.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(service, /secretCoupon/);
+  assert.match(card, /SecretCouponModal/);
+  assert.match(card, /claim=\{secretCoupon\}/);
+  assert.match(card, /canvas-confetti/);
+  assert.match(card, /particleCount:\s*140/);
+});
+
 test("주문 버튼을 누르면 바로 접수하지 않고 확인 절차를 먼저 거친다", async () => {
   const card = await readFile(
     new URL("../components/menu/menu-item-card.tsx", import.meta.url),

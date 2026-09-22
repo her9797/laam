@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -38,6 +39,7 @@ type PaymentOrder struct {
 	POSSyncError      string                     `json:"posSyncError,omitempty"`
 	CreatedAt         string                     `json:"createdAt"`
 	OptionChoices     []PaymentOrderOptionChoice `json:"optionChoices,omitempty"`
+	SecretCoupon      *lamdata.SecretCouponClaim `json:"secretCoupon,omitempty"`
 }
 
 type OrderOptionChoiceInput struct {
@@ -91,6 +93,16 @@ type availableOrderOptionChoice struct {
 }
 
 const paymentOrderRequestNoteMaxLength = 200
+
+// firstOrderTimedCouponID keeps the originally deployed row id stable while
+// the promotion's time window can be adjusted without adding another coupon.
+const firstOrderTimedCouponID = "first-order-8pm"
+
+var seoulLocation = time.FixedZone("Asia/Seoul", 9*60*60)
+
+func isEightPMFirstOrderCouponWindow(now time.Time) bool {
+	return now.In(seoulLocation).Hour() == 20
+}
 
 func normalizePaymentOrderRequestNote(note string) (string, error) {
 	note = strings.TrimSpace(note)
@@ -193,7 +205,28 @@ func (r *Repository) CreatePaymentOrder(ctx context.Context, menuItemID string, 
 		return PaymentOrder{}, err
 	}
 
-	return r.GetPaymentOrder(ctx, orderID)
+	order, err := r.GetPaymentOrder(ctx, orderID)
+	if err != nil {
+		return PaymentOrder{}, err
+	}
+	return order, nil
+}
+
+// ClaimFirstOrderTimedSecretCoupon awards the one global coupon only while
+// the promotion is active. Callers invoke it after a customer order has been
+// accepted by the POS flow, so failed registrations cannot consume it.
+func (r *Repository) ClaimFirstOrderTimedSecretCoupon(ctx context.Context, tableNumber string) (*lamdata.SecretCouponClaim, error) {
+	if !isEightPMFirstOrderCouponWindow(r.now()) {
+		return nil, nil
+	}
+	claim, err := r.ClaimSecretCoupon(ctx, firstOrderTimedCouponID, tableNumber)
+	if errors.Is(err, ErrAlreadyExists) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &claim, nil
 }
 
 func loadAvailableOrderOptions(ctx context.Context, tx pgx.Tx, menuItemID string) ([]availableOrderOption, error) {

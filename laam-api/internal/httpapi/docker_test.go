@@ -147,7 +147,7 @@ func resetServerWithConfig(t *testing.T, cfg config.Config) http.Handler {
 	}
 
 	ctx := context.Background()
-	if _, err := testPool.Exec(ctx, `TRUNCATE payment_orders, menu_item_images, menu_items, menu_categories, request_guides, notices, song_playback_queue, customer_requests, special_requests, system_error_logs, store_profile, pos_table_sync_requests, pos_tables, qr_tables RESTART IDENTITY CASCADE`); err != nil {
+	if _, err := testPool.Exec(ctx, `TRUNCATE payment_orders, menu_item_images, menu_items, menu_categories, request_guides, notices, secret_coupons, song_playback_queue, customer_requests, special_requests, system_error_logs, store_profile, pos_table_sync_requests, pos_tables, qr_tables RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("truncate tables: %v", err)
 	}
 	// qr_tables is seeded only while empty, so re-seeding after the truncate
@@ -160,6 +160,14 @@ func resetServerWithConfig(t *testing.T, cfg config.Config) http.Handler {
 		VALUES (1, 'Test Store', 'test subtitle', 'test address', 'song copy', 'request copy', 'event copy')
 	`); err != nil {
 		t.Fatalf("seed store_profile: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO secret_coupons (id, reward_label, sort_order) VALUES
+			('vinyl-laam', '1만원 할인권', 1),
+			('table-badge', '1만원 할인권', 2),
+			('first-order-8pm', '1만원 할인권', 3)
+	`); err != nil {
+		t.Fatalf("seed secret_coupons: %v", err)
 	}
 
 	return NewMux(testRepo, cfg, nil)
