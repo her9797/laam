@@ -2,6 +2,7 @@
 
 import "@/i18n/client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, type ComponentType, type ReactNode } from "react";
@@ -267,9 +268,29 @@ function AdminShellContent({ children }: { children: ReactNode }) {
     <>
       <Sidebar collapsible="icon">
         <SidebarHeader>
-          <span className="px-2 py-1 text-sm font-semibold text-sidebar-foreground">
-            {t("appName")}
-          </span>
+          <div className="flex items-center gap-2 px-2 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+            {/* The favicon's hand-written "람" mark, redrawn as a transparent
+                PNG (`public/logo.png`) so it sits on the sidebar's own
+                background; the ink is black, and `dark:invert` flips it to
+                white for the dark theme. Decorative, because the service name
+                next to it is the accessible name — kept in the tree even when
+                the sidebar collapses to icons and only the mark is visible.
+                `unoptimized` because /_next/image needs `sharp` at runtime,
+                which the standalone runtime image doesn't install, and a
+                fixed 28px mark has nothing to gain from resizing. */}
+            <Image
+              src="/logo.png"
+              alt=""
+              width={256}
+              height={256}
+              unoptimized
+              priority
+              className="size-7 shrink-0 dark:invert"
+            />
+            <span className="truncate text-sm font-semibold text-sidebar-foreground group-data-[collapsible=icon]:sr-only">
+              {t("appName")}
+            </span>
+          </div>
         </SidebarHeader>
         <SidebarContent>
           <nav aria-label={t("navigation")}>

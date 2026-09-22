@@ -84,6 +84,14 @@ function getSidebarWrapper() {
   return wrapper;
 }
 
+function getSidebarHeader() {
+  const header = document.querySelector('[data-slot="sidebar-header"]');
+  if (!(header instanceof HTMLElement)) {
+    throw new Error("sidebar header not found");
+  }
+  return header;
+}
+
 function clearSidebarWidthCookie() {
   document.cookie = "sidebar_width=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
 }
@@ -105,6 +113,22 @@ describe("AdminShell", () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it("brands the sidebar header with the logo next to the service name", () => {
+    render(
+      <AdminShell>
+        <p>page content</p>
+      </AdminShell>,
+    );
+
+    const header = getSidebarHeader();
+    const logo = header.querySelector("img");
+    expect(logo?.getAttribute("src")).toContain("logo.png");
+    // Decorative: the service name sits right beside it as real text, so an
+    // alt text here would only make screen readers announce the name twice.
+    expect(logo).toHaveAttribute("alt", "");
+    expect(within(header).getByText("LAM 관리자")).toBeInTheDocument();
   });
 
   it("renders every primary navigation item as a reachable link", () => {
