@@ -69,10 +69,11 @@ type MenuImageContent struct {
 
 type Repository struct {
 	pool *pgxpool.Pool
+	now  func() time.Time
 }
 
 func New(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool}
+	return &Repository{pool: pool, now: time.Now}
 }
 
 func (r *Repository) EnsureSchema(ctx context.Context) error {
@@ -416,6 +417,9 @@ INSERT INTO secret_coupons (id, reward_label, sort_order) VALUES
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO secret_coupons (id, reward_label, sort_order) VALUES
   ('table-badge', '1만원 할인권', 2)
+ON CONFLICT (id) DO NOTHING;
+INSERT INTO secret_coupons (id, reward_label, sort_order) VALUES
+  ('first-order-8pm', '1만원 할인권', 3)
 ON CONFLICT (id) DO NOTHING;
 INSERT INTO notices (id, text, is_visible, sort_order)
 VALUES ('secret-coupon-progress', '쉿크릿 쿠폰 발견 갯수 (0/5)', true, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM notices))
@@ -2175,13 +2179,30 @@ const secretCouponNoticeID = "secret-coupon-progress"
 // that is still unclaimed. It also updates the running hunt-progress
 // notice in place.
 func (r *Repository) ClaimSecretCoupon(ctx context.Context, id string, tableNumber string) (lamdata.SecretCouponClaim, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return lamdata.SecretCouponClaim{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	claim, err := claimSecretCoupon(ctx, tx, id, tableNumber)
+	if err != nil {
+		return lamdata.SecretCouponClaim{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return lamdata.SecretCouponClaim{}, err
+	}
+	return claim, nil
+}
+
+func claimSecretCoupon(ctx context.Context, tx pgx.Tx, id string, tableNumber string) (lamdata.SecretCouponClaim, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return lamdata.SecretCouponClaim{}, ErrInvalidInput
 	}
 
 	var rewardLabel string
-	err := r.pool.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		UPDATE secret_coupons
 		SET claimed_at = NOW(), table_number = $2
 		WHERE id = $1 AND claimed_at IS NULL
@@ -2193,7 +2214,7 @@ func (r *Repository) ClaimSecretCoupon(ctx context.Context, id string, tableNumb
 		}
 
 		var exists bool
-		if err := r.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM secret_coupons WHERE id = $1)`, id).Scan(&exists); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM secret_coupons WHERE id = $1)`, id).Scan(&exists); err != nil {
 			return lamdata.SecretCouponClaim{}, err
 		}
 		if !exists {
@@ -2203,16 +2224,16 @@ func (r *Repository) ClaimSecretCoupon(ctx context.Context, id string, tableNumb
 	}
 
 	var claimedCount int
-	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM secret_coupons WHERE claimed_at IS NOT NULL`).Scan(&claimedCount); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM secret_coupons WHERE claimed_at IS NOT NULL`).Scan(&claimedCount); err != nil {
 		return lamdata.SecretCouponClaim{}, err
 	}
 
 	noticeText := fmt.Sprintf("쉿크릿 쿠폰 발견 갯수 (%d/%d)", claimedCount, TotalSecretCoupons)
-	sortOrder, err := r.nextSortOrder(ctx, "notices")
-	if err != nil {
+	var sortOrder int
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(MAX(sort_order), 0) + 1 FROM notices`).Scan(&sortOrder); err != nil {
 		return lamdata.SecretCouponClaim{}, err
 	}
-	if _, err := r.pool.Exec(ctx, `
+	if _, err := tx.Exec(ctx, `
 		INSERT INTO notices (id, text, is_visible, sort_order)
 		VALUES ($1, $2, true, $3)
 		ON CONFLICT (id) DO UPDATE SET text = EXCLUDED.text

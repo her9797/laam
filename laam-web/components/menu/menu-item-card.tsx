@@ -2,12 +2,15 @@
 
 import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
+import confetti from "canvas-confetti";
 
 import type { MenuItem } from "@/data/menu-data";
+import { SecretCouponModal } from "@/components/easter-egg/secret-coupon-hotspot";
 import { getMenuItemDetail } from "@/lib/menu-item-detail";
 import { getMenuOrderTotal, parseWonPrice, validateMenuOptionSelection, type MenuOptionSelection } from "@/lib/menu-options";
 import { getStoredTableNumber } from "@/lib/table-session";
 import { createOrder } from "@/services/order-service";
+import type { SecretCouponClaim } from "@/services/secret-coupon-service";
 
 type MenuItemCardProps = {
   item: MenuItem;
@@ -19,6 +22,7 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
   const [isOrdering, setIsOrdering] = useState(false);
   const [orderError, setOrderError] = useState("");
   const [isOrderComplete, setIsOrderComplete] = useState(false);
+  const [secretCoupon, setSecretCoupon] = useState<SecretCouponClaim | null>(null);
   const [isConfirmingOrder, setIsConfirmingOrder] = useState(false);
   const [requestNote, setRequestNote] = useState("");
   const [selectedChoices, setSelectedChoices] = useState<MenuOptionSelection>({});
@@ -76,7 +80,7 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
     setIsOrdering(true);
     setOrderError("");
     try {
-      await createOrder({
+      const order = await createOrder({
         menuItemId: item.id,
         tableNumber: getStoredTableNumber(),
         requestNote,
@@ -90,6 +94,14 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
             })),
         ),
       });
+      setSecretCoupon(order.secretCoupon ?? null);
+      if (order.secretCoupon) {
+        confetti({
+          particleCount: 140,
+          spread: 90,
+          origin: { y: 0.6 },
+        });
+      }
       setIsOrderComplete(true);
     } catch (error) {
       setOrderError(error instanceof Error ? error.message : "주문을 시작하지 못했습니다.");
@@ -102,6 +114,7 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
   function openDetail() {
     setOrderError("");
     setIsOrderComplete(false);
+    setSecretCoupon(null);
     setIsConfirmingOrder(false);
     setRequestNote("");
     setSelectedChoices({});
@@ -305,6 +318,7 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
                 주문이 접수됐어요. 매장에서 결제해 주세요.
               </p>
             ) : null}
+            {secretCoupon ? <SecretCouponModal claim={secretCoupon} onClose={() => setSecretCoupon(null)} /> : null}
             {isConfirmingOrder && !isOrderComplete ? (
               <p className="menu-detail-order-confirm" role="alertdialog" aria-label="주문 확인">
                 정말 주문하시겠어요?

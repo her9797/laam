@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/her9797/laam/laam-api/internal/lamdata"
 )
@@ -504,6 +505,43 @@ func TestRepository_ClaimSecretCoupon(t *testing.T) {
 			t.Errorf("Notices[0].Text = %q, want %q", data.Notices[0].Text, want)
 		}
 	})
+}
+
+func TestRepository_CreatePaymentOrderClaimsFirstEightPMCoupon(t *testing.T) {
+	repo := resetDB(t)
+	ctx := context.Background()
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO menu_categories (id, label, sort_order) VALUES ('coupon-category', '쿠폰 테스트', 1);
+		INSERT INTO menu_items (id, category_id, name, description, price, sort_order, toss_catalog_item_id)
+		VALUES ('coupon-menu', 'coupon-category', '쿠폰 메뉴', '', '10,000원', 1, 'coupon-pos-item');
+	`); err != nil {
+		t.Fatalf("seed menu: %v", err)
+	}
+	repo.now = func() time.Time {
+		return time.Date(2026, time.September, 22, 20, 0, 0, 0, time.FixedZone("Asia/Seoul", 9*60*60))
+	}
+
+	if _, err := repo.CreatePaymentOrder(ctx, "coupon-menu", "T-01", "", nil); err != nil {
+		t.Fatalf("first CreatePaymentOrder() error = %v", err)
+	}
+	first, err := repo.ClaimFirstOrderTimedSecretCoupon(ctx, "T-01")
+	if err != nil {
+		t.Fatalf("first ClaimFirstOrderTimedSecretCoupon() error = %v", err)
+	}
+	if first == nil || first.RewardLabel != "1만원 할인권" {
+		t.Fatalf("first coupon = %+v, want 1만원 할인권", first)
+	}
+
+	if _, err := repo.CreatePaymentOrder(ctx, "coupon-menu", "T-02", "", nil); err != nil {
+		t.Fatalf("second CreatePaymentOrder() error = %v", err)
+	}
+	second, err := repo.ClaimFirstOrderTimedSecretCoupon(ctx, "T-02")
+	if err != nil {
+		t.Fatalf("second ClaimFirstOrderTimedSecretCoupon() error = %v", err)
+	}
+	if second != nil {
+		t.Fatalf("second coupon = %+v, want nil", second)
+	}
 }
 
 func TestRepository_CustomerRequestLifecycle(t *testing.T) {

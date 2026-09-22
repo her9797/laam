@@ -3,7 +3,28 @@ package store
 import (
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestIsEightPMFirstOrderCouponWindow(t *testing.T) {
+	seoul := time.FixedZone("Asia/Seoul", 9*60*60)
+	for _, tt := range []struct {
+		name string
+		now  time.Time
+		want bool
+	}{
+		{name: "opening instant", now: time.Date(2026, time.September, 22, 20, 0, 0, 0, seoul), want: true},
+		{name: "last minute", now: time.Date(2026, time.September, 22, 20, 59, 59, 0, seoul), want: true},
+		{name: "before window", now: time.Date(2026, time.September, 22, 19, 59, 59, 0, seoul), want: false},
+		{name: "closing instant", now: time.Date(2026, time.September, 22, 21, 0, 0, 0, seoul), want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isEightPMFirstOrderCouponWindow(tt.now); got != tt.want {
+				t.Fatalf("isEightPMFirstOrderCouponWindow(%s) = %t, want %t", tt.now, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestParsePaymentAmount(t *testing.T) {
 	tests := []struct {
