@@ -268,7 +268,7 @@ function AdminShellContent({ children }: { children: ReactNode }) {
     <>
       <Sidebar collapsible="icon">
         <SidebarHeader>
-          <div className="flex items-center px-2 py-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+          <div className="flex items-center justify-center py-1">
             {/* The favicon's hand-written "람" mark, redrawn as a transparent
                 PNG (`public/logo.png`) so it sits on the sidebar's own
                 background; the ink is black, and `dark:invert` flips it to
