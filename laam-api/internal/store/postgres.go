@@ -424,6 +424,9 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO secret_coupons (id, reward_label, sort_order) VALUES
   ('crush-song-request', '한 잔 무료 쿠폰', 4)
 ON CONFLICT (id) DO NOTHING;
+INSERT INTO secret_coupons (id, reward_label, sort_order) VALUES
+  ('owner-compliment-request', '한 잔 무료 쿠폰', 5)
+ON CONFLICT (id) DO NOTHING;
 INSERT INTO notices (id, text, is_visible, sort_order)
 VALUES ('secret-coupon-progress', '쉿크릿 쿠폰 발견 갯수 (0/5)', true, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM notices))
 ON CONFLICT (id) DO NOTHING;
@@ -2178,6 +2181,7 @@ const TotalSecretCoupons = 5
 const secretCouponNoticeID = "secret-coupon-progress"
 
 const crushSongCouponID = "crush-song-request"
+const ownerComplimentCouponID = "owner-compliment-request"
 
 // ClaimSecretCoupon marks one hidden coupon as found — first customer to
 // hit this for a given id wins it, since the UPDATE only touches a row
@@ -2221,6 +2225,25 @@ func (r *Repository) ClaimCrushSongSecretCoupon(ctx context.Context, tableNumber
 	}
 
 	claim, err := r.ClaimSecretCoupon(ctx, crushSongCouponID, tableNumber)
+	if errors.Is(err, ErrAlreadyExists) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &claim, nil
+}
+
+func isOwnerComplimentSpecialRequest(text string) bool {
+	return strings.Contains(text, "사장님") && strings.Contains(text, "잘생겼어요")
+}
+
+func (r *Repository) ClaimOwnerComplimentSecretCoupon(ctx context.Context, tableNumber string, text string) (*lamdata.SecretCouponClaim, error) {
+	if !isOwnerComplimentSpecialRequest(text) {
+		return nil, nil
+	}
+
+	claim, err := r.ClaimSecretCoupon(ctx, ownerComplimentCouponID, tableNumber)
 	if errors.Is(err, ErrAlreadyExists) {
 		return nil, nil
 	}

@@ -62,4 +62,6 @@ export async function createSpecialRequest(payload: SpecialRequestInput) {
   if (!response.ok) {
     throw new Error(await readError(response));
   }
+
+  return (await response.json()) as CustomerRequestResult;
 }
