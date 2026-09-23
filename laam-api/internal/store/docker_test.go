@@ -152,7 +152,8 @@ func resetDB(t *testing.T) *Repository {
 			('vinyl-laam', '1만원 할인권', 1),
 			('table-badge', '1만원 할인권', 2),
 			('first-order-8pm', '1만원 할인권', 3),
-			('crush-song-request', '한 잔 무료 쿠폰', 4)
+			('crush-song-request', '한 잔 무료 쿠폰', 4),
+			('owner-compliment-request', '한 잔 무료 쿠폰', 5)
 	`); err != nil {
 		t.Fatalf("seed secret_coupons: %v", err)
 	}

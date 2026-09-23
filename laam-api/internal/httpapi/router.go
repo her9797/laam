@@ -118,12 +118,21 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 			return
 		}
 
-		if err := repository.CreateSpecialRequest(r.Context(), storeInputSpecialRequest(payload)); err != nil {
+		request := storeInputSpecialRequest(payload)
+		if err := repository.CreateSpecialRequest(r.Context(), request); err != nil {
 			writeStoreError(w, err)
 			return
 		}
 
-		writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
+		claim, claimErr := repository.ClaimOwnerComplimentSecretCoupon(r.Context(), request.TableNumber, request.Text)
+		if claimErr != nil {
+			log.Printf("special requests: failed to claim owner compliment coupon: %v", claimErr)
+		}
+
+		writeJSON(w, http.StatusCreated, struct {
+			Status       string                     `json:"status"`
+			SecretCoupon *lamdata.SecretCouponClaim `json:"secretCoupon,omitempty"`
+		}{Status: "ok", SecretCoupon: claim})
 	}))
 
 	mux.HandleFunc("/api/v1/secret-coupons/", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {

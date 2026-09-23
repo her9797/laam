@@ -1,7 +1,9 @@
 "use client";
 
 import { FormEvent, useEffect, useState, useTransition } from "react";
+import confetti from "canvas-confetti";
 
+import { SecretCouponModal } from "@/components/easter-egg/secret-coupon-hotspot";
 import { FloatingHomeBadge } from "@/components/navigation/floating-home-badge";
 import { PrimaryNav } from "@/components/navigation/primary-nav";
 import { ScrollTopButton } from "@/components/navigation/scroll-top-button";
@@ -12,6 +14,7 @@ import {
 } from "@/services/customer-request-service";
 import type { StoreInfo } from "@/data/menu-data";
 import { getStoredTableNumber } from "@/lib/table-session";
+import type { SecretCouponClaim } from "@/services/secret-coupon-service";
 
 type RequestsScreenProps = {
   store: StoreInfo;
@@ -51,6 +54,7 @@ export function RequestsScreen({ store, initialCategory }: RequestsScreenProps) 
   const [specialForm, setSpecialForm] =
     useState<SpecialFormState>(defaultSpecialForm);
   const [feedback, setFeedback] = useState("");
+  const [secretCoupon, setSecretCoupon] = useState<SecretCouponClaim | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -125,7 +129,7 @@ export function RequestsScreen({ store, initialCategory }: RequestsScreenProps) 
 
     startTransition(async () => {
       try {
-        await createSpecialRequest({
+        const result = await createSpecialRequest({
           tableNumber,
           gender: specialForm.gender,
           name: specialForm.name.trim(),
@@ -140,6 +144,14 @@ export function RequestsScreen({ store, initialCategory }: RequestsScreenProps) 
         });
         setSpecialForm(defaultSpecialForm);
         setFeedback("특별한 요청을 전달했어요.");
+        setSecretCoupon(result.secretCoupon ?? null);
+        if (result.secretCoupon) {
+          confetti({
+            particleCount: 140,
+            spread: 90,
+            origin: { y: 0.6 },
+          });
+        }
       } catch (error) {
         setFeedback(
           error instanceof Error
@@ -357,6 +369,7 @@ export function RequestsScreen({ store, initialCategory }: RequestsScreenProps) 
           {feedback}
         </div>
       ) : null}
+      {secretCoupon ? <SecretCouponModal claim={secretCoupon} onClose={() => setSecretCoupon(null)} /> : null}
     </main>
   );
 }

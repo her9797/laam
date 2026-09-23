@@ -119,6 +119,28 @@ func TestIsCrushSongRequest(t *testing.T) {
 	}
 }
 
+func TestIsOwnerComplimentSpecialRequest(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{name: "exact phrase", text: "사장님 잘생겼어요", want: true},
+		{name: "words inside sentence", text: "오늘 사장님 진짜 잘생겼어요!", want: true},
+		{name: "reverse order", text: "잘생겼어요 사장님 ㅋㅋ", want: true},
+		{name: "missing owner", text: "정말 잘생겼어요", want: false},
+		{name: "missing compliment", text: "사장님 최고예요", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isOwnerComplimentSpecialRequest(tt.text); got != tt.want {
+				t.Fatalf("isOwnerComplimentSpecialRequest(%q) = %t, want %t", tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsValidCustomerRequestGender(t *testing.T) {
 	cases := []struct {
 		gender string
