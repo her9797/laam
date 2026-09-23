@@ -200,6 +200,54 @@ func TestRouter_CrushSongRequestClaimsOneDrinkCoupon(t *testing.T) {
 	}
 }
 
+func TestRouter_OwnerComplimentSpecialRequestClaimsOneDrinkCoupon(t *testing.T) {
+	handler := resetServer(t)
+	body, _ := json.Marshal(map[string]string{
+		"tableNumber":    "T-01",
+		"gender":         "female",
+		"name":           "Lee",
+		"age":            "30s",
+		"residence":      "Seoul",
+		"instagram":      "@lee",
+		"idealHeight":    "180",
+		"idealResidence": "Gangnam",
+		"idealAgeRange":  "30s",
+		"idealDetails":   "kind",
+		"text":           "오늘 사장님 진짜 잘생겼어요!",
+	})
+
+	rec := doRequest(t, handler, http.MethodPost, "/api/v1/special-requests", body, requestHeaders())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("first request status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var first struct {
+		Status       string `json:"status"`
+		SecretCoupon *struct {
+			RewardLabel string `json:"rewardLabel"`
+		} `json:"secretCoupon"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &first); err != nil {
+		t.Fatalf("decode first response: %v", err)
+	}
+	if first.Status != "ok" || first.SecretCoupon == nil || first.SecretCoupon.RewardLabel != "한 잔 무료 쿠폰" {
+		t.Fatalf("first response = %+v, want one-drink coupon", first)
+	}
+
+	rec = doRequest(t, handler, http.MethodPost, "/api/v1/special-requests", body, requestHeaders())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("second request status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var second struct {
+		SecretCoupon json.RawMessage `json:"secretCoupon"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &second); err != nil {
+		t.Fatalf("decode second response: %v", err)
+	}
+	if len(second.SecretCoupon) != 0 {
+		t.Fatalf("second secretCoupon = %s, want omitted", second.SecretCoupon)
+	}
+}
+
 func TestRouter_CustomerRequests_BulkStatusUpdate(t *testing.T) {
 	handler := resetServer(t)
 

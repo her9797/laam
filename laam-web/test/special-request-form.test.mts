@@ -58,3 +58,21 @@ test("특별한 요청 제출 시 이상형 4개 필드가 모두 서버로 전�
     assert.match(service, new RegExp(`${field}:\\s*string`));
   }
 });
+
+test("사장님 칭찬 쿠폰은 기존 모달과 폭죽으로 표시한다", async () => {
+  const screen = await readFile(
+    new URL("../components/screens/requests-screen.tsx", import.meta.url),
+    "utf8",
+  );
+  const service = await readFile(
+    new URL("../services/customer-request-service.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(service, /secretCoupon\?:\s*SecretCouponClaim/);
+  assert.match(service, /createSpecialRequest[\s\S]*as CustomerRequestResult/);
+  assert.match(screen, /SecretCouponModal/);
+  assert.match(screen, /claim=\{secretCoupon\}/);
+  assert.match(screen, /canvas-confetti/);
+  assert.match(screen, /particleCount:\s*140/);
+});
