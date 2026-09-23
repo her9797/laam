@@ -140,16 +140,22 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
 
   // The URL starts with no date bound (see `list-query-url.ts` — there is
   // no fixed default to omit-and-imply, since "last 7 days" shifts with
-  // the clock). This effect applies the real default exactly once,
-  // client-side only, after mount — same hydration-safety reasoning as
-  // `SalesStatsPage`'s mount effect.
+  // the clock). This effect applies the real default client-side only,
+  // after mount — same hydration-safety reasoning as `SalesStatsPage`'s
+  // mount effect. It depends on `dateFrom`/`dateTo` rather than running
+  // once, because App Router re-renders this component in place (it is
+  // not remounted) when the sidebar's link to this same route is clicked
+  // again: that navigation clears the query string, and a mount-only
+  // effect would never re-fill it, leaving the screen stuck on the
+  // "resolving the default range" state below. The `if` guard still keeps
+  // this idempotent once a range is present.
   useEffect(() => {
     if (!query.dateFrom || !query.dateTo) {
       const defaults = defaultDateRangeDays(DEFAULT_DATE_RANGE_SPAN_DAYS);
       updateQuery({ dateFrom: defaults.from, dateTo: defaults.to, page: 1 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [query.dateFrom, query.dateTo]);
 
   const dateRangeResult = resolveCalendarDateRange(query.dateFrom, query.dateTo);
   // Wrapped so a failed page/filter/sort/date change keeps the rows the

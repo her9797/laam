@@ -99,6 +99,15 @@ export function PosTableLinkSection({ data }: { data: AdminTablesData }) {
     syncMutation.mutate(undefined, {
       onSuccess: (sync: PosTableSync) => handleSyncFinished(sync),
       onError: (error: unknown) => {
+        // 503은 서버가 플러그인 모드가 아니라는 뜻이다. "POS를 확인하라"는
+        // 일반 실패 문구를 띄우면 엉뚱한 곳을 보게 된다.
+        if (hasStatus(error, 503)) {
+          toast.add({
+            title: t("posSyncDisabledTitle"),
+            description: t("posSyncDisabledDescription"),
+          });
+          return;
+        }
         toast.add({ title: t("posSyncFailedTitle"), description: errorMessage(error) });
       },
     });

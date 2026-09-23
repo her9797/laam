@@ -102,6 +102,17 @@ func registerTableRoutes(mux *http.ServeMux, repository *store.Repository, cfg c
 				writeMethodNotAllowed(w)
 				return
 			}
+			// Only the POS plugin can read the table list, and it only polls
+			// in plugin mode with a token to authenticate. Without either,
+			// nobody will ever claim the request — say so now instead of
+			// leaving the operator watching a 30s timeout.
+			if !posPluginClaimsEnabled(cfg.POSOrderProvider) || cfg.POSPluginAPIToken == "" {
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+					"error": "POS plugin mode is off, so no plugin can answer a table sync",
+					"code":  "pos_plugin_disabled",
+				})
+				return
+			}
 			sync, created, err := repository.RequestPOSTableSync(r.Context())
 			if err != nil {
 				writeStoreError(w, err)

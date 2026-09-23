@@ -184,6 +184,36 @@ describe("OrderListPage", () => {
     expect(screen.getByRole("status")).toBeInTheDocument();
   });
 
+  // Reproduces the sidebar-revisit bug: clicking the same nav item again
+  // navigates to the bare path (no query string) without unmounting this
+  // component — App Router only re-renders it — so the mount effect that
+  // fills in the default date range must not be a run-once effect, or the
+  // screen gets stuck showing the "resolving the default range" loading
+  // state forever, because `router.replace` (mocked below to behave like
+  // the real one, updating `currentSearchParams`) then never gets called
+  // again to restore it.
+  it("recovers the list when the URL query is cleared by a same-route re-navigation", () => {
+    replaceMock.mockImplementation((url: string) => {
+      const queryString = url.includes("?") ? url.slice(url.indexOf("?") + 1) : "";
+      currentSearchParams = new URLSearchParams(queryString);
+    });
+
+    const { rerender } = render(<OrderListPage />);
+    expect(screen.getByText(ORDERS[0].menuItemName)).toBeInTheDocument();
+
+    // Same-route sidebar re-click: the URL loses its query string, but the
+    // component instance is the same one (no remount).
+    currentSearchParams = new URLSearchParams();
+    rerender(<OrderListPage />);
+    // The mount effect must have re-applied the default range via
+    // `router.replace`, which the mock above reflects back into
+    // `currentSearchParams` — render once more to pick that up, exactly
+    // as the real router driving a fresh render would.
+    rerender(<OrderListPage />);
+
+    expect(screen.getByText(ORDERS[0].menuItemName)).toBeInTheDocument();
+  });
+
   it("shows a loading state while the order page is loading", () => {
     mockQuery({ data: undefined, isLoading: true });
 

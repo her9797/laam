@@ -226,6 +226,21 @@ describe("PosTableLinkSection", () => {
     );
   });
 
+  it("explains that the server is not in POS plugin mode instead of a generic failure", async () => {
+    render(<PosTableLinkSection data={buildData()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "POS 테이블 가져오기" }));
+    rejectMutation(syncMutate, new FetchJsonError(503, "POS plugin mode is off", { code: "pos_plugin_disabled" }));
+
+    await waitFor(() => {
+      expect(toastAddMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "POS 플러그인 모드가 아니라 가져올 수 없어요",
+        }),
+      );
+    });
+  });
+
   it("tells the operator when the POS table is already linked to another table", async () => {
     render(<PosTableLinkSection data={buildData()} />);
 

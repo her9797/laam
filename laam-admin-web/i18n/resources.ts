@@ -500,6 +500,8 @@ export const ko = {
     posSyncSuccessDescription: "연결됨 {{linked}} · 연결 필요 {{unlinked}} · POS에만 있음 {{posOnly}}",
     posSyncTimedOut: "POS 플러그인이 응답하지 않아요. POS가 켜져 있고 플러그인이 설치됐는지 확인해 주세요.",
     posSyncFailedTitle: "POS 테이블을 가져오지 못했어요.",
+    posSyncDisabledTitle: "POS 플러그인 모드가 아니라 가져올 수 없어요",
+    posSyncDisabledDescription: "서버가 POS 플러그인으로 주문을 넘기는 설정일 때만 테이블을 가져올 수 있어요. 배포 설정을 확인해 주세요.",
     unlinkedWarningTitle: "이 테이블은 손님이 주문할 수 없어요",
     unlinkedWarningDescription: "POS에 연결되지 않은 테이블이 {{count}}개 있어요. 연결해야 그 자리에서 주문할 수 있어요.",
     linkSectionTitle: "테이블 연결 상태",
@@ -1239,6 +1241,8 @@ export const en = {
     posSyncTimedOut:
       "The POS plugin is not responding. Check that the POS is on and the plugin is installed.",
     posSyncFailedTitle: "Could not pull the POS tables.",
+    posSyncDisabledTitle: "POS plugin mode is off, so tables cannot be pulled",
+    posSyncDisabledDescription: "Tables can only be pulled while the server routes orders through the POS plugin. Check the deployment settings.",
     unlinkedWarningTitle: "Guests cannot order from these tables",
     unlinkedWarningDescription:
       "{{count}} table(s) are not linked to the POS. Link them so guests can order from those seats.",

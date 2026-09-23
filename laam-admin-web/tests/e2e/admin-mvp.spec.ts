@@ -64,6 +64,36 @@ test.describe("관리자 MVP 핵심 흐름", () => {
     await expect(row.getByRole("button", { name: "처리완료" })).toBeVisible();
   });
 
+  // Reproduces the reported bug: clicking a sidebar nav item to a screen
+  // the operator is already on re-navigates to the bare path (no query
+  // string), but App Router only re-renders `RequestListPage` in place —
+  // it does not remount it — so a mount-only effect that fills in the
+  // default date range would never re-run, leaving the list stuck on its
+  // loading skeleton (`RequestListPage.tsx`'s mount effect).
+  test("사이드바에서 같은 메뉴를 다시 눌러도 목록이 계속 보인다", async ({ page }) => {
+    await mockDashboardData(page);
+    await loginAsAdmin(page);
+
+    const listState = { requests: buildCustomerRequests() };
+    await mockCustomerRequestsPage(page, listState);
+
+    // Scoped to the sidebar nav — the dashboard's own "손님 요청" shortcut
+    // card link has a longer accessible name that also contains this text,
+    // so an unscoped lookup matches both.
+    const sidebarNav = page.getByRole("navigation", { name: "주 메뉴" });
+    await sidebarNav.getByRole("button", { name: "요청 관리" }).click();
+    const requestsNavLink = sidebarNav.getByRole("link", { name: "손님 요청" });
+    await requestsNavLink.click();
+    await expect(page).toHaveURL(/\/requests(\?|$)/);
+    await expect(page.getByText("물 좀 주세요")).toBeVisible();
+
+    // Click the exact same sidebar item again — this used to leave the
+    // list stuck on its loading skeleton until a full page reload.
+    await requestsNavLink.click();
+    await expect(page).toHaveURL(/\/requests(\?|$)/);
+    await expect(page.getByText("물 좀 주세요")).toBeVisible();
+  });
+
   test("특별 요청을 확인 대화상자에서 삭제하면 목록에서 사라진다", async ({ page }) => {
     await mockDashboardData(page);
     await loginAsAdmin(page);

@@ -84,6 +84,14 @@ function getSidebarWrapper() {
   return wrapper;
 }
 
+function getSidebarHeader() {
+  const header = document.querySelector('[data-slot="sidebar-header"]');
+  if (!(header instanceof HTMLElement)) {
+    throw new Error("sidebar header not found");
+  }
+  return header;
+}
+
 function clearSidebarWidthCookie() {
   document.cookie = "sidebar_width=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
 }
@@ -105,6 +113,22 @@ describe("AdminShell", () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it("brands the sidebar header with the logo alone, named for screen readers", () => {
+    render(
+      <AdminShell>
+        <p>page content</p>
+      </AdminShell>,
+    );
+
+    const header = getSidebarHeader();
+    // The mark stands on its own — the service name is carried by the logo's
+    // alt text, so screen readers still get it without the header repeating
+    // what the browser tab title already says.
+    const logo = within(header).getByRole("img", { name: "LAM 관리자" });
+    expect(logo.getAttribute("src")).toContain("logo.png");
+    expect(within(header).queryByText("LAM 관리자")).not.toBeInTheDocument();
   });
 
   it("renders every primary navigation item as a reachable link", () => {
