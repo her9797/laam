@@ -125,6 +125,7 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 	for _, item := range items {
 		item.ID = strings.TrimSpace(item.ID)
 		item.Name = strings.TrimSpace(item.Name)
+		item.Description = strings.TrimSpace(item.Description)
 		item.Badge = strings.TrimSpace(item.Badge)
 		item.CategoryID = strings.TrimSpace(item.CategoryID)
 		if item.ID == "" || item.Name == "" || item.CategoryID == "" || item.Price < 0 {
@@ -138,15 +139,17 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 			UPDATE menu_items
 			SET category_id = $2,
 				name = $3,
-				price = $4,
-				is_visible = $5,
-				sort_order = $6,
-				toss_image_url = $7,
-				badge = COALESCE(NULLIF($8, ''), badge),
-				toss_labels = $9
+				description = $4,
+				price = $5,
+				is_visible = $6,
+				sort_order = $7,
+				toss_image_url = $8,
+				badge = COALESCE(NULLIF($9, ''), badge),
+				toss_labels = $10,
+				label_colors = '{}'
 			WHERE toss_catalog_item_id = $1
 			RETURNING id
-		`, item.ID, item.CategoryID, item.Name, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL), item.Badge, labels).Scan(&localMenuItemID)
+		`, item.ID, item.CategoryID, item.Name, item.Description, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL), item.Badge, labels).Scan(&localMenuItemID)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return TossCatalogSyncResult{}, classifyError(err)
 		}
@@ -158,14 +161,16 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 				SET toss_catalog_item_id = $2,
 					category_id = $3,
 					name = $4,
-					price = $5,
-					is_visible = $6,
-					sort_order = $7,
-					toss_image_url = $8,
-					badge = COALESCE(NULLIF($9, ''), badge),
-					toss_labels = $10
+					description = $5,
+					price = $6,
+					is_visible = $7,
+					sort_order = $8,
+					toss_image_url = $9,
+					badge = COALESCE(NULLIF($10, ''), badge),
+					toss_labels = $11,
+					label_colors = '{}'
 				WHERE id = $1
-			`, localID, item.ID, item.CategoryID, item.Name, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL), item.Badge, labels); err != nil {
+			`, localID, item.ID, item.CategoryID, item.Name, item.Description, price, item.IsVisible, item.SortOrder, strings.TrimSpace(item.ImageURL), item.Badge, labels); err != nil {
 				return TossCatalogSyncResult{}, classifyError(err)
 			}
 			localMenuItemID = localID
@@ -181,13 +186,15 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 			SET category_id = EXCLUDED.category_id,
 				badge = COALESCE(EXCLUDED.badge, menu_items.badge),
 				name = EXCLUDED.name,
+				description = EXCLUDED.description,
 				price = EXCLUDED.price,
 				is_visible = EXCLUDED.is_visible,
 				sort_order = EXCLUDED.sort_order,
 				toss_catalog_item_id = EXCLUDED.toss_catalog_item_id,
 				toss_image_url = EXCLUDED.toss_image_url,
-				toss_labels = EXCLUDED.toss_labels
-		`, localMenuItemID, item.CategoryID, item.Badge, item.Name, strings.TrimSpace(item.Description), price, item.IsVisible, item.SortOrder, item.ID, strings.TrimSpace(item.ImageURL), labels); err != nil {
+				toss_labels = EXCLUDED.toss_labels,
+				label_colors = '{}'
+		`, localMenuItemID, item.CategoryID, item.Badge, item.Name, item.Description, price, item.IsVisible, item.SortOrder, item.ID, strings.TrimSpace(item.ImageURL), labels); err != nil {
 				return TossCatalogSyncResult{}, classifyError(err)
 			}
 			result.Created++

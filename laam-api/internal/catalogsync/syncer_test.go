@@ -63,6 +63,35 @@ func TestSyncMapsPOSCategoriesToCustomerCategories(t *testing.T) {
 	}
 }
 
+func TestSyncMovesABVFromDescriptionIntoDefaultColorLabel(t *testing.T) {
+	repository := &fakeCatalogRepository{}
+	syncer := New(fakeCatalogClient{items: []tossplace.CatalogItem{
+		{ID: "love", Title: "사랑", Description: "사랑의 달콤함에 빠져보세요\nABV : 6%", Labels: []string{"추천"}, Category: tossplace.CatalogCategory{Title: "시그니처"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 10000}, State: "ON_SALE", Enabled: true},
+		{ID: "xyz", Title: "X.Y.Z", Description: "27%", Category: tossplace.CatalogCategory{Title: "칵테일"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 10000}, State: "ON_SALE", Enabled: true},
+		{ID: "whisky", Title: "제임슨", Description: "숙성된 위스키", Category: tossplace.CatalogCategory{Title: "위스키"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 10000}, State: "ON_SALE", Enabled: true},
+	}}, repository)
+
+	if _, err := syncer.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	if got := repository.items[0]; got.Description != "사랑의 달콤함에 빠져보세요" || len(got.Labels) != 2 || got.Labels[0] != "추천" || got.Labels[1] != "ABV : 6%" {
+		t.Errorf("love mapping = %+v", got)
+	}
+	if got := repository.items[1]; got.Description != "" || len(got.Labels) != 1 || got.Labels[0] != "ABV : 27%" {
+		t.Errorf("bare percent mapping = %+v", got)
+	}
+	if got := repository.items[2]; got.Description != "숙성된 위스키" || len(got.Labels) != 0 {
+		t.Errorf("non-ABV mapping = %+v", got)
+	}
+}
+
+func TestSplitCatalogDescriptionABVLeavesUnrelatedPercentLineAlone(t *testing.T) {
+	description, label := splitCatalogDescriptionABV("행사 안내\n50%")
+	if description != "행사 안내\n50%" || label != "" {
+		t.Fatalf("splitCatalogDescriptionABV() = %q, %q; want unchanged description", description, label)
+	}
+}
+
 // blockingCatalogClient lets a test hold ListCatalogItems open until it
 // chooses to release it, so a second, concurrent Sync() call can be made
 // while the first is still in flight. Only the *first* call blocks — every

@@ -170,21 +170,23 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
           )}
         </div>
         <div className="menu-copy">
-          <h3>{item.name}</h3>
+          <div className="menu-title-row">
+            <h3>{item.name}</h3>
+            {item.labels?.length ? (
+              <div className="menu-labels">
+                {item.labels.map((label, index) => (
+                  <span
+                    key={`${label.text}-${index}`}
+                    className="menu-label-tag"
+                    data-label-color={label.color || "green"}
+                  >
+                    #{label.text}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <p>{item.description}</p>
-          {item.labels?.length ? (
-            <div className="menu-labels">
-              {item.labels.map((label, index) => (
-                <span
-                  key={`${label.text}-${index}`}
-                  className="menu-label-tag"
-                  data-label-color={label.color || "green"}
-                >
-                  #{label.text}
-                </span>
-              ))}
-            </div>
-          ) : null}
         </div>
         <div className="menu-side">
           <span
@@ -215,7 +217,22 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
             <div className={displayImageURL ? "menu-detail-header has-image" : "menu-detail-header"}>
               <div className="menu-detail-summary">
                 <p className="section-kicker">menu detail</p>
-                <h2 id={titleId}>{detail.name}</h2>
+                <div className="menu-title-row menu-detail-title-row">
+                  <h2 id={titleId}>{detail.name}</h2>
+                  {item.labels?.length ? (
+                    <div className="menu-labels">
+                      {item.labels.map((label, index) => (
+                        <span
+                          key={`${label.text}-${index}`}
+                          className="menu-label-tag"
+                          data-label-color={label.color || "green"}
+                        >
+                          #{label.text}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
                 <p className="menu-detail-price">
                   {totalAmount > 0 ? `${new Intl.NumberFormat("ko-KR").format(totalAmount)}원` : detail.price}
                 </p>
