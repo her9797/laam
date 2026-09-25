@@ -3,6 +3,8 @@ package catalogsync
 import (
 	"context"
 	"errors"
+	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -67,13 +69,18 @@ func (s *Syncer) Sync(ctx context.Context) (store.TossCatalogSyncResult, error) 
 				MinChoices: option.MinChoices, MaxChoices: option.MaxChoices, Choices: choices,
 			})
 		}
+		description, abvLabel := splitCatalogDescriptionABV(item.Description)
+		labels := trimmedCatalogLabels(item.Labels)
+		if abvLabel != "" && !slices.Contains(labels, abvLabel) {
+			labels = append(labels, abvLabel)
+		}
 		mapped = append(mapped, store.TossCatalogItem{
 			ID:          item.ID,
 			Name:        item.Title,
-			Description: item.Description,
+			Description: description,
 			ImageURL:    item.ImageURL,
 			Badge:       firstCatalogLabel(item.Labels),
-			Labels:      trimmedCatalogLabels(item.Labels),
+			Labels:      labels,
 			CategoryID:  customerCategoryID(item),
 			Price:       item.Price.Value,
 			IsVisible:   item.Enabled && item.State == "ON_SALE" && item.Price.Type == "FIXED" && item.Price.Value > 0,
@@ -83,6 +90,30 @@ func (s *Syncer) Sync(ctx context.Context) (store.TossCatalogSyncResult, error) 
 	}
 
 	return s.repository.SyncTossCatalog(ctx, mapped)
+}
+
+var catalogABVLine = regexp.MustCompile(`(?i)^ABV\s*:\s*((?:\d+(?:\.\d+)?|\?\?)%)$`)
+var catalogBarePercentLine = regexp.MustCompile(`^(\d+(?:\.\d+)?%)$`)
+
+func splitCatalogDescriptionABV(description string) (string, string) {
+	lines := strings.Split(description, "\n")
+	kept := make([]string, 0, len(lines))
+	abvLabel := ""
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if match := catalogABVLine.FindStringSubmatch(trimmed); match != nil {
+			abvLabel = "ABV : " + match[1]
+			continue
+		}
+		if len(lines) == 1 {
+			if match := catalogBarePercentLine.FindStringSubmatch(trimmed); match != nil {
+				abvLabel = "ABV : " + match[1]
+				continue
+			}
+		}
+		kept = append(kept, line)
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n")), abvLabel
 }
 
 func customerCategoryID(item tossplace.CatalogItem) string {

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestRepositorySyncTossCatalogPreservesMetadataAndHidesUnavailableItems(t *testing.T) {
+func TestRepositorySyncTossCatalogUpdatesDescriptionsAndHidesUnavailableItems(t *testing.T) {
 	repo := resetDB(t)
 	ctx := context.Background()
 	if _, err := testPool.Exec(ctx, `
@@ -19,6 +19,9 @@ func TestRepositorySyncTossCatalogPreservesMetadataAndHidesUnavailableItems(t *t
 			('local-only', 'cocktail', NULL, '로컬 전용', '숨겨질 메뉴', '9,000원', TRUE, 2);
 	`); err != nil {
 		t.Fatalf("seed menu: %v", err)
+	}
+	if _, err := testPool.Exec(ctx, `UPDATE menu_items SET label_colors = ARRAY['pink', 'blue'] WHERE id = 'earlgrey'`); err != nil {
+		t.Fatalf("seed label colors: %v", err)
 	}
 
 	result, err := repo.SyncTossCatalog(ctx, []TossCatalogItem{
@@ -38,7 +41,7 @@ func TestRepositorySyncTossCatalogPreservesMetadataAndHidesUnavailableItems(t *t
 	if err := testPool.QueryRow(ctx, `SELECT description, COALESCE(badge, ''), price, is_visible, toss_catalog_item_id FROM menu_items WHERE id = 'earlgrey'`).Scan(&description, &badge, &price, &visible, &tossID); err != nil {
 		t.Fatalf("read matched item: %v", err)
 	}
-	if description != "기존 설명" || badge != "추천" || price != "10,000원" || !visible || tossID != "pos-earlgrey" {
+	if description != "토스 설명" || badge != "추천" || price != "10,000원" || !visible || tossID != "pos-earlgrey" {
 		t.Fatalf("matched item = description:%q badge:%q price:%q visible:%v tossID:%q", description, badge, price, visible, tossID)
 	}
 	var labels []string
@@ -47,6 +50,10 @@ func TestRepositorySyncTossCatalogPreservesMetadataAndHidesUnavailableItems(t *t
 	}
 	if len(labels) != 2 || labels[0] != "추천" || labels[1] != "인기" {
 		t.Fatalf("synced labels = %+v, want [추천 인기]", labels)
+	}
+	var colors []string
+	if err := testPool.QueryRow(ctx, `SELECT label_colors FROM menu_items WHERE id = 'earlgrey'`).Scan(&colors); err != nil || len(colors) != 0 {
+		t.Fatalf("synced label colors = %+v, err=%v; want default colors", colors, err)
 	}
 	var imageURL, optionTitle, choiceTitle string
 	var choicePrice int64
@@ -71,13 +78,16 @@ func TestRepositorySyncTossCatalogPreservesMetadataAndHidesUnavailableItems(t *t
 	}
 
 	_, err = repo.SyncTossCatalog(ctx, []TossCatalogItem{
-		{ID: "pos-earlgrey", Name: "얼그레이하이볼", CategoryID: "highball", Price: 12000, IsVisible: true, SortOrder: 1},
+		{ID: "pos-earlgrey", Name: "얼그레이하이볼", Description: "새 토스 설명", CategoryID: "highball", Price: 12000, IsVisible: true, SortOrder: 1},
 	})
 	if err != nil {
 		t.Fatalf("second SyncTossCatalog() error = %v", err)
 	}
 	if err := testPool.QueryRow(ctx, `SELECT price FROM menu_items WHERE toss_catalog_item_id = 'pos-earlgrey'`).Scan(&price); err != nil || price != "12,000원" {
 		t.Fatalf("updated price=%q err=%v", price, err)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT description FROM menu_items WHERE toss_catalog_item_id = 'pos-earlgrey'`).Scan(&description); err != nil || description != "새 토스 설명" {
+		t.Fatalf("updated description=%q err=%v", description, err)
 	}
 	if err := testPool.QueryRow(ctx, `SELECT is_visible FROM menu_items WHERE toss_catalog_item_id = 'pos-whisky'`).Scan(&visible); err != nil || visible {
 		t.Fatalf("missing POS item visible=%v err=%v, want false", visible, err)
