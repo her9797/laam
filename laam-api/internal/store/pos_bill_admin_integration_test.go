@@ -216,6 +216,11 @@ func TestRepository_ListPOSBillsPage_Filters(t *testing.T) {
 		{"no approved transfer", POSBillFilter{SourceType: "ACCOUNT_TRANSFER"}, []string{}},
 		{"table search", POSBillFilter{Search: "t-03"}, []string{"bill-1", "bill-3"}},
 		{"search is literal", POSBillFilter{Search: "%"}, []string{}},
+		{"menu name search", POSBillFilter{Search: "pizz"}, []string{"bill-1"}},
+		{"menu name search spans bills", POSBillFilter{Search: "beer"}, []string{"bill-1", "bill-3"}},
+		{"menu name search includes cancelled rows", POSBillFilter{Search: "Nachos"}, []string{"bill-2"}},
+		{"menu name search combines with filters", POSBillFilter{Search: "beer", Status: "CANCELLED"}, []string{"bill-3"}},
+		{"menu name search is literal", POSBillFilter{Search: "_eer"}, []string{}},
 		{"opened_at range", POSBillFilter{From: &from, To: &to}, []string{"bill-1"}},
 		{"from only", POSBillFilter{From: &from}, []string{"bill-2", "bill-1"}},
 	}
