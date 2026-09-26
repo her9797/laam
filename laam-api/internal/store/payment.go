@@ -570,8 +570,9 @@ func (r *Repository) CreatePOSNativeOrder(ctx context.Context, input CreatePOSNa
 		INSERT INTO payment_orders (
 			id, menu_item_name, category_name, table_number, amount,
 			status, payment_method, approved_at, vat, supplied_amount, tax_free_amount,
-			pos_sync_status, pos_order_id, created_at
-		) VALUES ($1, $2, $3, '', $4, 'DONE', 'POS', $5, $6, $7, 0, 'SUCCEEDED', $8, COALESCE($9, NOW()))
+			pos_sync_status, pos_order_id, created_at, bill_id
+		) VALUES ($1, $2, $3, '', $4, 'DONE', 'POS', $5, $6, $7, 0, 'SUCCEEDED', $8, COALESCE($9, NOW()),
+			(SELECT id FROM pos_bills WHERE pos_order_id = $8))
 	`, orderID, input.MenuItemName, input.CategoryName, input.Amount,
 		input.ApprovedAt, input.VAT, input.SuppliedAmount, input.POSOrderID,
 		nullableTime(input.OrderedAt)); err != nil {
@@ -954,6 +955,10 @@ func (r *Repository) UpdatePaymentOrderPOSSync(ctx context.Context, orderID stri
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+	if status == "SUCCEEDED" && strings.TrimSpace(posOrderID) != "" {
+		_, err := ensurePOSBill(ctx, r.pool, strings.TrimSpace(posOrderID))
+		return err
+	}
 	return nil
 }
 
@@ -1060,7 +1065,8 @@ func (r *Repository) CompletePOSPluginOrder(ctx context.Context, orderID string,
 		return classifyError(err)
 	}
 	if tag.RowsAffected() > 0 {
-		return nil
+		_, err := ensurePOSBill(ctx, r.pool, posOrderID)
+		return err
 	}
 
 	var status string
@@ -1074,7 +1080,8 @@ func (r *Repository) CompletePOSPluginOrder(ctx context.Context, orderID string,
 		return classifyError(err)
 	}
 	if status == "SUCCEEDED" && storedPOSOrderID == posOrderID {
-		return nil
+		_, err := ensurePOSBill(ctx, r.pool, posOrderID)
+		return err
 	}
 	return ErrInvalidInput
 }
