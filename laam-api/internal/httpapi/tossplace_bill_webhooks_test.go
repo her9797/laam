@@ -236,7 +236,7 @@ func TestTossPlacePaymentWebhook_RecordsApprovalThenCancellation(t *testing.T) {
 		{"payment.payment.approved.v1", approved, "APPROVED/ACCOUNT_TRANSFER/20000"},
 		{"payment.payment.cancelled.v1", cancelled, "CANCELLED/ACCOUNT_TRANSFER/20000"},
 	} {
-		rec := tossPlaceWebhookRequestTo(t, handler, "/api/v1/webhooks/tossplace/payments", tossPlaceWebhookSecret, paymentEventBody(t, step.eventType, step.payment), false)
+		rec := tossPlaceWebhookRequestTo(t, handler, "/api/v1/webhooks/tossplace/orders", tossPlaceWebhookSecret, paymentEventBody(t, step.eventType, step.payment), false)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s status = %d, body = %s", step.eventType, rec.Code, rec.Body.String())
 		}
@@ -250,7 +250,7 @@ func TestTossPlacePaymentWebhook_RecordsApprovalThenCancellation(t *testing.T) {
 func TestTossPlacePaymentWebhook_RejectsInvalidSignature(t *testing.T) {
 	handler := resetServerWithConfig(t, webhookTestCfg())
 	body := paymentEventBody(t, "payment.payment.approved.v1", `{"id":"pay-x","orderId":"pos-x"}`)
-	rec := tossPlaceWebhookRequestTo(t, handler, "/api/v1/webhooks/tossplace/payments", tossPlaceWebhookSecret, body, true)
+	rec := tossPlaceWebhookRequestTo(t, handler, "/api/v1/webhooks/tossplace/orders", tossPlaceWebhookSecret, body, true)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
@@ -273,11 +273,23 @@ func TestTossPlaceWebhook_RetriesPaymentSyncForPaidBillsMissingPayments(t *testi
 	}
 
 	unrelated := paymentEventBody(t, "payment.payment.approved.v1", `{"id":"pay-other","orderId":"pos-other","state":"APPROVED","sourceType":"CASH","paymentMethod":"현금","amount":1000,"taxAmount":91,"supplyAmount":909,"taxExemptAmount":0,"approvedNo":""}`)
-	if rec := tossPlaceWebhookRequestTo(t, handler, "/api/v1/webhooks/tossplace/payments", tossPlaceWebhookSecret, unrelated, false); rec.Code != http.StatusOK {
+	if rec := tossPlaceWebhookRequestTo(t, handler, "/api/v1/webhooks/tossplace/orders", tossPlaceWebhookSecret, unrelated, false); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
 
 	if payments := billPayments(t, "pos-stale"); payments["pay-stale"] != "APPROVED/CARD/11000" {
 		t.Fatalf("payments = %v, want the retried sync to store pay-stale", payments)
+	}
+}
+
+// Payment events share the order webhook's URL and signing secret: TossPlace
+// lets one subscription carry both scopes but only one payload URL, and a
+// second subscription would get its own secret this handler cannot verify.
+func TestTossPlacePaymentWebhook_HasNoSeparatePaymentsPath(t *testing.T) {
+	handler := resetServerWithConfig(t, webhookTestCfg())
+	body := paymentEventBody(t, "payment.payment.approved.v1", `{"id":"pay-x","orderId":"pos-x"}`)
+	rec := tossPlaceWebhookRequestTo(t, handler, "/api/v1/webhooks/tossplace/payments", tossPlaceWebhookSecret, body, false)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }

@@ -60,13 +60,14 @@ type tossPlacePaymentEventData struct {
 // in withCORS nor gated by requireAdminAuth/requirePaymentAuth;
 // authentication is the TossPlace signature verified in the handler.
 //
-// Both paths accept every event type, so either subscription can point at
-// either URL.
+// Both scopes arrive at this one URL: TossPlace lets a single subscription
+// carry order and payment events but only one payload URL, and a separate
+// subscription would be issued its own secret that this handler does not
+// verify against.
 func registerTossPlaceWebhookRoutes(mux *http.ServeMux, repository *store.Repository, cfg config.Config) {
 	posClient := tossplace.NewClient(cfg.TossPlaceAPIBaseURL, cfg.TossPlaceAccessKey, cfg.TossPlaceSecretKey, cfg.TossPlaceMerchantID, nil)
 	handler := tossPlaceWebhookHandler(possync.New(repository, posClient), cfg.TossPlaceWebhookSecret)
 	mux.HandleFunc("/api/v1/webhooks/tossplace/orders", handler)
-	mux.HandleFunc("/api/v1/webhooks/tossplace/payments", handler)
 }
 
 func tossPlaceWebhookHandler(syncer *possync.Syncer, secret string) http.HandlerFunc {
