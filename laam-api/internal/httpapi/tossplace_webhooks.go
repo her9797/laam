@@ -14,13 +14,22 @@ import (
 	"time"
 
 	"github.com/her9797/laam/laam-api/internal/config"
+	"github.com/her9797/laam/laam-api/internal/possync"
 	"github.com/her9797/laam/laam-api/internal/store"
 	"github.com/her9797/laam/laam-api/internal/tossplace"
 )
 
 const (
-	tossPlaceOrderCompletedEventType = "order.order.completed.v1"
-	tossPlaceOrderCancelledEventType = "order.order.cancelled.v1"
+	tossPlaceOrderCompletedEventType   = "order.order.completed.v1"
+	tossPlaceOrderCancelledEventType   = "order.order.cancelled.v1"
+	tossPlacePaymentApprovedEventType  = "payment.payment.approved.v1"
+	tossPlacePaymentCancelledEventType = "payment.payment.cancelled.v1"
+
+	// tossPlacePaymentRetryLimit/-Timeout bound the payment re-fetch that
+	// piggybacks on every webhook (see possync.Syncer.RetryMissingPayments)
+	// so it can never hold a delivery long enough for TossPlace to retry it.
+	tossPlacePaymentRetryLimit   = 3
+	tossPlacePaymentRetryTimeout = 5 * time.Second
 )
 
 type tossPlaceWebhookEnvelope struct {
@@ -39,17 +48,29 @@ type tossPlaceOrderEventData struct {
 	CancelledAt string `json:"cancelledAt"`
 }
 
-// registerTossPlaceWebhookRoutes wires the TossPlace order webhook that
-// syncs POS-side payment/cancellation events into payment_orders.status
-// (see internal/httpapi/tossplace_webhooks.go's handler for the flow). This
-// is a server-to-server callback from TossPlace itself, not a browser
-// request, so — unlike every other route in this package — it is neither
-// wrapped in withCORS nor gated by requireAdminAuth/requirePaymentAuth;
+type tossPlacePaymentEventData struct {
+	Payment tossplace.Payment `json:"payment"`
+}
+
+// registerTossPlaceWebhookRoutes wires TossPlace's order ("주문 (v1)") and
+// payment ("결제 (v1)") webhooks, which keep payment_orders, pos_bills and
+// pos_payments in step with the POS (see internal/possync). These are
+// server-to-server callbacks from TossPlace itself, not browser requests,
+// so — unlike every other route in this package — they are neither wrapped
+// in withCORS nor gated by requireAdminAuth/requirePaymentAuth;
 // authentication is the TossPlace signature verified in the handler.
+//
+// Both paths accept every event type, so either subscription can point at
+// either URL.
 func registerTossPlaceWebhookRoutes(mux *http.ServeMux, repository *store.Repository, cfg config.Config) {
 	posClient := tossplace.NewClient(cfg.TossPlaceAPIBaseURL, cfg.TossPlaceAccessKey, cfg.TossPlaceSecretKey, cfg.TossPlaceMerchantID, nil)
+	handler := tossPlaceWebhookHandler(possync.New(repository, posClient), cfg.TossPlaceWebhookSecret)
+	mux.HandleFunc("/api/v1/webhooks/tossplace/orders", handler)
+	mux.HandleFunc("/api/v1/webhooks/tossplace/payments", handler)
+}
 
-	mux.HandleFunc("/api/v1/webhooks/tossplace/orders", func(w http.ResponseWriter, r *http.Request) {
+func tossPlaceWebhookHandler(syncer *possync.Syncer, secret string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeMethodNotAllowed(w)
 			return
@@ -61,7 +82,7 @@ func registerTossPlaceWebhookRoutes(mux *http.ServeMux, repository *store.Reposi
 			return
 		}
 
-		if !verifyTossPlaceWebhookSignature(cfg.TossPlaceWebhookSecret, r.Header.Get("x-toss-timestamp"), r.Header.Get("x-toss-signature"), rawBody) {
+		if !verifyTossPlaceWebhookSignature(secret, r.Header.Get("x-toss-timestamp"), r.Header.Get("x-toss-signature"), rawBody) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid webhook signature"})
 			return
 		}
@@ -72,21 +93,28 @@ func registerTossPlaceWebhookRoutes(mux *http.ServeMux, repository *store.Reposi
 			return
 		}
 
+		// Processing failures are logged and still acked: TossPlace
+		// retrying a delivery we cannot apply would only become a retry
+		// storm, and bills missing payments are re-fetched below anyway.
 		switch envelope.Type {
 		case tossPlaceOrderCompletedEventType:
-			handleTossPlaceOrderCompleted(r, repository, posClient, envelope)
+			handleTossPlaceOrderCompleted(r.Context(), syncer, envelope)
 		case tossPlaceOrderCancelledEventType:
-			handleTossPlaceOrderCancelled(r, repository, envelope)
+			handleTossPlaceOrderCancelled(r.Context(), syncer, envelope)
+		case tossPlacePaymentApprovedEventType, tossPlacePaymentCancelledEventType:
+			handleTossPlacePaymentEvent(r.Context(), syncer, envelope)
 		default:
-			// Subscribed event scope is "주문 (v1)" only, but TossPlace may
-			// still deliver other order-related event types in the same
-			// scope in the future — ignore defensively rather than error,
-			// and always ack so this never triggers a retry storm.
+			// Other event types in the subscribed scopes are ignored
+			// defensively rather than erroring.
 			log.Printf("tossplace webhook: ignoring event type %q (id=%s)", envelope.Type, envelope.ID)
 		}
 
+		retryCtx, cancel := context.WithTimeout(r.Context(), tossPlacePaymentRetryTimeout)
+		syncer.RetryMissingPayments(retryCtx, tossPlacePaymentRetryLimit)
+		cancel()
+
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-	})
+	}
 }
 
 // verifyTossPlaceWebhookSignature implements TossPlace's documented webhook
@@ -108,129 +136,45 @@ func verifyTossPlaceWebhookSignature(secret string, timestamp string, signature 
 	return subtle.ConstantTimeCompare([]byte(signature), []byte(expected)) == 1
 }
 
-func handleTossPlaceOrderCompleted(r *http.Request, repository *store.Repository, posClient *tossplace.Client, envelope tossPlaceWebhookEnvelope) {
+func handleTossPlaceOrderCompleted(ctx context.Context, syncer *possync.Syncer, envelope tossPlaceWebhookEnvelope) {
 	var data tossPlaceOrderEventData
 	if err := json.Unmarshal(envelope.Data, &data); err != nil {
 		log.Printf("tossplace webhook: invalid completed-event data (id=%s): %v", envelope.ID, err)
 		return
 	}
-
-	order, err := repository.GetPaymentOrder(r.Context(), data.OrderKey)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			// Not one of our own orders — most likely rung up directly on
-			// the POS, with no lam-web orderKey ever assigned to it. Record
-			// it as a new sale rather than dropping it, so it still counts
-			// toward revenue reporting (see createPOSNativeOrder).
-			createPOSNativeOrder(r.Context(), repository, posClient, data, envelope.ID)
-			return
-		}
-		log.Printf("tossplace webhook: failed to load order %q (id=%s): %v", data.OrderKey, envelope.ID, err)
-		return
-	}
-
-	vat := order.Amount / 11
-	suppliedAmount := order.Amount - vat
-	approvedAt := parseTossPlaceWebhookTimestamp(data.CompletedAt)
-
-	if _, err := repository.CompletePaymentOrderFromPOS(r.Context(), data.OrderKey, approvedAt, vat, suppliedAmount, 0); err != nil {
-		// ErrInvalidInput means the order was already CANCELLED — never
-		// resurrect a cancelled order into DONE, but still ack the webhook
-		// so TossPlace does not retry indefinitely.
-		log.Printf("tossplace webhook: failed to complete order %q from POS (id=%s): %v", data.OrderKey, envelope.ID, err)
+	completedAt := parseTossPlaceWebhookTimestamp(data.CompletedAt)
+	if err := syncer.CompleteOrder(ctx, data.OrderID, data.OrderKey, completedAt); err != nil {
+		log.Printf("tossplace webhook: completed event for order %q (key %q, id=%s) not fully applied: %v", data.OrderID, data.OrderKey, envelope.ID, err)
 	}
 }
 
-// createPOSNativeOrder records a TossPlace order rung up directly on the
-// POS (no matching lam-web orderKey) as one payment_orders row per line
-// item — the completed-event payload carries no line items itself, so this
-// re-fetches the full order via the Open API before recording anything.
-//
-// Each row's amount is that line item's own priceValue*quantity plus its
-// option choices, deliberately not the order's chargePrice.totalAmount
-// divided across items: TossPlace does not return a per-line-item share of
-// order-level discounts/tax, and approximating one would risk revenue
-// figures that don't reconcile against TossPlace's own reports. table_number
-// stays "" — TossPlace's Order response does not expose which table a
-// POS-native order opened on.
-func createPOSNativeOrder(ctx context.Context, repository *store.Repository, posClient *tossplace.Client, data tossPlaceOrderEventData, eventID string) {
-	if data.OrderID == "" {
-		log.Printf("tossplace webhook: completed event missing orderId for unknown orderKey %q (id=%s)", data.OrderKey, eventID)
-		return
-	}
-
-	// Idempotency for a retried webhook delivery: skip if this TossPlace
-	// order's line items were already recorded.
-	exists, err := repository.HasPaymentOrderWithPOSOrderID(ctx, data.OrderID)
-	if err != nil {
-		log.Printf("tossplace webhook: failed to check existing POS-native order %q (id=%s): %v", data.OrderID, eventID, err)
-		return
-	}
-	if exists {
-		return
-	}
-
-	order, err := posClient.GetOrder(ctx, data.OrderID)
-	if err != nil {
-		log.Printf("tossplace webhook: failed to fetch POS-native order %q (id=%s): %v", data.OrderID, eventID, err)
-		return
-	}
-	if len(order.LineItems) == 0 {
-		log.Printf("tossplace webhook: POS-native order %q has no line items (id=%s)", data.OrderID, eventID)
-		return
-	}
-
-	approvedAt := parseTossPlaceWebhookTimestamp(order.CompletedAt)
-	// openedAt is optional in TossPlace's response; leave OrderedAt zero so
-	// the row falls back to NOW() rather than to the completion time.
-	var orderedAt time.Time
-	if order.OpenedAt != "" {
-		orderedAt = parseTossPlaceWebhookTimestamp(order.OpenedAt)
-	}
-	for _, line := range order.LineItems {
-		amount := line.ItemPrice.PriceValue * line.Quantity
-		for _, choice := range line.OptionChoices {
-			amount += choice.PriceValue * choice.Quantity
-		}
-		if amount <= 0 {
-			log.Printf("tossplace webhook: skipping non-positive line item amount for POS-native order %q (id=%s)", data.OrderID, eventID)
-			continue
-		}
-		vat := amount / 11
-		if _, err := repository.CreatePOSNativeOrder(ctx, store.CreatePOSNativeOrderInput{
-			MenuItemName:   line.Item.Title,
-			CategoryName:   line.Item.Category.Title,
-			Amount:         amount,
-			OrderedAt:      orderedAt,
-			ApprovedAt:     approvedAt,
-			VAT:            vat,
-			SuppliedAmount: amount - vat,
-			POSOrderID:     data.OrderID,
-		}); err != nil {
-			log.Printf("tossplace webhook: failed to record POS-native line item for order %q (id=%s): %v", data.OrderID, eventID, err)
-		}
-	}
-}
-
-func handleTossPlaceOrderCancelled(r *http.Request, repository *store.Repository, envelope tossPlaceWebhookEnvelope) {
+func handleTossPlaceOrderCancelled(ctx context.Context, syncer *possync.Syncer, envelope tossPlaceWebhookEnvelope) {
 	var data tossPlaceOrderEventData
 	if err := json.Unmarshal(envelope.Data, &data); err != nil {
 		log.Printf("tossplace webhook: invalid cancelled-event data (id=%s): %v", envelope.ID, err)
 		return
 	}
+	cancelledAt := parseTossPlaceWebhookTimestamp(data.CancelledAt)
+	if err := syncer.CancelOrder(ctx, data.OrderID, data.OrderKey, cancelledAt); err != nil {
+		log.Printf("tossplace webhook: cancelled event for order %q (key %q, id=%s) not applied: %v", data.OrderID, data.OrderKey, envelope.ID, err)
+	}
+}
 
-	if _, err := repository.GetPaymentOrder(r.Context(), data.OrderKey); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			log.Printf("tossplace webhook: cancelled event for unknown orderKey %q (id=%s)", data.OrderKey, envelope.ID)
-			return
-		}
-		log.Printf("tossplace webhook: failed to load order %q (id=%s): %v", data.OrderKey, envelope.ID, err)
+// handleTossPlacePaymentEvent stores the payment carried in the event. The
+// log line deliberately names only ids, state, source type and amount (no
+// card or account details) — enough to see in production how TossPlace
+// models partial cancellations, which its docs do not describe.
+func handleTossPlacePaymentEvent(ctx context.Context, syncer *possync.Syncer, envelope tossPlaceWebhookEnvelope) {
+	var data tossPlacePaymentEventData
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
+		log.Printf("tossplace webhook: invalid payment-event data (id=%s): %v", envelope.ID, err)
 		return
 	}
-
-	cancelledAt := parseTossPlaceWebhookTimestamp(data.CancelledAt)
-	if _, err := repository.CancelPaymentOrder(r.Context(), data.OrderKey, cancelledAt); err != nil {
-		log.Printf("tossplace webhook: failed to cancel order %q (id=%s): %v", data.OrderKey, envelope.ID, err)
+	payment := data.Payment
+	log.Printf("tossplace webhook: %s id=%s payment=%s order=%s state=%s source=%s amount=%d",
+		envelope.Type, envelope.ID, payment.ID, payment.OrderID, payment.State, payment.SourceType, payment.Amount)
+	if err := syncer.RecordPayment(ctx, payment); err != nil {
+		log.Printf("tossplace webhook: payment %q for order %q (id=%s) not recorded: %v", payment.ID, payment.OrderID, envelope.ID, err)
 	}
 }
 

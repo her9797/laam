@@ -516,10 +516,9 @@ func (r *Repository) CompletePaymentOrderFromPOS(ctx context.Context, orderID st
 }
 
 // CreatePOSNativeOrderInput describes one line item of a TossPlace order
-// that was rung up directly on the POS — no lam-web orderKey ever pointed
-// to it. See tossplace_webhooks.go's handleTossPlaceOrderCompleted, which
-// assembles this from tossplace.Client.GetOrder after finding an
-// unrecognized orderKey.
+// that was rung up directly on the POS — no lam-web order represents it.
+// See possync.Syncer.CompleteOrder, which assembles this from
+// tossplace.Client.GetOrder for the line items no recorded row matches.
 type CreatePOSNativeOrderInput struct {
 	MenuItemName string
 	CategoryName string
@@ -536,10 +535,9 @@ type CreatePOSNativeOrderInput struct {
 
 // HasPaymentOrderWithPOSOrderID reports whether any payment_orders row
 // already carries this TossPlace order ID. A POS-native TossPlace order
-// becomes one row per line item (see CreatePOSNativeOrder), so this is the
-// idempotency check the webhook handler runs once, before inserting any of
-// an order's line items, to stay safe against a retried webhook delivery
-// re-creating the same sale.
+// becomes one row per line item (see CreatePOSNativeOrder). The completed
+// webhook no longer uses it — possync.NativeLines diffs against the rows
+// already recorded instead, which is idempotent on its own.
 func (r *Repository) HasPaymentOrderWithPOSOrderID(ctx context.Context, posOrderID string) (bool, error) {
 	var exists bool
 	if err := r.pool.QueryRow(ctx, `
