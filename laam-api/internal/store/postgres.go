@@ -461,6 +461,45 @@ CREATE TABLE IF NOT EXISTS pos_table_sync_requests (
   error TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_pos_table_sync_requests_status ON pos_table_sync_requests (status, requested_at DESC);
+CREATE TABLE IF NOT EXISTS pos_bills (
+  id TEXT PRIMARY KEY,
+  pos_order_id TEXT NOT NULL UNIQUE,
+  table_number TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'PAID', 'CANCELLED')),
+  opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+  cancelled_at TIMESTAMPTZ,
+  total_amount BIGINT,
+  discount_amount BIGINT,
+  payments_synced_at TIMESTAMPTZ,
+  payment_sync_attempted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pos_bills_opened_at ON pos_bills (opened_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_pos_bills_payment_sync ON pos_bills (status, payments_synced_at);
+CREATE TABLE IF NOT EXISTS pos_payments (
+  id TEXT PRIMARY KEY,
+  bill_id TEXT NOT NULL REFERENCES pos_bills(id) ON DELETE CASCADE,
+  state TEXT NOT NULL,
+  source_type TEXT NOT NULL,
+  payment_method TEXT NOT NULL DEFAULT '',
+  card_brand TEXT NOT NULL DEFAULT '',
+  amount BIGINT NOT NULL,
+  tax_amount BIGINT NOT NULL DEFAULT 0,
+  supply_amount BIGINT NOT NULL DEFAULT 0,
+  tax_exempt_amount BIGINT NOT NULL DEFAULT 0,
+  approved_no TEXT NOT NULL DEFAULT '',
+  approved_at TIMESTAMPTZ,
+  cancelled_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pos_payments_bill_id ON pos_payments (bill_id);
+CREATE INDEX IF NOT EXISTS idx_pos_payments_approved_at ON pos_payments (approved_at);
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS bill_id TEXT REFERENCES pos_bills(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_payment_orders_bill_id ON payment_orders (bill_id);
+CREATE INDEX IF NOT EXISTS idx_payment_orders_pos_order_id ON payment_orders (pos_order_id);
 `)
 	if err != nil {
 		return err

@@ -73,10 +73,10 @@ func TestGetPaymentOrderStats_FilterCanUseDoneApprovedAtIndex(t *testing.T) {
 	}
 }
 
-// TestGetPaymentOrderStats_AllSectionsShareOneSnapshot commits a new DONE
-// order from another connection after the summary query has run. Every
-// breakdown must still add up to the summary, i.e. all six queries must see
-// the same snapshot.
+// TestGetPaymentOrderStats_AllSectionsShareOneSnapshot commits new DONE
+// orders and bill payments from another connection after the summary query
+// has run. Every breakdown must still add up to the summary, i.e. all six
+// queries must see the same snapshot.
 func TestGetPaymentOrderStats_AllSectionsShareOneSnapshot(t *testing.T) {
 	repo := resetDB(t)
 	ctx := context.Background()
@@ -85,12 +85,20 @@ func TestGetPaymentOrderStats_AllSectionsShareOneSnapshot(t *testing.T) {
 		ID: "s1", TableNumber: "1", CategoryName: "Drinks", PaymentMethod: "카드",
 		Amount: 8000, ApprovedAt: time.Date(2026, 1, 10, 20, 0, 0, 0, kst),
 	})
+	billPaidAt := time.Date(2026, 1, 10, 21, 0, 0, 0, kst)
+	seedStatsBill(t, ctx, "snap-a", "3", billPaidAt.Add(-time.Hour), true)
+	seedDonePaymentOrder(t, ctx, seedDoneOrder{
+		ID: "s-bill", TableNumber: "3", CategoryName: "Food", PaymentMethod: "POS",
+		Amount: 6000, ApprovedAt: billPaidAt, BillID: "snap-a",
+	})
+	seedStatsPayment(t, ctx, "snap-pay-a", "snap-a", "APPROVED", "CARD", 6000, billPaidAt)
 
 	paymentOrderStatsAfterSummaryHook = func() {
 		seedDonePaymentOrder(t, ctx, seedDoneOrder{
 			ID: "s2", TableNumber: "2", CategoryName: "Food", PaymentMethod: "카드",
 			Amount: 5000, ApprovedAt: time.Date(2026, 1, 11, 20, 0, 0, 0, kst),
 		})
+		seedStatsPayment(t, ctx, "snap-pay-late", "snap-a", "APPROVED", "CASH", 3000, billPaidAt.Add(time.Minute))
 	}
 	t.Cleanup(func() { paymentOrderStatsAfterSummaryHook = nil })
 
@@ -101,14 +109,22 @@ func TestGetPaymentOrderStats_AllSectionsShareOneSnapshot(t *testing.T) {
 		t.Fatalf("GetPaymentOrderStats() error = %v", err)
 	}
 
-	if stats.Summary.TotalRevenue != 8000 || stats.Summary.OrderCount != 1 {
-		t.Fatalf("Summary = %+v, want revenue=8000 orderCount=1", stats.Summary)
+	if stats.Summary.TotalRevenue != 14000 || stats.Summary.OrderCount != 2 {
+		t.Fatalf("Summary = %+v, want revenue=14000 orderCount=2", stats.Summary)
 	}
 	sum := func(name string, revenue int64, count int) {
 		t.Helper()
 		if revenue != stats.Summary.TotalRevenue || count != stats.Summary.OrderCount {
 			t.Errorf("%s totals = revenue %d count %d, want summary revenue %d count %d",
 				name, revenue, count, stats.Summary.TotalRevenue, stats.Summary.OrderCount)
+		}
+	}
+	// byPaymentMethod counts payments, not menu rows, so only its revenue
+	// has to match the summary.
+	sumRevenue := func(name string, revenue int64) {
+		t.Helper()
+		if revenue != stats.Summary.TotalRevenue {
+			t.Errorf("%s revenue = %d, want summary revenue %d", name, revenue, stats.Summary.TotalRevenue)
 		}
 	}
 	var revenue int64
@@ -122,11 +138,11 @@ func TestGetPaymentOrderStats_AllSectionsShareOneSnapshot(t *testing.T) {
 		revenue, count = revenue+row.Revenue, count+row.OrderCount
 	}
 	sum("ByCategory", revenue, count)
-	revenue, count = 0, 0
+	revenue = 0
 	for _, row := range stats.ByPaymentMethod {
-		revenue, count = revenue+row.Revenue, count+row.OrderCount
+		revenue += row.Revenue
 	}
-	sum("ByPaymentMethod", revenue, count)
+	sumRevenue("ByPaymentMethod", revenue)
 	revenue, count = 0, 0
 	for _, row := range stats.ByTable {
 		revenue, count = revenue+row.Revenue, count+row.OrderCount

@@ -34,7 +34,18 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useRetainedListQuery } from "@/hooks/use-retained-list-query";
 import { formatCurrencyKRW, formatDateTime } from "@/lib/utils";
 
-import { buildOrderListSearchParams, parseOrderListQuery } from "./list-query-url";
+import { BillListView } from "./bills/BillListView";
+import type { BillStatus } from "./bills/model";
+import {
+  BILL_SOURCE_TYPES,
+  BILL_STATUSES,
+  buildOrderListUrlSearchParams,
+  parseOrderListUrlState,
+  toBillListQuery,
+  type BillSourceType,
+  type OrderListUrlState,
+  type OrderListView,
+} from "./list-query-url";
 import type {
   OrderListQuery,
   PaymentOrderPosSyncStatus,
@@ -42,9 +53,23 @@ import type {
   PaymentOrderStatus,
 } from "./model";
 import { defaultOrderDateRange, resolveOrderDateRange } from "./order-date-range";
+import { paymentMethodLabel } from "./payment-method";
 import { useAcknowledgeOrderMutation, useOrdersPageQuery } from "./queries";
 
 const SEARCH_DEBOUNCE_MS = 300;
+
+// Translation keys in the `orders` namespace, not rendered text.
+const VIEW_LABEL_KEY: Record<OrderListView, string> = {
+  menu: "viewMenu",
+  bill: "viewBill",
+};
+const VIEWS: OrderListView[] = ["menu", "bill"];
+
+const BILL_STATUS_LABEL_KEY: Record<BillStatus, string> = {
+  OPEN: "billFilterStatusOpen",
+  PAID: "billFilterStatusPaid",
+  CANCELLED: "billFilterStatusCancelled",
+};
 
 // Translation keys in the `orders` namespace, not rendered text.
 const STATUS_LABEL_KEY: Record<PaymentOrderStatus, string> = {
@@ -85,11 +110,13 @@ export function OrderListPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const query = useMemo(() => parseOrderListQuery(searchParams), [searchParams]);
+  const urlState = useMemo(() => parseOrderListUrlState(searchParams), [searchParams]);
+  const { query } = urlState;
+  const isBillView = urlState.view === "bill";
 
-  const updateQuery = useCallback(
-    (patch: Partial<OrderListQuery>) => {
-      const params = buildOrderListSearchParams({ ...query, ...patch });
+  const navigate = useCallback(
+    (next: OrderListUrlState) => {
+      const params = buildOrderListUrlSearchParams(next);
       const queryString = params.toString();
       // `scroll: false` — App Router scrolls to the top of the page on every
       // navigation by default, and a page/filter change here is a navigation.
@@ -98,8 +125,18 @@ export function OrderListPage() {
       // reported for.
       router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll: false });
     },
-    [query, pathname, router],
+    [pathname, router],
   );
+
+  const updateQuery = useCallback(
+    (patch: Partial<OrderListQuery>) => navigate({ ...urlState, query: { ...query, ...patch } }),
+    [navigate, urlState, query],
+  );
+
+  // Switching views, or a bill-only filter, starts over from page 1 like
+  // every other filter change on this screen.
+  const updateView = (patch: Partial<Omit<OrderListUrlState, "query">>) =>
+    navigate({ ...urlState, ...patch, query: { ...query, page: 1 } });
 
   // Local, immediately-updated search box synced to the URL only after
   // debouncing — same pattern as `RequestListPage`/`SpecialRequestPage`'s
@@ -144,10 +181,15 @@ export function OrderListPage() {
   // Wrapped so a failed page/filter/sort/date change keeps the rows the
   // operator was already reading — `keepPreviousData` alone drops them the
   // moment the new key's request fails. See `useRetainedListQuery`.
-  const ordersQuery = useRetainedListQuery(useOrdersPageQuery(query, dateRangeResult.ok), query);
+  // The menu-row list is only fetched while it is the view on screen; the
+  // bill view fetches its own list (see `BillListView`).
+  const ordersQuery = useRetainedListQuery(
+    useOrdersPageQuery(query, dateRangeResult.ok && !isBillView),
+    query,
+  );
   const acknowledgeMutation = useAcknowledgeOrderMutation();
 
-  if (!query.dateFrom || !query.dateTo || ordersQuery.isLoading) {
+  if (!query.dateFrom || !query.dateTo || (!isBillView && ordersQuery.isLoading)) {
     return <ListSkeletonState columns={8} label={t("loading")} />;
   }
 
@@ -163,7 +205,7 @@ export function OrderListPage() {
   // background refetch — must not tear the table down. Only a failure with
   // nothing preserved behind it, i.e. a first load, replaces the whole
   // screen.
-  if (ordersQuery.isError && !ordersQuery.data) {
+  if (!isBillView && ordersQuery.isError && !ordersQuery.data) {
     return (
       <ErrorState
         title={t("errorTitle")}
@@ -195,11 +237,41 @@ export function OrderListPage() {
     createdAt: t("sortByCreatedAt"),
     amount: t("sortByAmount"),
   };
+  const BILL_STATUS_FILTER_LABELS: Record<string, string> = {
+    all: t("common:filterAll"),
+    OPEN: t("billFilterStatusOpen"),
+    PAID: t("billFilterStatusPaid"),
+    CANCELLED: t("billFilterStatusCancelled"),
+  };
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-lg font-semibold text-foreground">{t("title")}</h1>
+      </div>
+
+      <div
+        role="group"
+        aria-label={t("viewToggleLabel")}
+        className="inline-flex w-fit gap-1 rounded-lg border border-border bg-muted p-1"
+      >
+        {VIEWS.map((view) => {
+          const isActive = urlState.view === view;
+          return (
+            <Button
+              key={view}
+              type="button"
+              size="sm"
+              variant={isActive ? "default" : "ghost"}
+              aria-pressed={isActive}
+              onClick={() => {
+                if (!isActive) updateView({ view });
+              }}
+            >
+              {t(VIEW_LABEL_KEY[view])}
+            </Button>
+          );
+        })}
       </div>
 
       <ListToolbar
@@ -228,185 +300,260 @@ export function OrderListPage() {
           />
         </div>
 
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="order-status-filter">{t("statusFilterLabel")}</Label>
-          <Select
-            value={query.status ?? "all"}
-            onValueChange={(value) =>
-              updateQuery({
-                status: value === "all" ? undefined : (value as PaymentOrderStatus),
-                page: 1,
-              })
-            }
-          >
-            <SelectTrigger id="order-status-filter" size="sm" className="w-32" aria-label={t("statusFilterLabel")}>
-              <SelectValue placeholder={t("statusFilterLabel")}>
-                {(value: string) => STATUS_FILTER_LABELS[value] ?? value}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("common:filterAll")}</SelectItem>
-              <SelectItem value="READY">{t("statusReady")}</SelectItem>
-              <SelectItem value="ACKNOWLEDGED">{t("statusAcknowledged")}</SelectItem>
-              <SelectItem value="DONE">{t("statusDone")}</SelectItem>
-              <SelectItem value="CANCELLED">{t("statusCancelled")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {isBillView ? (
+          <>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="order-bill-status-filter">{t("billFilterStatusLabel")}</Label>
+              <Select
+                value={urlState.billStatus ?? "all"}
+                onValueChange={(value) =>
+                  updateView({ billStatus: value === "all" ? undefined : (value as BillStatus) })
+                }
+              >
+                <SelectTrigger
+                  id="order-bill-status-filter"
+                  size="sm"
+                  className="w-32"
+                  aria-label={t("billFilterStatusLabel")}
+                >
+                  <SelectValue placeholder={t("billFilterStatusLabel")}>
+                    {(value: string) => BILL_STATUS_FILTER_LABELS[value] ?? value}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("common:filterAll")}</SelectItem>
+                  {BILL_STATUSES.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {t(BILL_STATUS_LABEL_KEY[status])}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="order-pos-sync-filter">{t("posSyncFilterLabel")}</Label>
-          <Select
-            value={query.posSyncStatus ?? "all"}
-            onValueChange={(value) =>
-              updateQuery({
-                posSyncStatus: value === "all" ? undefined : (value as PaymentOrderPosSyncStatus),
-                page: 1,
-              })
-            }
-          >
-            <SelectTrigger
-              id="order-pos-sync-filter"
-              size="sm"
-              className="w-32"
-              aria-label={t("posSyncFilterLabel")}
-            >
-              <SelectValue placeholder={t("posSyncFilterLabel")}>
-                {(value: string) => POS_SYNC_FILTER_LABELS[value] ?? value}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("common:filterAll")}</SelectItem>
-              <SelectItem value="PENDING">{t("posSyncPending")}</SelectItem>
-              <SelectItem value="SUCCEEDED">{t("posSyncSucceeded")}</SelectItem>
-              <SelectItem value="FAILED">{t("posSyncFailed")}</SelectItem>
-              <SelectItem value="NOT_CONFIGURED">{t("posSyncNotConfigured")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="order-bill-source-filter">{t("billFilterSourceLabel")}</Label>
+              <Select
+                value={urlState.billSource ?? "all"}
+                onValueChange={(value) =>
+                  updateView({ billSource: value === "all" ? undefined : (value as BillSourceType) })
+                }
+              >
+                <SelectTrigger
+                  id="order-bill-source-filter"
+                  size="sm"
+                  className="w-32"
+                  aria-label={t("billFilterSourceLabel")}
+                >
+                  <SelectValue placeholder={t("billFilterSourceLabel")}>
+                    {(value: string) => (value === "all" ? t("common:filterAll") : paymentMethodLabel(value, t))}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("common:filterAll")}</SelectItem>
+                  {BILL_SOURCE_TYPES.map((source) => (
+                    <SelectItem key={source} value={source}>
+                      {paymentMethodLabel(source, t)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="order-status-filter">{t("statusFilterLabel")}</Label>
+              <Select
+                value={query.status ?? "all"}
+                onValueChange={(value) =>
+                  updateQuery({
+                    status: value === "all" ? undefined : (value as PaymentOrderStatus),
+                    page: 1,
+                  })
+                }
+              >
+                <SelectTrigger id="order-status-filter" size="sm" className="w-32" aria-label={t("statusFilterLabel")}>
+                  <SelectValue placeholder={t("statusFilterLabel")}>
+                    {(value: string) => STATUS_FILTER_LABELS[value] ?? value}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("common:filterAll")}</SelectItem>
+                  <SelectItem value="READY">{t("statusReady")}</SelectItem>
+                  <SelectItem value="ACKNOWLEDGED">{t("statusAcknowledged")}</SelectItem>
+                  <SelectItem value="DONE">{t("statusDone")}</SelectItem>
+                  <SelectItem value="CANCELLED">{t("statusCancelled")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="order-sort">{t("common:sortLabel")}</Label>
-          <Select
-            value={query.sort}
-            onValueChange={(value) => updateQuery({ sort: value as PaymentOrderSort, page: 1 })}
-          >
-            <SelectTrigger id="order-sort" size="sm" className="w-32" aria-label={t("common:sortLabel")}>
-              <SelectValue placeholder={t("common:sortLabel")}>
-                {(value: string) => SORT_LABELS[value] ?? value}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="createdAt">{t("sortByCreatedAt")}</SelectItem>
-              <SelectItem value="amount">{t("sortByAmount")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="order-pos-sync-filter">{t("posSyncFilterLabel")}</Label>
+              <Select
+                value={query.posSyncStatus ?? "all"}
+                onValueChange={(value) =>
+                  updateQuery({
+                    posSyncStatus: value === "all" ? undefined : (value as PaymentOrderPosSyncStatus),
+                    page: 1,
+                  })
+                }
+              >
+                <SelectTrigger
+                  id="order-pos-sync-filter"
+                  size="sm"
+                  className="w-32"
+                  aria-label={t("posSyncFilterLabel")}
+                >
+                  <SelectValue placeholder={t("posSyncFilterLabel")}>
+                    {(value: string) => POS_SYNC_FILTER_LABELS[value] ?? value}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("common:filterAll")}</SelectItem>
+                  <SelectItem value="PENDING">{t("posSyncPending")}</SelectItem>
+                  <SelectItem value="SUCCEEDED">{t("posSyncSucceeded")}</SelectItem>
+                  <SelectItem value="FAILED">{t("posSyncFailed")}</SelectItem>
+                  <SelectItem value="NOT_CONFIGURED">{t("posSyncNotConfigured")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="order-sort">{t("common:sortLabel")}</Label>
+              <Select
+                value={query.sort}
+                onValueChange={(value) => updateQuery({ sort: value as PaymentOrderSort, page: 1 })}
+              >
+                <SelectTrigger id="order-sort" size="sm" className="w-32" aria-label={t("common:sortLabel")}>
+                  <SelectValue placeholder={t("common:sortLabel")}>
+                    {(value: string) => SORT_LABELS[value] ?? value}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="createdAt">{t("sortByCreatedAt")}</SelectItem>
+                  <SelectItem value="amount">{t("sortByAmount")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
       </ListToolbar>
 
-      {ordersQuery.isError ? (
-        <ErrorState
-          // When rows survived the failure they are the previously loaded
-          // page, not the one the URL now names — the title has to say so,
-          // or the screen silently misreports what it is showing.
-          title={ordersQuery.isRetained ? t("common:listRetainedErrorTitle") : t("errorTitle")}
-          message={ordersQuery.error instanceof Error ? ordersQuery.error.message : undefined}
-          onRetry={() => ordersQuery.refetch()}
+      {isBillView ? (
+        <BillListView
+          query={toBillListQuery(urlState)}
+          enabled={dateRangeResult.ok}
+          onPageChange={(page) => updateQuery({ page })}
+          onPageSizeChange={(pageSize) => updateQuery({ pageSize, page: 1 })}
         />
-      ) : null}
-
-      {/* Total, pagination, and rows are all read off the same result, so a
-          retained page reports its own total and position rather than the
-          ones the failed request asked for. */}
-      <ListTotalCount count={ordersQuery.total} />
-
-      {/* The rows stay put through a page change (see `useOrdersPageQuery`'s
-          `placeholderData`) and through a failed one (see
-          `useRetainedListQuery`) — the bar reports the fetch, and `stale`
-          says the page on screen is still the previous one. */}
-      <ListUpdatingRegion
-        active={ordersQuery.isFetching}
-        stale={ordersQuery.isStale}
-      >
-        {orders.length === 0 ? (
-          hasActiveFilter ? (
-            <EmptyState
-              title={t("common:listNoResultsTitle")}
-              description={t("common:listNoResultsDescription")}
+      ) : (
+        <>
+          {ordersQuery.isError ? (
+            <ErrorState
+              // When rows survived the failure they are the previously loaded
+              // page, not the one the URL now names — the title has to say so,
+              // or the screen silently misreports what it is showing.
+              title={ordersQuery.isRetained ? t("common:listRetainedErrorTitle") : t("errorTitle")}
+              message={ordersQuery.error instanceof Error ? ordersQuery.error.message : undefined}
+              onRetry={() => ordersQuery.refetch()}
             />
-          ) : (
-            <EmptyState title={t("emptyTitle")} description={t("emptyDescription")} />
-          )
-        ) : (
-          <Table className="min-w-[60rem]">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-28">{t("columnOrderedAt")}</TableHead>
-                <TableHead className="w-20">{t("common:columnTable")}</TableHead>
-                <TableHead className="w-[18%]">{t("columnMenuItem")}</TableHead>
-                <TableHead>{t("columnRequestNote")}</TableHead>
-                <TableHead className="w-24">{t("columnAmount")}</TableHead>
-                <TableHead className="w-24">{t("columnStatus")}</TableHead>
-                <TableHead className="w-32">{t("columnPosSync")}</TableHead>
-                <TableHead className="w-28">{t("common:columnActions")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {orders.map((order) => (
-                <TableRow key={order.orderId}>
-                  <TableCell>
-                    {/* The order time, not the payment time: a POS order carries
-                        TossPlace's openedAt here, and an unpaid order still has
-                        a time to show. The payment time lives on the detail. */}
-                    {formatDateTime(order.createdAt, i18n.language)}
-                  </TableCell>
-                  <TableCell>{order.tableNumber || "-"}</TableCell>
-                  <TableCell title={`${order.menuItemName} (${order.categoryName})`}>
-                    <Link
-                      href={`/orders/${order.orderId}`}
-                      className="text-foreground underline underline-offset-4 hover:font-bold"
-                    >
-                      {order.menuItemName}
-                    </Link>
-                    <span className="text-muted-foreground"> ({order.categoryName})</span>
-                  </TableCell>
-                  <TableCell>{order.requestNote || "-"}</TableCell>
-                  <TableCell>{formatCurrencyKRW(order.amount, i18n.language)}</TableCell>
-                  <TableCell className={STATUS_COLOR_CLASS[order.status]}>
-                    {t(STATUS_LABEL_KEY[order.status])}
-                  </TableCell>
-                  <TableCell className={POS_SYNC_COLOR_CLASS[order.posSyncStatus]}>
-                    {t(POS_SYNC_LABEL_KEY[order.posSyncStatus])}
-                  </TableCell>
-                  <TableCell>
-                    {order.status === "READY" ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={
-                          acknowledgeMutation.isPending &&
-                          acknowledgeMutation.variables === order.orderId
-                        }
-                        onClick={() => acknowledgeMutation.mutate(order.orderId)}
-                      >
-                        {t("detailAcknowledgeButton")}
-                      </Button>
-                    ) : null}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </ListUpdatingRegion>
+          ) : null}
 
-      <Pagination
-        page={ordersQuery.page}
-        pageSize={ordersQuery.pageSize}
-        total={ordersQuery.total}
-        onPageChange={(page) => updateQuery({ page })}
-        onPageSizeChange={(pageSize) => updateQuery({ pageSize, page: 1 })}
-      />
+          {/* Total, pagination, and rows are all read off the same result, so a
+              retained page reports its own total and position rather than the
+              ones the failed request asked for. */}
+          <ListTotalCount count={ordersQuery.total} />
+
+          {/* The rows stay put through a page change (see `useOrdersPageQuery`'s
+              `placeholderData`) and through a failed one (see
+              `useRetainedListQuery`) — the bar reports the fetch, and `stale`
+              says the page on screen is still the previous one. */}
+          <ListUpdatingRegion
+            active={ordersQuery.isFetching}
+            stale={ordersQuery.isStale}
+          >
+            {orders.length === 0 ? (
+              hasActiveFilter ? (
+                <EmptyState
+                  title={t("common:listNoResultsTitle")}
+                  description={t("common:listNoResultsDescription")}
+                />
+              ) : (
+                <EmptyState title={t("emptyTitle")} description={t("emptyDescription")} />
+              )
+            ) : (
+              <Table className="min-w-[60rem]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-28">{t("columnOrderedAt")}</TableHead>
+                    <TableHead className="w-20">{t("common:columnTable")}</TableHead>
+                    <TableHead className="w-[18%]">{t("columnMenuItem")}</TableHead>
+                    <TableHead>{t("columnRequestNote")}</TableHead>
+                    <TableHead className="w-24">{t("columnAmount")}</TableHead>
+                    <TableHead className="w-24">{t("columnStatus")}</TableHead>
+                    <TableHead className="w-32">{t("columnPosSync")}</TableHead>
+                    <TableHead className="w-28">{t("common:columnActions")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {orders.map((order) => (
+                    <TableRow key={order.orderId}>
+                      <TableCell>
+                        {/* The order time, not the payment time: a POS order carries
+                            TossPlace's openedAt here, and an unpaid order still has
+                            a time to show. The payment time lives on the detail. */}
+                        {formatDateTime(order.createdAt, i18n.language)}
+                      </TableCell>
+                      <TableCell>{order.tableNumber || "-"}</TableCell>
+                      <TableCell title={`${order.menuItemName} (${order.categoryName})`}>
+                        <Link
+                          href={`/orders/${order.orderId}`}
+                          className="text-foreground underline underline-offset-4 hover:font-bold"
+                        >
+                          {order.menuItemName}
+                        </Link>
+                        <span className="text-muted-foreground"> ({order.categoryName})</span>
+                      </TableCell>
+                      <TableCell>{order.requestNote || "-"}</TableCell>
+                      <TableCell>{formatCurrencyKRW(order.amount, i18n.language)}</TableCell>
+                      <TableCell className={STATUS_COLOR_CLASS[order.status]}>
+                        {t(STATUS_LABEL_KEY[order.status])}
+                      </TableCell>
+                      <TableCell className={POS_SYNC_COLOR_CLASS[order.posSyncStatus]}>
+                        {t(POS_SYNC_LABEL_KEY[order.posSyncStatus])}
+                      </TableCell>
+                      <TableCell>
+                        {order.status === "READY" ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={
+                              acknowledgeMutation.isPending &&
+                              acknowledgeMutation.variables === order.orderId
+                            }
+                            onClick={() => acknowledgeMutation.mutate(order.orderId)}
+                          >
+                            {t("detailAcknowledgeButton")}
+                          </Button>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </ListUpdatingRegion>
+
+          <Pagination
+            page={ordersQuery.page}
+            pageSize={ordersQuery.pageSize}
+            total={ordersQuery.total}
+            onPageChange={(page) => updateQuery({ page })}
+            onPageSizeChange={(pageSize) => updateQuery({ pageSize, page: 1 })}
+          />
+        </>
+      )}
     </div>
   );
 }

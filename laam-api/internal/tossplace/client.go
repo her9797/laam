@@ -375,9 +375,18 @@ type Order struct {
 	OrderState string `json:"orderState"`
 	// OpenedAt is when the POS opened the order ("주문 수락 시각"), which is
 	// the order time the admin screens show. TossPlace may omit it.
-	OpenedAt    string          `json:"openedAt"`
-	CompletedAt string          `json:"completedAt"`
-	LineItems   []OrderLineItem `json:"lineItems"`
+	OpenedAt    string           `json:"openedAt"`
+	CompletedAt string           `json:"completedAt"`
+	CancelledAt string           `json:"cancelledAt"` // empty unless the order was cancelled
+	ChargePrice OrderChargePrice `json:"chargePrice"`
+	LineItems   []OrderLineItem  `json:"lineItems"`
+}
+
+// OrderChargePrice is the order-level total after discounts — what the
+// POS actually charged, as opposed to the sum of line item prices.
+type OrderChargePrice struct {
+	TotalAmount    int64 `json:"totalAmount"`
+	DiscountAmount int64 `json:"discountAmount"`
 }
 
 type OrderLineItem struct {
@@ -407,50 +416,127 @@ type OrderLineItemOptionChoice struct {
 }
 
 // GetOrder fetches a single order by its TossPlace order ID (the webhook
-// envelope's data.orderId — see tossplace_webhooks.go). Used only for
-// orders whose orderKey is not ours (rung up directly on the POS), to
-// recover the line items TossPlace's completed-event payload does not
+// envelope's data.orderId — see tossplace_webhooks.go), to recover the line
+// items and charged total TossPlace's completed-event payload does not
 // include.
 func (c *Client) GetOrder(ctx context.Context, orderID string) (Order, error) {
+	var order Order
+	if err := c.getSuccess(ctx, "/order/orders/"+url.PathEscape(orderID), &order); err != nil {
+		return Order{}, err
+	}
+	return order, nil
+}
+
+// Payment mirrors the subset of TossPlace's Payment model
+// (docs.tossplace.com/reference/open-api/payment.html) the admin screens
+// show. Card and account numbers are deliberately not decoded — only the
+// card brand is kept from the payment details.
+type Payment struct {
+	ID              string             `json:"id"`
+	OrderID         string             `json:"orderId"`
+	State           string             `json:"state"`
+	SourceType      string             `json:"sourceType"`
+	PaymentMethod   string             `json:"paymentMethod"`
+	Amount          int64              `json:"amount"`
+	TaxAmount       int64              `json:"taxAmount"`
+	SupplyAmount    int64              `json:"supplyAmount"`
+	TaxExemptAmount int64              `json:"taxExemptAmount"`
+	ApprovedNo      string             `json:"approvedNo"`
+	ApprovedAt      string             `json:"approvedAt"`
+	CancelledAt     string             `json:"cancelledAt"`
+	CreatedAt       string             `json:"createdAt"`
+	CardDetails     PaymentCardDetails `json:"cardDetails"`
+}
+
+type PaymentCardDetails struct {
+	CardBrand string `json:"cardBrand"`
+}
+
+// GetPayment fetches one payment by its TossPlace payment ID.
+func (c *Client) GetPayment(ctx context.Context, paymentID string) (Payment, error) {
+	var payment Payment
+	if err := c.getSuccess(ctx, "/payment/payments/"+url.PathEscape(paymentID), &payment); err != nil {
+		return Payment{}, err
+	}
+	return payment, nil
+}
+
+// GetPaymentsByOrderID lists every payment (approved and cancelled)
+// recorded against one TossPlace order — a split bill has several. The docs
+// describe the result as Payment[] without showing the envelope, so a
+// success value wrapped as {"payments": [...]} is accepted too.
+//
+// Any other shape — null, a missing success value, or an object without a
+// payments array — is an error rather than an empty list: callers treat the
+// result as the bill's complete payment list, so misreading an unexpected
+// response as "no payments" would mark a paid bill as synced with nothing
+// recorded.
+func (c *Client) GetPaymentsByOrderID(ctx context.Context, orderID string) ([]Payment, error) {
+	var raw json.RawMessage
+	if err := c.getSuccess(ctx, "/payment/payments/by-order-id?orderId="+url.QueryEscape(orderID), &raw); err != nil {
+		return nil, err
+	}
+	list := bytes.TrimSpace(raw)
+	if len(list) > 0 && list[0] == '{' {
+		var wrapped struct {
+			Payments json.RawMessage `json:"payments"`
+		}
+		if err := json.Unmarshal(list, &wrapped); err != nil {
+			return nil, err
+		}
+		list = bytes.TrimSpace(wrapped.Payments)
+	}
+	if len(list) == 0 || list[0] != '[' {
+		return nil, fmt.Errorf("tossplace: unexpected payment list shape for order %q", orderID)
+	}
+	payments := make([]Payment, 0)
+	if err := json.Unmarshal(list, &payments); err != nil {
+		return nil, err
+	}
+	return payments, nil
+}
+
+// getSuccess GETs a merchant-scoped Open API path and decodes the
+// envelope's success value into out.
+func (c *Client) getSuccess(ctx context.Context, merchantPath string, out any) error {
 	if c.accessKey == "" || c.secretKey == "" || c.merchantID == "" {
-		return Order{}, ErrNotConfigured
+		return ErrNotConfigured
 	}
 
-	endpoint := c.baseURL + "/api-public/openapi/v1/merchants/" + url.PathEscape(c.merchantID) + "/order/orders/" + url.PathEscape(orderID)
+	endpoint := c.baseURL + "/api-public/openapi/v1/merchants/" + url.PathEscape(c.merchantID) + merchantPath
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return Order{}, err
+		return err
 	}
 	req.Header.Set("x-access-key", c.accessKey)
 	req.Header.Set("x-secret-key", c.secretKey)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return Order{}, err
+		return err
 	}
 	defer resp.Body.Close()
 
 	var envelope struct {
-		ResultType string `json:"resultType"`
-		Success    Order  `json:"success"`
+		ResultType string          `json:"resultType"`
+		Success    json.RawMessage `json:"success"`
 		Error      struct {
 			ErrorCode string `json:"errorCode"`
 			Reason    string `json:"reason"`
 		} `json:"error"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&envelope); err != nil {
-		return Order{}, err
+		return err
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices || envelope.ResultType != "SUCCESS" {
-		return Order{}, &APIError{
+		return &APIError{
 			StatusCode: resp.StatusCode,
 			EventID:    resp.Header.Get("x-toss-event-id"),
 			Code:       envelope.Error.ErrorCode,
 			Reason:     envelope.Error.Reason,
 		}
 	}
-
-	return envelope.Success, nil
+	return json.Unmarshal(envelope.Success, out)
 }
 
 func paymentMemo(tableNumber string, requestNote string) string {
