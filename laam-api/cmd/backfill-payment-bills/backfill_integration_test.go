@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/her9797/laam/laam-api/internal/config"
+	"github.com/her9797/laam/laam-api/internal/store"
+	"github.com/her9797/laam/laam-api/internal/tossplace"
 )
 
 const (
@@ -522,5 +524,47 @@ func assertNoSecrets(t *testing.T, out string) {
 		if strings.Contains(out, secret) {
 			t.Errorf("output leaks %q:\n%s", secret, out)
 		}
+	}
+}
+
+// racingSource simulates the completed webhook recording the POS-native
+// line between the backfill reading its snapshot and applying its plan.
+type racingSource struct {
+	dbSource
+	t *testing.T
+}
+
+func (s racingSource) LoadSnapshot(ctx context.Context, posOrderID string, paymentIDs []string) (Snapshot, error) {
+	snapshot, err := s.dbSource.LoadSnapshot(ctx, posOrderID, paymentIDs)
+	if err != nil {
+		return snapshot, err
+	}
+	if _, err := s.repo.CreatePOSNativeOrder(ctx, store.CreatePOSNativeOrderInput{
+		MenuItemName: "생맥주", CategoryName: "맥주", Amount: 12000, POSOrderID: posOrderID,
+		ApprovedAt: time.Date(2026, 9, 1, 13, 0, 0, 0, time.UTC), VAT: 1090, SuppliedAmount: 10910,
+	}); err != nil {
+		s.t.Errorf("simulate webhook native line: %v", err)
+	}
+	return snapshot, nil
+}
+
+func TestBackfill_ApplyDoesNotDuplicateNativeLineRecordedConcurrently(t *testing.T) {
+	resetTables(t)
+	fake, server := newFakeTossPlace(t)
+	seedMixedBill(t, fake)
+	cfg := testConfig(server.URL)
+	repo := store.New(testPool)
+	runner := &Runner{
+		Source: racingSource{dbSource: dbSource{repo: repo, pool: testPool}, t: t},
+		POS:    tossplace.NewClient(cfg.TossPlaceAPIBaseURL, cfg.TossPlaceAccessKey, cfg.TossPlaceSecretKey, cfg.TossPlaceMerchantID, nil),
+		Writer: repo,
+		Out:    &bytes.Buffer{},
+	}
+
+	if _, err := runner.Run(context.Background(), Options{Apply: true}); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if native := loadNativeRows(t, "pos-mixed"); len(native) != 1 {
+		t.Fatalf("native rows = %+v, want exactly one 생맥주", native)
 	}
 }
