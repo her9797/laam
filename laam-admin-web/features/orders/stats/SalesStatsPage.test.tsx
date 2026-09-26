@@ -9,6 +9,9 @@ import type { SalesStats } from "./model";
 // `Pie` is wrapped only to record the `data` it receives: jsdom never
 // finishes the sector animation, so slice values aren't in the DOM.
 const pieDataMock = vi.hoisted(() => vi.fn());
+// `Tooltip` is wrapped the same way to record its props: jsdom never
+// hovers a sector, so the tooltip body is rendered by hand from them.
+const tooltipPropsMock = vi.hoisted(() => vi.fn());
 vi.mock("recharts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("recharts")>();
   const { cloneElement, createElement } = await import("react");
@@ -19,6 +22,10 @@ vi.mock("recharts", async (importOriginal) => {
     Pie: (props: React.ComponentProps<typeof actual.Pie>) => {
       pieDataMock(props.data);
       return createElement(actual.Pie, props);
+    },
+    Tooltip: (props: React.ComponentProps<typeof actual.Tooltip>) => {
+      tooltipPropsMock(props);
+      return createElement(actual.Tooltip, props);
     },
   };
 });
@@ -201,6 +208,38 @@ describe("SalesStatsPage", () => {
       ["미확인", 7000, 2],
       ["현금", 5000, 1],
     ]);
+  });
+
+  it("labels the payment-method breakdown's count as the number of payments (결제 건수)", () => {
+    tooltipPropsMock.mockClear();
+    mockQuery({
+      data: {
+        ...STATS,
+        byPaymentMethod: [{ paymentMethod: "CARD", revenue: 15000, orderCount: 3 }],
+      },
+    });
+
+    render(<SalesStatsPage />);
+
+    // Only the payment-method pie gets a custom tooltip body; the category
+    // pie and the trend bar keep recharts' default one.
+    const contents = tooltipPropsMock.mock.calls
+      .map(([props]) => (props as { content?: unknown }).content)
+      .filter((content): content is (props: unknown) => React.ReactNode => typeof content === "function");
+    expect(new Set(contents).size).toBe(1);
+
+    cleanup();
+    render(
+      <>
+        {contents[0]({
+          active: true,
+          payload: [{ payload: { paymentMethodLabel: "카드", revenue: 15000, orderCount: 3 } }],
+        })}
+      </>,
+    );
+    expect(screen.getByText("카드")).toBeInTheDocument();
+    expect(screen.getByText("₩15,000")).toBeInTheDocument();
+    expect(screen.getByText("결제 건수: 3")).toBeInTheDocument();
   });
 
   it("defaults the aggregation basis to '영업일' (business day)", () => {
