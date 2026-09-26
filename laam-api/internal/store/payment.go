@@ -1120,6 +1120,53 @@ const paymentOrderStatsFilterWhere = `
 	WHERE status = 'DONE' AND approved_at >= $1 AND approved_at < $2
 `
 
+// paymentStatsRevenueCTE defines the "revenue" CTE: every won the store
+// actually took within [$1, $2), one row per payment, as (paid_at, method,
+// amount).
+//
+//   - A bill whose payment list has been fully fetched from TossPlace
+//     (payments_synced_at set) contributes its APPROVED pos_payments, by
+//     their approved_at and source_type. This is what the customer paid —
+//     after POS discounts, split across card/cash/etc., without cancelled
+//     attempts — rather than the menu prices on its rows.
+//   - Every other DONE payment_orders row — no bill (orders from before
+//     bills existed) or a bill not synced yet — contributes its own amount
+//     by approved_at and payment_method, as before, so revenue is never
+//     dropped while a bill waits for its payments and never counted twice
+//     once it has them.
+const paymentStatsRevenueCTE = `
+	revenue AS (
+		SELECT p.approved_at AS paid_at, p.source_type AS method, p.amount
+		FROM pos_payments p
+		JOIN pos_bills b ON b.id = p.bill_id
+		WHERE b.payments_synced_at IS NOT NULL
+			AND p.state = 'APPROVED'
+			AND p.approved_at >= $1 AND p.approved_at < $2
+		UNION ALL
+		SELECT approved_at, COALESCE(payment_method, ''), amount
+		FROM payment_orders
+	` + paymentOrderStatsFilterWhere + `
+			AND NOT EXISTS (
+				SELECT 1 FROM pos_bills b
+				WHERE b.id = payment_orders.bill_id AND b.payments_synced_at IS NOT NULL
+			)
+	)
+`
+
+// paymentStatsBucketExpr renders the trend bucket label for a timestamp
+// column, using the query's $3 (unit) and $4 (businessDayBasis) parameters.
+// column is always a code-owned column name, never caller input.
+func paymentStatsBucketExpr(column string) string {
+	return `TO_CHAR(
+		CASE WHEN $4 THEN
+			date_trunc($3, (` + column + ` AT TIME ZONE 'Asia/Seoul') - INTERVAL '16 hours') + INTERVAL '16 hours'
+		ELSE
+			date_trunc($3, ` + column + ` AT TIME ZONE 'Asia/Seoul')
+		END,
+		'YYYY-MM-DD'
+	)`
+}
+
 // determineTrendUnit picks the trend chart's bucket granularity from the
 // requested range's length, so the admin never has to pick a unit that
 // would render either a single bar (too coarse) or hundreds of them (too
@@ -1146,6 +1193,12 @@ var paymentOrderStatsAfterSummaryHook func()
 // average order value), a trend broken into day/week/month buckets (picked
 // by determineTrendUnit), and revenue/count breakdowns by category, payment
 // method, and table.
+//
+// Total revenue, trend revenue and byPaymentMethod follow the payments
+// actually taken (see paymentStatsRevenueCTE). Order counts stay the number
+// of DONE menu rows, so averageOrderValue is revenue per menu row. The
+// category, table and menu-item breakdowns stay on the menu-price basis —
+// a bill-level discount or split payment cannot be attributed to one row.
 //
 // Bucketing/grouping is done in Postgres via GROUP BY rather than in Go, so
 // arbitrarily large ranges never have to pull every matching row into
@@ -1183,7 +1236,12 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 
 	var totalRevenue int64
 	var orderCount int
-	summarySQL := "SELECT COALESCE(SUM(amount), 0), COUNT(*) FROM payment_orders" + paymentOrderStatsFilterWhere
+	summarySQL := `
+		WITH ` + paymentStatsRevenueCTE + `
+		SELECT
+			(SELECT COALESCE(SUM(amount), 0) FROM revenue),
+			(SELECT COUNT(*) FROM payment_orders ` + paymentOrderStatsFilterWhere + `)
+	`
 	if err := tx.QueryRow(ctx, summarySQL, from, to).Scan(&totalRevenue, &orderCount); err != nil {
 		return lamdata.PaymentOrderStats{}, classifyError(err)
 	}
@@ -1199,22 +1257,29 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 	}
 
 	unit := determineTrendUnit(from, to)
+	// Revenue buckets follow when each payment was approved, order-count
+	// buckets follow when each menu row was completed; a bill paid just
+	// before a bucket boundary and completed just after it lands in both.
 	trendSQL := `
+		WITH ` + paymentStatsRevenueCTE + `,
+		revenue_buckets AS (
+			SELECT ` + paymentStatsBucketExpr("paid_at") + ` AS bucket, SUM(amount) AS revenue
+			FROM revenue
+			GROUP BY 1
+		),
+		count_buckets AS (
+			SELECT ` + paymentStatsBucketExpr("approved_at") + ` AS bucket, COUNT(*) AS order_count
+			FROM payment_orders
+		` + paymentOrderStatsFilterWhere + `
+			GROUP BY 1
+		)
 		SELECT
-			TO_CHAR(
-				CASE WHEN $4 THEN
-					date_trunc($3, (approved_at AT TIME ZONE 'Asia/Seoul') - INTERVAL '16 hours') + INTERVAL '16 hours'
-				ELSE
-					date_trunc($3, approved_at AT TIME ZONE 'Asia/Seoul')
-				END,
-				'YYYY-MM-DD'
-			) AS bucket,
-			COALESCE(SUM(amount), 0),
-			COUNT(*)
-		FROM payment_orders
-	` + paymentOrderStatsFilterWhere + `
-		GROUP BY bucket
-		ORDER BY bucket ASC
+			COALESCE(r.bucket, c.bucket),
+			COALESCE(r.revenue, 0),
+			COALESCE(c.order_count, 0)
+		FROM revenue_buckets r
+		FULL OUTER JOIN count_buckets c ON c.bucket = r.bucket
+		ORDER BY 1 ASC
 	`
 	trendRows, err := tx.Query(ctx, trendSQL, from, to, unit, businessDayBasis)
 	if err != nil {
@@ -1260,12 +1325,14 @@ func (r *Repository) GetPaymentOrderStats(ctx context.Context, from time.Time, t
 		return lamdata.PaymentOrderStats{}, err
 	}
 
+	// orderCount here is the number of payments per method: an APPROVED
+	// pos_payments row for a synced bill, a payment_orders row otherwise.
 	paymentMethodSQL := `
-		SELECT COALESCE(payment_method, ''), COALESCE(SUM(amount), 0), COUNT(*)
-		FROM payment_orders
-	` + paymentOrderStatsFilterWhere + `
-		GROUP BY payment_method
-		ORDER BY SUM(amount) DESC
+		WITH ` + paymentStatsRevenueCTE + `
+		SELECT method, COALESCE(SUM(amount), 0), COUNT(*)
+		FROM revenue
+		GROUP BY method
+		ORDER BY SUM(amount) DESC, method ASC
 	`
 	paymentMethodRows, err := tx.Query(ctx, paymentMethodSQL, from, to)
 	if err != nil {
