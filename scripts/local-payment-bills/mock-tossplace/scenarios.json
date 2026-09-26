@@ -1,0 +1,197 @@
+{
+  "scenarios": [
+    {
+      "name": "a-card",
+      "title": "플러그인형 테이블 계산서: 웹 주문 3건을 카드 1건으로 결제",
+      "posOrderId": "mock-pos-a",
+      "webOrders": [
+        { "id": "mock-a-1", "menuItemName": "하우스 하이볼", "categoryName": "하이볼", "tableNumber": "T-03", "amount": 9000, "createdAt": "now-55m" },
+        { "id": "mock-a-2", "menuItemName": "짐빔 하이볼", "categoryName": "하이볼", "tableNumber": "T-03", "amount": 8000, "createdAt": "now-40m" },
+        { "id": "mock-a-3", "menuItemName": "감자튀김", "categoryName": "안주", "tableNumber": "T-03", "amount": 12000, "createdAt": "now-30m" }
+      ],
+      "posOrder": {
+        "id": "mock-pos-a", "orderKey": "mock-a-1", "orderNumber": "M-A01", "source": "POS", "orderState": "COMPLETED",
+        "openedAt": "now-55m", "completedAt": "now-10m",
+        "chargePrice": { "totalAmount": 29000, "discountAmount": 0 },
+        "lineItems": [
+          { "item": { "title": "하우스 하이볼", "category": { "title": "하이볼" } }, "itemPrice": { "priceValue": 9000 }, "quantity": 1, "optionChoices": [] },
+          { "item": { "title": "짐빔 하이볼", "category": { "title": "하이볼" } }, "itemPrice": { "priceValue": 8000 }, "quantity": 1, "optionChoices": [] },
+          { "item": { "title": "감자튀김", "category": { "title": "안주" } }, "itemPrice": { "priceValue": 12000 }, "quantity": 1, "optionChoices": [] }
+        ]
+      },
+      "posPayments": [
+        { "id": "mock-pay-a-card", "orderId": "mock-pos-a", "state": "APPROVED", "sourceType": "CARD", "paymentMethod": "신용카드", "amount": 29000, "taxAmount": 2636, "supplyAmount": 26364, "taxExemptAmount": 0, "approvedNo": "MOCKA001", "approvedAt": "now-10m", "createdAt": "now-10m", "cardDetails": { "cardBrand": "신한" } }
+      ],
+      "steps": [
+        { "webhook": "payment.approved", "paymentId": "mock-pay-a-card" },
+        { "webhook": "order.completed" }
+      ],
+      "expect": {
+        "billStatus": "PAID", "totalAmount": 29000, "synced": true,
+        "orders": { "DONE": 3 }, "nativeRows": 0,
+        "payments": { "mock-pay-a-card": "APPROVED/CARD/29000" }
+      }
+    },
+    {
+      "name": "b-split",
+      "title": "분할 결제: 카드 20,000원 + 현금 12,000원",
+      "posOrderId": "mock-pos-b",
+      "webOrders": [
+        { "id": "mock-b-1", "menuItemName": "하이네켄", "categoryName": "맥주", "tableNumber": "B-02", "amount": 7000, "createdAt": "now-50m" },
+        { "id": "mock-b-2", "menuItemName": "모히또", "categoryName": "칵테일", "tableNumber": "B-02", "amount": 11000, "createdAt": "now-45m" },
+        { "id": "mock-b-3", "menuItemName": "나초", "categoryName": "안주", "tableNumber": "B-02", "amount": 14000, "createdAt": "now-35m" }
+      ],
+      "posOrder": {
+        "id": "mock-pos-b", "orderKey": "mock-b-1", "orderNumber": "M-B01", "source": "POS", "orderState": "COMPLETED",
+        "openedAt": "now-50m", "completedAt": "now-9m",
+        "chargePrice": { "totalAmount": 32000, "discountAmount": 0 },
+        "lineItems": [
+          { "item": { "title": "하이네켄", "category": { "title": "맥주" } }, "itemPrice": { "priceValue": 7000 }, "quantity": 1, "optionChoices": [] },
+          { "item": { "title": "모히또", "category": { "title": "칵테일" } }, "itemPrice": { "priceValue": 11000 }, "quantity": 1, "optionChoices": [] },
+          { "item": { "title": "나초", "category": { "title": "안주" } }, "itemPrice": { "priceValue": 14000 }, "quantity": 1, "optionChoices": [] }
+        ]
+      },
+      "posPayments": [
+        { "id": "mock-pay-b-card", "orderId": "mock-pos-b", "state": "APPROVED", "sourceType": "CARD", "paymentMethod": "신용카드", "amount": 20000, "taxAmount": 1818, "supplyAmount": 18182, "taxExemptAmount": 0, "approvedNo": "MOCKB001", "approvedAt": "now-10m", "createdAt": "now-10m", "cardDetails": { "cardBrand": "국민" } },
+        { "id": "mock-pay-b-cash", "orderId": "mock-pos-b", "state": "APPROVED", "sourceType": "CASH", "paymentMethod": "현금", "amount": 12000, "taxAmount": 1090, "supplyAmount": 10910, "taxExemptAmount": 0, "approvedNo": "", "approvedAt": "now-9m", "createdAt": "now-9m" }
+      ],
+      "steps": [
+        { "webhook": "payment.approved", "paymentId": "mock-pay-b-card" },
+        { "webhook": "payment.approved", "paymentId": "mock-pay-b-cash" },
+        { "webhook": "order.completed" }
+      ],
+      "expect": {
+        "billStatus": "PAID", "totalAmount": 32000, "synced": true,
+        "orders": { "DONE": 3 }, "nativeRows": 0,
+        "payments": { "mock-pay-b-card": "APPROVED/CARD/20000", "mock-pay-b-cash": "APPROVED/CASH/12000" }
+      }
+    },
+    {
+      "name": "c-transfer",
+      "title": "계좌이체 결제 (결제 웹훅 없이 주문 완료 후 결제 목록 조회로만 반영)",
+      "posOrderId": "mock-pos-c",
+      "webOrders": [
+        { "id": "mock-c-1", "menuItemName": "진토닉", "categoryName": "칵테일", "tableNumber": "T-07", "amount": 10000, "createdAt": "now-45m" },
+        { "id": "mock-c-2", "menuItemName": "치즈 플래터", "categoryName": "안주", "tableNumber": "T-07", "amount": 18000, "createdAt": "now-40m" }
+      ],
+      "posOrder": {
+        "id": "mock-pos-c", "orderKey": "mock-c-1", "orderNumber": "M-C01", "source": "POS", "orderState": "COMPLETED",
+        "openedAt": "now-45m", "completedAt": "now-8m",
+        "chargePrice": { "totalAmount": 28000, "discountAmount": 0 },
+        "lineItems": [
+          { "item": { "title": "진토닉", "category": { "title": "칵테일" } }, "itemPrice": { "priceValue": 10000 }, "quantity": 1, "optionChoices": [] },
+          { "item": { "title": "치즈 플래터", "category": { "title": "안주" } }, "itemPrice": { "priceValue": 18000 }, "quantity": 1, "optionChoices": [] }
+        ]
+      },
+      "posPayments": [
+        { "id": "mock-pay-c-transfer", "orderId": "mock-pos-c", "state": "APPROVED", "sourceType": "ACCOUNT_TRANSFER", "paymentMethod": "계좌이체", "amount": 28000, "taxAmount": 2545, "supplyAmount": 25455, "taxExemptAmount": 0, "approvedNo": "", "approvedAt": "now-8m", "createdAt": "now-8m" }
+      ],
+      "steps": [
+        { "webhook": "order.completed" }
+      ],
+      "expect": {
+        "billStatus": "PAID", "totalAmount": 28000, "synced": true,
+        "orders": { "DONE": 2 }, "nativeRows": 0,
+        "payments": { "mock-pay-c-transfer": "APPROVED/ACCOUNT_TRANSFER/28000" }
+      }
+    },
+    {
+      "name": "d-mixed",
+      "title": "혼합 계산서: 웹 주문 2건 + POS에서 직접 찍은 생맥주 2잔 (완료 웹훅 재전송에도 1번만 기록)",
+      "posOrderId": "mock-pos-d",
+      "webOrders": [
+        { "id": "mock-d-1", "menuItemName": "하우스 하이볼", "categoryName": "하이볼", "tableNumber": "T-05", "amount": 9000, "createdAt": "now-40m" },
+        { "id": "mock-d-2", "menuItemName": "버팔로윙", "categoryName": "안주", "tableNumber": "T-05", "amount": 15000, "createdAt": "now-35m" }
+      ],
+      "posOrder": {
+        "id": "mock-pos-d", "orderKey": "mock-d-1", "orderNumber": "M-D01", "source": "POS", "orderState": "COMPLETED",
+        "openedAt": "now-40m", "completedAt": "now-7m",
+        "chargePrice": { "totalAmount": 36000, "discountAmount": 0 },
+        "lineItems": [
+          { "item": { "title": "하우스 하이볼", "category": { "title": "하이볼" } }, "itemPrice": { "priceValue": 9000 }, "quantity": 1, "optionChoices": [] },
+          { "item": { "title": "버팔로윙", "category": { "title": "안주" } }, "itemPrice": { "priceValue": 15000 }, "quantity": 1, "optionChoices": [] },
+          { "item": { "title": "생맥주", "category": { "title": "맥주" } }, "itemPrice": { "priceValue": 6000 }, "quantity": 2, "optionChoices": [] }
+        ]
+      },
+      "posPayments": [
+        { "id": "mock-pay-d-card", "orderId": "mock-pos-d", "state": "APPROVED", "sourceType": "CARD", "paymentMethod": "신용카드", "amount": 36000, "taxAmount": 3272, "supplyAmount": 32728, "taxExemptAmount": 0, "approvedNo": "MOCKD001", "approvedAt": "now-7m", "createdAt": "now-7m", "cardDetails": { "cardBrand": "현대" } }
+      ],
+      "steps": [
+        { "webhook": "order.completed" },
+        { "webhook": "order.completed", "note": "같은 완료 웹훅 재전송(토스플레이스 재시도 재현)" }
+      ],
+      "expect": {
+        "billStatus": "PAID", "totalAmount": 36000, "synced": true,
+        "orders": { "DONE": 3 }, "nativeRows": 1, "native": { "menuItemName": "생맥주", "amount": 12000 },
+        "payments": { "mock-pay-d-card": "APPROVED/CARD/36000" }
+      }
+    },
+    {
+      "name": "e-refund",
+      "title": "환불: 카드 결제로 완료된 계산서를 POS에서 취소",
+      "posOrderId": "mock-pos-e",
+      "webOrders": [
+        { "id": "mock-e-1", "menuItemName": "롱아일랜드 아이스티", "categoryName": "칵테일", "tableNumber": "B-04", "amount": 13000, "createdAt": "now-35m" },
+        { "id": "mock-e-2", "menuItemName": "감바스", "categoryName": "안주", "tableNumber": "B-04", "amount": 17000, "createdAt": "now-30m" }
+      ],
+      "posOrder": {
+        "id": "mock-pos-e", "orderKey": "mock-e-1", "orderNumber": "M-E01", "source": "POS", "orderState": "COMPLETED",
+        "openedAt": "now-35m", "completedAt": "now-6m",
+        "chargePrice": { "totalAmount": 30000, "discountAmount": 0 },
+        "lineItems": [
+          { "item": { "title": "롱아일랜드 아이스티", "category": { "title": "칵테일" } }, "itemPrice": { "priceValue": 13000 }, "quantity": 1, "optionChoices": [] },
+          { "item": { "title": "감바스", "category": { "title": "안주" } }, "itemPrice": { "priceValue": 17000 }, "quantity": 1, "optionChoices": [] }
+        ]
+      },
+      "posPayments": [
+        { "id": "mock-pay-e-card", "orderId": "mock-pos-e", "state": "APPROVED", "sourceType": "CARD", "paymentMethod": "신용카드", "amount": 30000, "taxAmount": 2727, "supplyAmount": 27273, "taxExemptAmount": 0, "approvedNo": "MOCKE001", "approvedAt": "now-6m", "createdAt": "now-6m", "cardDetails": { "cardBrand": "삼성" } }
+      ],
+      "steps": [
+        { "webhook": "payment.approved", "paymentId": "mock-pay-e-card" },
+        { "webhook": "order.completed" },
+        { "mock": { "orders": { "mock-pos-e": { "orderState": "CANCELLED", "cancelledAt": "now" } }, "payments": { "mock-pay-e-card": { "state": "CANCELLED", "cancelledAt": "now" } } }, "note": "POS에서 결제 취소·환불" },
+        { "webhook": "payment.cancelled", "paymentId": "mock-pay-e-card" },
+        { "webhook": "order.cancelled" }
+      ],
+      "expect": {
+        "billStatus": "CANCELLED", "totalAmount": 30000, "synced": true,
+        "orders": { "CANCELLED": 2 }, "nativeRows": 0,
+        "payments": { "mock-pay-e-card": "CANCELLED/CARD/30000" }
+      }
+    },
+    {
+      "name": "f-repay",
+      "title": "재결제: 카드 승인 → 카드 취소 → 현금으로 다시 결제 후 완료",
+      "posOrderId": "mock-pos-f",
+      "webOrders": [
+        { "id": "mock-f-1", "menuItemName": "위스키 사워", "categoryName": "칵테일", "tableNumber": "T-09", "amount": 12000, "createdAt": "now-30m" },
+        { "id": "mock-f-2", "menuItemName": "프렌치프라이", "categoryName": "안주", "tableNumber": "T-09", "amount": 8000, "createdAt": "now-25m" }
+      ],
+      "posOrder": {
+        "id": "mock-pos-f", "orderKey": "mock-f-1", "orderNumber": "M-F01", "source": "POS", "orderState": "COMPLETED",
+        "openedAt": "now-30m", "completedAt": "now-3m",
+        "chargePrice": { "totalAmount": 20000, "discountAmount": 0 },
+        "lineItems": [
+          { "item": { "title": "위스키 사워", "category": { "title": "칵테일" } }, "itemPrice": { "priceValue": 12000 }, "quantity": 1, "optionChoices": [] },
+          { "item": { "title": "프렌치프라이", "category": { "title": "안주" } }, "itemPrice": { "priceValue": 8000 }, "quantity": 1, "optionChoices": [] }
+        ]
+      },
+      "posPayments": [
+        { "id": "mock-pay-f-card", "orderId": "mock-pos-f", "state": "APPROVED", "sourceType": "CARD", "paymentMethod": "신용카드", "amount": 20000, "taxAmount": 1818, "supplyAmount": 18182, "taxExemptAmount": 0, "approvedNo": "MOCKF001", "approvedAt": "now-5m", "createdAt": "now-5m", "cardDetails": { "cardBrand": "롯데" } }
+      ],
+      "steps": [
+        { "webhook": "payment.approved", "paymentId": "mock-pay-f-card" },
+        { "mock": { "payments": { "mock-pay-f-card": { "state": "CANCELLED", "cancelledAt": "now" } } }, "note": "카드 결제 취소" },
+        { "webhook": "payment.cancelled", "paymentId": "mock-pay-f-card" },
+        { "mock": { "payments": { "mock-pay-f-cash": { "orderId": "mock-pos-f", "state": "APPROVED", "sourceType": "CASH", "paymentMethod": "현금", "amount": 20000, "taxAmount": 1818, "supplyAmount": 18182, "taxExemptAmount": 0, "approvedNo": "", "approvedAt": "now", "createdAt": "now" } } }, "note": "현금으로 재결제" },
+        { "webhook": "payment.approved", "paymentId": "mock-pay-f-cash" },
+        { "webhook": "order.completed" }
+      ],
+      "expect": {
+        "billStatus": "PAID", "totalAmount": 20000, "synced": true,
+        "orders": { "DONE": 2 }, "nativeRows": 0,
+        "payments": { "mock-pay-f-card": "CANCELLED/CARD/20000", "mock-pay-f-cash": "APPROVED/CASH/20000" }
+      }
+    }
+  ]
+}
