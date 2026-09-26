@@ -357,6 +357,15 @@ export const ko = {
     billDetailColumnCategory: "카테고리",
     billDetailColumnStatus: "상태",
     statsPaymentCountLabel: "결제 건수",
+    // order view toggle
+    viewToggleLabel: "보기 방식",
+    viewMenu: "메뉴별",
+    viewBill: "계산서별",
+    billFilterStatusLabel: "계산서 상태",
+    billFilterStatusOpen: "결제 대기",
+    billFilterStatusPaid: "결제 완료",
+    billFilterStatusCancelled: "취소",
+    billFilterSourceLabel: "결제수단",
   },
   specialRequests: {
     title: "특별 요청",
@@ -1161,6 +1170,15 @@ export const en = {
     billDetailColumnCategory: "Category",
     billDetailColumnStatus: "Status",
     statsPaymentCountLabel: "Payments",
+    // order view toggle
+    viewToggleLabel: "View",
+    viewMenu: "By menu",
+    viewBill: "By bill",
+    billFilterStatusLabel: "Bill status",
+    billFilterStatusOpen: "Awaiting payment",
+    billFilterStatusPaid: "Paid",
+    billFilterStatusCancelled: "Cancelled",
+    billFilterSourceLabel: "Payment method",
   },
   specialRequests: {
     title: "Special requests",
