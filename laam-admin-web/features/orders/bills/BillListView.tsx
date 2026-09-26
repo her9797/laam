@@ -33,6 +33,7 @@ export type BillListViewProps = {
   /** False while the parent's date range is still unresolved (see `OrderListPage`). */
   enabled: boolean;
   onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
 };
 
 const COLUMN_COUNT = 6;
@@ -114,7 +115,7 @@ function BillPayments({ bill }: { bill: Bill }) {
  * payments summarised and its menu rows behind an expand toggle. Paging and
  * failure handling follow the menu-row list (`OrderListPage`).
  */
-export function BillListView({ query, enabled, onPageChange }: BillListViewProps) {
+export function BillListView({ query, enabled, onPageChange, onPageSizeChange }: BillListViewProps) {
   const { t, i18n } = useTranslation("orders");
   const billsQuery = useRetainedListQuery(useBillsPageQuery(query, enabled), query);
   const [expandedBillId, setExpandedBillId] = useState<string | null>(null);
@@ -256,9 +257,7 @@ export function BillListView({ query, enabled, onPageChange }: BillListViewProps
         pageSize={billsQuery.pageSize}
         total={billsQuery.total}
         onPageChange={onPageChange}
-        // `BillListViewProps` carries no page-size callback (the parent owns
-        // `query.pageSize`), so the size picker here cannot change it.
-        onPageSizeChange={() => {}}
+        onPageSizeChange={onPageSizeChange}
       />
     </div>
   );

@@ -445,6 +445,7 @@ export function OrderListPage() {
           query={toBillListQuery(urlState)}
           enabled={dateRangeResult.ok}
           onPageChange={(page) => updateQuery({ page })}
+          onPageSizeChange={(pageSize) => updateQuery({ pageSize, page: 1 })}
         />
       ) : (
         <>

@@ -89,8 +89,17 @@ function mockQuery(overrides: Record<string, unknown> = {}) {
 
 function renderView(props: Partial<Parameters<typeof BillListView>[0]> = {}) {
   const onPageChange = vi.fn();
-  render(<BillListView query={QUERY} enabled onPageChange={onPageChange} {...props} />);
-  return { onPageChange };
+  const onPageSizeChange = vi.fn();
+  render(
+    <BillListView
+      query={QUERY}
+      enabled
+      onPageChange={onPageChange}
+      onPageSizeChange={onPageSizeChange}
+      {...props}
+    />,
+  );
+  return { onPageChange, onPageSizeChange };
 }
 
 function rowOf(bill: Bill): HTMLElement {
@@ -245,6 +254,15 @@ describe("BillListView", () => {
     fireEvent.click(screen.getByRole("button", { name: "다음" }));
 
     expect(onPageChange).toHaveBeenCalledWith(2);
+  });
+
+  it("calls onPageSizeChange from the page-size picker", () => {
+    mockQuery({ data: pageFixture(BILLS, { total: 45 }) });
+
+    const { onPageSizeChange } = renderView();
+    fireEvent.change(screen.getByRole("combobox", { name: "페이지당 개수" }), { target: { value: "30" } });
+
+    expect(onPageSizeChange).toHaveBeenCalledWith(30);
   });
 
   it("keeps the table horizontally scrollable on narrow screens", () => {

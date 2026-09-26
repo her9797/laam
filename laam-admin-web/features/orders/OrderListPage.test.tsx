@@ -563,6 +563,7 @@ describe("OrderListPage", () => {
         query: unknown;
         enabled: boolean;
         onPageChange: (page: number) => void;
+        onPageSizeChange: (pageSize: number) => void;
       };
     }
 
@@ -662,6 +663,18 @@ describe("OrderListPage", () => {
       expect(params.get("view")).toBe("bill");
       expect(params.get("page")).toBe("3");
       expect(params.get("billStatus")).toBe("OPEN");
+    });
+
+    it("changes the bill list page size through the URL, resetting the page", () => {
+      currentSearchParams = new URLSearchParams(`${BILL_SEARCH}&page=3`);
+
+      render(<OrderListPage />);
+      act(() => lastBillListViewProps().onPageSizeChange(50));
+
+      const params = lastReplacedParams();
+      expect(params.get("view")).toBe("bill");
+      expect(params.get("pageSize")).toBe("50");
+      expect(params.has("page")).toBe(false);
     });
 
     it("switches back to the menu view with the view param omitted and the page reset", () => {
