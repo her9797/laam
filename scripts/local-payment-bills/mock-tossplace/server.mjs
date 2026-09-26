@@ -17,7 +17,8 @@
 //   GET  /__mock/state                      현재 주문·결제 전체
 //   POST /__mock/reset   {"scenario":"a"}   해당 시나리오(생략 시 전체)를 파일 초기값으로 되돌림
 //   POST /__mock/state   {"orders":{id:{...}},"payments":{id:{...}}}
-//                                           필드 단위 병합. 없는 id는 새로 만든다.
+//                                           필드 단위 병합(lineItems 같은 배열은 통째로
+//                                           교체). 없는 id는 새로 만든다.
 //
 // 값이 "now", "now-30m", "now+2h" 같은 문자열이고 키가 "At"으로 끝나면
 // 적용 시점 기준 ISO 시각으로 바꾼다.
@@ -82,10 +83,13 @@ function resetState(name) {
     throw new Error(`알 수 없는 시나리오: ${name}`);
   }
   for (const scenario of selected) {
-    const order = resolveRelativeTimes(scenario.posOrder);
-    state.orders.set(order.id, order);
-    for (const [id, payment] of state.payments) {
-      if (payment.orderId === order.id) state.payments.delete(id);
+    // posOrders(POS 주문 여러 건을 쓰는 시나리오) 또는 posOrder(1건)
+    for (const raw of scenario.posOrders || [scenario.posOrder]) {
+      const order = resolveRelativeTimes(raw);
+      state.orders.set(order.id, order);
+      for (const [id, payment] of state.payments) {
+        if (payment.orderId === order.id) state.payments.delete(id);
+      }
     }
     for (const payment of scenario.posPayments || []) {
       const resolved = resolveRelativeTimes(payment);

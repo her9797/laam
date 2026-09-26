@@ -13,6 +13,9 @@
 //   3. 서명한 웹훅을 순서대로 laam-api에 보내고
 //   4. 결과 계산서·주문·결제를 DB에서 읽어 기대값과 비교한다.
 //
+// POS 주문 여러 건을 쓰는 시나리오(g, h)는 posOrders, 웹 주문별 posOrderId,
+// 웹훅 단계의 orderId, expect.bills(POS 주문별 계산서 기대값)·menuCounts·webOrders를 쓴다.
+//
 // 환경변수 (없으면 laam-api/.env.local → laam-api/.env → .env.local → .env 순으로 찾는다.
 // laam-api를 go run으로 띄울 때 읽는 순서와 같다):
 //   DATABASE_URL               로컬 Postgres. host가 localhost/127.0.0.1/::1이 아니면 거부한다.
@@ -164,9 +167,14 @@ COMMIT;`);
   console.log(`삭제: ${out.split(/\r?\n/).filter(Boolean).join(", ")} (pos_payments는 계산서와 함께 삭제)`);
 }
 
+// 시나리오가 쓰는 POS 주문 id 전체. posOrders가 있으면 그 id들, 없으면 posOrderId 1건.
+function scenarioPosOrderIds(scenario) {
+  return scenario.posOrders ? scenario.posOrders.map((order) => order.id) : [scenario.posOrderId];
+}
+
 function seedScenario(scenario) {
   const filter = jsonLiteral({
-    posOrderIds: [scenario.posOrderId],
+    posOrderIds: scenarioPosOrderIds(scenario),
     orderIds: scenario.webOrders.map((order) => order.id),
   });
   runSQL(cleanupSQL(filter));
@@ -178,23 +186,27 @@ function seedScenario(scenario) {
     category_name: order.categoryName,
     table_number: order.tableNumber,
     amount: order.amount,
+    request_note: order.requestNote || "",
     created_at: resolveTime(order.createdAt || "now", now),
-    pos_order_id: scenario.posOrderId,
+    pos_order_id: order.posOrderId || scenario.posOrderId,
   }));
+  const seededPosOrderIds = jsonLiteral({ ids: [...new Set(rows.map((row) => row.pos_order_id))] });
   // payment_orders 기본값을 따르고, 웹 주문이 POS로 전달된 뒤의 상태
   // (READY, pos_sync_status SUCCEEDED, pos_order_id 설정)만 채운다. 계산서는
-  // EnsurePOSBill과 같은 규칙(첫 주문의 테이블, 가장 이른 주문 시각)으로 OPEN 생성.
+  // 웹 주문이 있는 POS 주문마다 EnsurePOSBill과 같은 규칙(첫 주문의 테이블,
+  // 가장 이른 주문 시각)으로 OPEN 생성.
   runSQL(`
 BEGIN;
-INSERT INTO payment_orders (id, menu_item_name, category_name, table_number, amount, status, pos_sync_status, pos_order_id, created_at, updated_at)
-SELECT r.id, r.menu_item_name, r.category_name, r.table_number, r.amount, 'READY', 'SUCCEEDED', r.pos_order_id, r.created_at, r.created_at
-FROM json_to_recordset(${jsonLiteral(rows)}) AS r(id text, menu_item_name text, category_name text, table_number text, amount bigint, created_at timestamptz, pos_order_id text);
+INSERT INTO payment_orders (id, menu_item_name, category_name, table_number, amount, request_note, status, pos_sync_status, pos_order_id, created_at, updated_at)
+SELECT r.id, r.menu_item_name, r.category_name, r.table_number, r.amount, r.request_note, 'READY', 'SUCCEEDED', r.pos_order_id, r.created_at, r.created_at
+FROM json_to_recordset(${jsonLiteral(rows)}) AS r(id text, menu_item_name text, category_name text, table_number text, amount bigint, request_note text, created_at timestamptz, pos_order_id text);
 INSERT INTO pos_bills (id, pos_order_id, table_number, opened_at)
 SELECT 'mock-bill-' || o.pos_order_id, o.pos_order_id,
        (array_agg(o.table_number ORDER BY o.created_at, o.id))[1], MIN(o.created_at)
-FROM payment_orders o WHERE o.pos_order_id = (${jsonLiteral({ id: scenario.posOrderId })})->>'id'
+FROM payment_orders o WHERE o.pos_order_id IN (SELECT value FROM json_array_elements_text((${seededPosOrderIds})->'ids'))
 GROUP BY o.pos_order_id;
-UPDATE payment_orders SET bill_id = 'mock-bill-' || pos_order_id WHERE pos_order_id = (${jsonLiteral({ id: scenario.posOrderId })})->>'id';
+UPDATE payment_orders SET bill_id = 'mock-bill-' || pos_order_id
+ WHERE pos_order_id IN (SELECT value FROM json_array_elements_text((${seededPosOrderIds})->'ids'));
 COMMIT;`);
 }
 
@@ -243,6 +255,52 @@ function checkExpectations(expect, { bill, orders, payments }) {
   return problems;
 }
 
+// POS 주문 여러 건에 걸친 시나리오용: 관련 주문 행 전체(시나리오 POS 주문에 붙은 행 +
+// 웹 주문 id)를 메뉴 이름별로 세고, 웹 주문마다 상태와 연결된 POS 주문·계산서를 읽는다.
+// pos_origin_order_id 컬럼이 아직 없는 스키마에서는 to_jsonb로 읽어 null이 된다.
+function readScenarioRows(scenario) {
+  const params = { pos: scenarioPosOrderIds(scenario), ids: scenario.webOrders.map((order) => order.id) };
+  const menuRows = queryJSON(
+    `SELECT o.menu_item_name, count(*)::int AS n
+     FROM payment_orders o, p
+     WHERE o.pos_order_id IN (SELECT value FROM json_array_elements_text(p.v->'pos'))
+        OR o.id IN (SELECT value FROM json_array_elements_text(p.v->'ids'))
+     GROUP BY o.menu_item_name`,
+    params,
+  );
+  const webOrders = queryJSON(
+    `SELECT o.id, o.status, o.pos_order_id, to_jsonb(o)->>'pos_origin_order_id' AS pos_origin_order_id,
+            b.pos_order_id AS bill_pos_order_id
+     FROM payment_orders o LEFT JOIN pos_bills b ON b.id = o.bill_id, p
+     WHERE o.id IN (SELECT value FROM json_array_elements_text(p.v->'ids')) ORDER BY o.id`,
+    params,
+  );
+  return { menuCounts: Object.fromEntries(menuRows.map((row) => [row.menu_item_name, row.n])), webOrders };
+}
+
+// expect.menuCounts: {"메뉴 이름": 행 수} — 적힌 메뉴만 비교한다.
+// expect.webOrders: {"웹 주문 id": {status, posOrderId, posOriginOrderId, billPosOrderId}} — 적힌 필드만 비교한다.
+function checkScenarioRows(expect, { menuCounts, webOrders }) {
+  const problems = [];
+  for (const [menu, wanted] of Object.entries(expect.menuCounts || {})) {
+    const actual = menuCounts[menu] || 0;
+    if (actual !== wanted) problems.push(`메뉴 '${menu}' 행 수: ${actual} (기대 ${wanted})`);
+  }
+  const fields = { status: "status", posOrderId: "pos_order_id", posOriginOrderId: "pos_origin_order_id", billPosOrderId: "bill_pos_order_id" };
+  for (const [id, wanted] of Object.entries(expect.webOrders || {})) {
+    const row = webOrders.find((order) => order.id === id);
+    if (!row) {
+      problems.push(`웹 주문 ${id}: 없음`);
+      continue;
+    }
+    for (const [key, value] of Object.entries(wanted)) {
+      const actual = row[fields[key]] ?? null;
+      if (actual !== value) problems.push(`웹 주문 ${id}.${key}: ${JSON.stringify(actual)} (기대 ${JSON.stringify(value)})`);
+    }
+  }
+  return problems;
+}
+
 // ---------- HTTP ----------
 
 async function mockRequest(method, path, body) {
@@ -279,7 +337,8 @@ async function buildEvent(scenario, step) {
   if (!type) throw new Error(`알 수 없는 webhook: ${step.webhook}`);
   const envelope = { id: `mock-evt-${Date.now()}-${++eventSeq}`, type, createdAt: new Date().toISOString() };
   if (step.webhook.startsWith("order.")) {
-    const order = await mockOpenAPI(`/order/orders/${encodeURIComponent(scenario.posOrderId)}`);
+    const orderId = step.orderId || scenario.posOrderId;
+    const order = await mockOpenAPI(`/order/orders/${encodeURIComponent(orderId)}`);
     envelope.data = {
       orderId: order.id,
       orderKey: order.orderKey,
@@ -338,7 +397,8 @@ async function runScenario(scenario, secret) {
   console.log(`\n=== ${scenario.name}: ${scenario.title}`);
   await mockRequest("POST", "/__mock/reset", { scenario: scenario.name });
   seedScenario(scenario);
-  console.log(`  웹 주문 ${scenario.webOrders.length}건과 OPEN 계산서 mock-bill-${scenario.posOrderId} 생성`);
+  const seededBills = [...new Set(scenario.webOrders.map((order) => `mock-bill-${order.posOrderId || scenario.posOrderId}`))];
+  console.log(`  웹 주문 ${scenario.webOrders.length}건과 OPEN 계산서 ${seededBills.join(", ")} 생성`);
 
   for (const step of scenario.steps) {
     if (step.mock) {
@@ -348,27 +408,43 @@ async function runScenario(scenario, secret) {
     }
     const envelope = await buildEvent(scenario, step);
     const result = await sendWebhook(secret, envelope);
-    const label = step.paymentId ? `${envelope.type} (${step.paymentId})` : envelope.type;
+    const target = step.paymentId || step.orderId;
+    const label = target ? `${envelope.type} (${target})` : envelope.type;
     console.log(`  [webhook] ${label} -> ${result.status}${step.note ? `  # ${step.note}` : ""}`);
     if (result.status !== 200) throw new Error(`웹훅 실패: ${result.status} ${result.text}`);
   }
 
-  const outcome = readResult(scenario.posOrderId);
-  const { bill, orders, payments } = outcome;
-  if (bill) {
-    console.log(`  계산서 ${bill.id}: ${bill.status}, 테이블 ${bill.table_number}, 청구 ${bill.total_amount ?? "-"}원, 결제목록 동기화=${bill.synced}, 오픈 ${bill.opened_kst} KST`);
+  // expect.bills가 있으면 POS 주문별 계산서마다, 없으면 posOrderId 계산서 하나를 확인한다.
+  const billExpectations = scenario.expect.bills || { [scenario.posOrderId]: scenario.expect };
+  const problems = [];
+  for (const [posOrderId, expect] of Object.entries(billExpectations)) {
+    const outcome = readResult(posOrderId);
+    const { bill, orders, payments } = outcome;
+    if (bill) {
+      console.log(`  계산서 ${bill.id}: ${bill.status}, 테이블 ${bill.table_number}, 청구 ${bill.total_amount ?? "-"}원, 결제목록 동기화=${bill.synced}, 오픈 ${bill.opened_kst} KST`);
+    } else {
+      console.log(`  계산서 없음 (POS 주문 ${posOrderId})`);
+    }
+    for (const order of orders) {
+      const kind = order.id.startsWith("mock-") ? "웹" : "POS";
+      console.log(`    주문[${kind}] ${order.id}  ${order.menu_item_name} ${order.amount}원  ${order.status}`);
+    }
+    for (const payment of payments) {
+      console.log(`    결제 ${payment.id}  ${payment.state} ${payment.source_type}(${payment.payment_method}${payment.card_brand ? `/${payment.card_brand}` : ""}) ${payment.amount}원`);
+    }
+    const admin = await adminBill(bill?.id);
+    if (admin) console.log(`  관리자 API: ${JSON.stringify(admin)}`);
+    const prefix = scenario.expect.bills ? `[${posOrderId}] ` : "";
+    problems.push(...checkExpectations(expect, outcome).map((problem) => prefix + problem));
   }
-  for (const order of orders) {
-    const kind = order.id.startsWith("mock-") ? "웹" : "POS";
-    console.log(`    주문[${kind}] ${order.id}  ${order.menu_item_name} ${order.amount}원  ${order.status}`);
+  if (scenario.expect.menuCounts || scenario.expect.webOrders) {
+    const rows = readScenarioRows(scenario);
+    console.log(`  메뉴별 행 수: ${JSON.stringify(rows.menuCounts)}`);
+    for (const order of rows.webOrders) {
+      console.log(`    웹 주문 ${order.id}: ${order.status}, pos_order_id=${order.pos_order_id}, pos_origin_order_id=${order.pos_origin_order_id ?? "-"}, 계산서 POS 주문=${order.bill_pos_order_id ?? "-"}`);
+    }
+    problems.push(...checkScenarioRows(scenario.expect, rows));
   }
-  for (const payment of payments) {
-    console.log(`    결제 ${payment.id}  ${payment.state} ${payment.source_type}(${payment.payment_method}${payment.card_brand ? `/${payment.card_brand}` : ""}) ${payment.amount}원`);
-  }
-  const admin = await adminBill(bill?.id);
-  if (admin) console.log(`  관리자 API: ${JSON.stringify(admin)}`);
-
-  const problems = checkExpectations(scenario.expect, outcome);
   if (problems.length === 0) {
     console.log("  결과: PASS");
     return true;
@@ -385,7 +461,7 @@ async function main() {
     process.exit(args.length === 0 ? 1 : 0);
   }
   if (args[0] === "list") {
-    for (const scenario of scenarios) console.log(`${scenario.name.padEnd(12)} ${scenario.title}`);
+    for (const scenario of scenarios) console.log(`${scenario.name.padEnd(21)} ${scenario.title}`);
     return;
   }
   if (args[0] === "reset") {
