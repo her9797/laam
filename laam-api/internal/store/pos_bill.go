@@ -119,7 +119,7 @@ func ensurePOSBill(ctx context.Context, q tableQuerier, posOrderID string) (stri
 	if _, err := q.Exec(ctx, `
 		UPDATE payment_orders
 		SET bill_id = $1
-		WHERE pos_order_id = $2 AND bill_id IS DISTINCT FROM $1
+		WHERE pos_order_id = $2 AND bill_id IS DISTINCT FROM $1 AND pos_moved_out_at IS NULL
 	`, billID, posOrderID); err != nil {
 		return "", classifyError(err)
 	}
@@ -215,7 +215,8 @@ func (r *Repository) CompletePOSBill(ctx context.Context, input CompletePOSBillI
 
 // CancelPOSBill applies a TossPlace order.cancelled event to every order on
 // that POS order (READY, ACKNOWLEDGED and DONE alike — TossPlace sends it
-// for rejected orders and for refunded sales). A bill that exists without
+// for rejected orders and for refunded sales). Rows moved out to another
+// POS order are left alone: their item lives there now. A bill that exists without
 // any payment_orders row (created by payment events alone) is cancelled
 // too. found is false when neither a payment_orders row nor a bill belongs
 // to the POS order.
@@ -252,6 +253,7 @@ func (r *Repository) CancelPOSBill(ctx context.Context, posOrderID string, order
 			UPDATE payment_orders
 			SET status = 'CANCELLED', updated_at = NOW()
 			WHERE pos_order_id = $1 AND status IN ('READY', 'ACKNOWLEDGED', 'DONE')
+				AND pos_moved_out_at IS NULL
 		`, posOrderID); err != nil {
 			return false, classifyError(err)
 		}
@@ -346,19 +348,10 @@ func (r *Repository) RecordPOSNativeLines(ctx context.Context, posOrderID string
 		if input.Amount <= 0 {
 			return 0, ErrInvalidInput
 		}
-		// Same row CreatePOSNativeOrder writes, inserted on this
-		// transaction so it stays under the lock.
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO payment_orders (
-				id, menu_item_name, category_name, table_number, amount,
-				status, payment_method, approved_at, vat, supplied_amount, tax_free_amount,
-				pos_sync_status, pos_order_id, created_at, bill_id
-			) VALUES ($1, $2, $3, '', $4, 'DONE', 'POS', $5, $6, $7, 0, 'SUCCEEDED', $8, COALESCE($9, NOW()),
-				(SELECT id FROM pos_bills WHERE pos_order_id = $8))
-		`, nextID("order"), input.MenuItemName, input.CategoryName, input.Amount,
-			input.ApprovedAt, input.VAT, input.SuppliedAmount, posOrderID,
-			nullableTime(input.OrderedAt)); err != nil {
-			return 0, classifyError(err)
+		// Inserted on this transaction so it stays under the lock.
+		input.POSOrderID = posOrderID
+		if err := insertPOSNativeOrder(ctx, tx, nextID("order"), input); err != nil {
+			return 0, err
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -518,7 +511,8 @@ func (r *Repository) ClaimPOSBillsNeedingPaymentSync(ctx context.Context, limit 
 }
 
 // ListPOSOrderLines returns every payment_orders row on posOrderID,
-// whatever its status, for the POS-native line item diff.
+// whatever its status, for the POS-native line item diff. Rows moved out to
+// another POS order (see ApplyPOSCompletion) are not lines of it anymore.
 func (r *Repository) ListPOSOrderLines(ctx context.Context, posOrderID string) ([]POSOrderLine, error) {
 	return listPOSOrderLines(ctx, r.pool, posOrderID)
 }
@@ -527,7 +521,7 @@ func listPOSOrderLines(ctx context.Context, q tableQuerier, posOrderID string) (
 	rows, err := q.Query(ctx, `
 		SELECT menu_item_name, category_name, amount
 		FROM payment_orders
-		WHERE pos_order_id = $1
+		WHERE pos_order_id = $1 AND pos_moved_out_at IS NULL
 		ORDER BY created_at, id
 	`, strings.TrimSpace(posOrderID))
 	if err != nil {

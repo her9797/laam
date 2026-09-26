@@ -500,6 +500,9 @@ CREATE INDEX IF NOT EXISTS idx_pos_payments_approved_at ON pos_payments (approve
 ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS bill_id TEXT REFERENCES pos_bills(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_payment_orders_bill_id ON payment_orders (bill_id);
 CREATE INDEX IF NOT EXISTS idx_payment_orders_pos_order_id ON payment_orders (pos_order_id);
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS pos_moved_out_at TIMESTAMPTZ;
+ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS pos_origin_order_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_payment_orders_pos_move_candidates ON payment_orders (created_at) WHERE status IN ('READY', 'ACKNOWLEDGED') AND pos_order_id IS NOT NULL;
 `)
 	if err != nil {
 		return err
