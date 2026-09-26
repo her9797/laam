@@ -564,7 +564,17 @@ func (r *Repository) CreatePOSNativeOrder(ctx context.Context, input CreatePOSNa
 	}
 
 	orderID := nextID("order")
-	if _, err := r.pool.Exec(ctx, `
+	if err := insertPOSNativeOrder(ctx, r.pool, orderID, input); err != nil {
+		return PaymentOrder{}, err
+	}
+
+	return r.GetPaymentOrder(ctx, orderID)
+}
+
+// insertPOSNativeOrder writes the DONE payment_orders row for one POS-native
+// line item, linked to the bill of its POS order when that bill exists.
+func insertPOSNativeOrder(ctx context.Context, q tableQuerier, orderID string, input CreatePOSNativeOrderInput) error {
+	if _, err := q.Exec(ctx, `
 		INSERT INTO payment_orders (
 			id, menu_item_name, category_name, table_number, amount,
 			status, payment_method, approved_at, vat, supplied_amount, tax_free_amount,
@@ -574,10 +584,9 @@ func (r *Repository) CreatePOSNativeOrder(ctx context.Context, input CreatePOSNa
 	`, orderID, input.MenuItemName, input.CategoryName, input.Amount,
 		input.ApprovedAt, input.VAT, input.SuppliedAmount, input.POSOrderID,
 		nullableTime(input.OrderedAt)); err != nil {
-		return PaymentOrder{}, classifyError(err)
+		return classifyError(err)
 	}
-
-	return r.GetPaymentOrder(ctx, orderID)
+	return nil
 }
 
 // CancelPaymentOrder marks an order CANCELLED after a TossPlace
