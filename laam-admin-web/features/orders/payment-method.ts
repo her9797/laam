@@ -30,3 +30,38 @@ export function paymentMethodLabel(method: string | undefined, t: (key: string) 
   const labelKey = PAYMENT_METHOD_LABEL_KEY.get(value);
   return labelKey ? t(labelKey) : value;
 }
+
+const UNCONFIRMED_PAYMENT_METHOD = "UNDEFINED";
+
+type PaymentMethodBreakdownRow = {
+  paymentMethod: string | null | undefined;
+  revenue: number;
+  orderCount: number;
+};
+
+/**
+ * Collapses breakdown rows whose `paymentMethod` is some spelling of
+ * "unconfirmed" (`UNDEFINED`, empty/whitespace, null/undefined) into a single
+ * `UNDEFINED` row, summing revenue and order count, so the chart shows one
+ * "미확인" slice instead of one per raw spelling. Every other value is kept
+ * as its own row. Result is ordered by revenue descending (stable, so ties
+ * keep the API's order), matching the API's own ordering. Does not mutate
+ * the input.
+ */
+export function mergePaymentMethodStats(
+  rows: readonly PaymentMethodBreakdownRow[],
+): Array<{ paymentMethod: string; revenue: number; orderCount: number }> {
+  const merged = new Map<string, { paymentMethod: string; revenue: number; orderCount: number }>();
+  for (const row of rows) {
+    const raw = row.paymentMethod ?? "";
+    const key = raw.trim() === "" || raw === UNCONFIRMED_PAYMENT_METHOD ? UNCONFIRMED_PAYMENT_METHOD : raw;
+    const existing = merged.get(key);
+    if (existing) {
+      existing.revenue += row.revenue;
+      existing.orderCount += row.orderCount;
+    } else {
+      merged.set(key, { paymentMethod: key, revenue: row.revenue, orderCount: row.orderCount });
+    }
+  }
+  return [...merged.values()].sort((a, b) => b.revenue - a.revenue);
+}
