@@ -303,6 +303,15 @@ export const ko = {
     paymentMethodExternal: "외부결제",
     paymentMethodPosUnconfirmed: "POS(미확인)",
     paymentMethodUnconfirmed: "미확인",
+    // order view toggle
+    viewToggleLabel: "보기 방식",
+    viewMenu: "메뉴별",
+    viewBill: "계산서별",
+    billFilterStatusLabel: "계산서 상태",
+    billFilterStatusOpen: "결제 전",
+    billFilterStatusPaid: "결제완료",
+    billFilterStatusCancelled: "취소됨",
+    billFilterSourceLabel: "결제수단",
   },
   specialRequests: {
     title: "특별 요청",
@@ -1053,6 +1062,15 @@ export const en = {
     paymentMethodExternal: "External payment",
     paymentMethodPosUnconfirmed: "POS (unconfirmed)",
     paymentMethodUnconfirmed: "Unconfirmed",
+    // order view toggle
+    viewToggleLabel: "View",
+    viewMenu: "By menu",
+    viewBill: "By bill",
+    billFilterStatusLabel: "Bill status",
+    billFilterStatusOpen: "Unpaid",
+    billFilterStatusPaid: "Paid",
+    billFilterStatusCancelled: "Cancelled",
+    billFilterSourceLabel: "Payment method",
   },
   specialRequests: {
     title: "Special requests",

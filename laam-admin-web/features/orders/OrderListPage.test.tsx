@@ -26,6 +26,16 @@ vi.mock("./queries", () => ({
   useAcknowledgeOrderMutation: () => useAcknowledgeOrderMutationMock(),
 }));
 
+// The bill list itself is its own component; this screen only has to pick
+// it for the 계산서별 view and hand it the right query.
+const billListViewMock = vi.fn();
+vi.mock("./bills/BillListView", () => ({
+  BillListView: (props: unknown) => {
+    billListViewMock(props);
+    return <div data-testid="bill-list-view" />;
+  },
+}));
+
 vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
   return { ...actual, fetchOrdersPage: vi.fn() };
@@ -534,5 +544,138 @@ describe("OrderListPage", () => {
     render(<OrderListPage />);
 
     expect(screen.getByRole("columnheader", { name: "주문 시각" })).toBeInTheDocument();
+  });
+
+  describe("menu / bill view toggle", () => {
+    const BILL_SEARCH = "view=bill&dateFrom=2026-01-01&dateTo=2026-01-10";
+
+    beforeEach(() => {
+      billListViewMock.mockClear();
+    });
+
+    function lastReplacedParams(): URLSearchParams {
+      const url = replaceMock.mock.calls.at(-1)?.[0] as string;
+      return new URLSearchParams(url.includes("?") ? url.slice(url.indexOf("?") + 1) : "");
+    }
+
+    function lastBillListViewProps() {
+      return billListViewMock.mock.calls.at(-1)?.[0] as {
+        query: unknown;
+        enabled: boolean;
+        onPageChange: (page: number) => void;
+      };
+    }
+
+    it("defaults to the menu view, exactly as before", () => {
+      render(<OrderListPage />);
+
+      const toggle = screen.getByRole("group", { name: "보기 방식" });
+      expect(within(toggle).getByRole("button", { name: "메뉴별" })).toHaveAttribute("aria-pressed", "true");
+      expect(within(toggle).getByRole("button", { name: "계산서별" })).toHaveAttribute("aria-pressed", "false");
+      expect(screen.getByRole("table")).toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: "결제 상태" })).toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: "POS 동기화" })).toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: "정렬" })).toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "계산서 상태" })).not.toBeInTheDocument();
+      expect(screen.queryByTestId("bill-list-view")).not.toBeInTheDocument();
+      expect(billListViewMock).not.toHaveBeenCalled();
+      expect(useOrdersPageQueryMock).toHaveBeenLastCalledWith(expect.anything(), true);
+    });
+
+    it("switches to the bill view through the URL, resetting the page and dropping menu-only filters", () => {
+      currentSearchParams = new URLSearchParams(
+        "page=3&status=READY&posSync=FAILED&sort=amount&q=7&dateFrom=2026-01-01&dateTo=2026-01-10",
+      );
+
+      render(<OrderListPage />);
+      fireEvent.click(screen.getByRole("button", { name: "계산서별" }));
+
+      expect(replaceMock).toHaveBeenLastCalledWith(expect.stringMatching(/^\/orders\?/), { scroll: false });
+      const params = lastReplacedParams();
+      expect(params.get("view")).toBe("bill");
+      expect(params.has("page")).toBe(false);
+      expect(params.has("status")).toBe(false);
+      expect(params.has("posSync")).toBe(false);
+      expect(params.has("sort")).toBe(false);
+      expect(params.get("q")).toBe("7");
+      expect(params.get("dateFrom")).toBe("2026-01-01");
+      expect(params.get("dateTo")).toBe("2026-01-10");
+    });
+
+    it("renders the bill list instead of the menu table in the bill view", () => {
+      currentSearchParams = new URLSearchParams(BILL_SEARCH);
+
+      render(<OrderListPage />);
+
+      expect(screen.getByRole("button", { name: "계산서별" })).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByTestId("bill-list-view")).toBeInTheDocument();
+      expect(screen.queryByRole("table")).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "결제 상태" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "POS 동기화" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("combobox", { name: "정렬" })).not.toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: "계산서 상태" })).toBeInTheDocument();
+      expect(screen.getByRole("combobox", { name: "결제수단" })).toBeInTheDocument();
+      // The shared filters stay.
+      expect(screen.getByLabelText("시작일")).toHaveValue("2026-01-01");
+      expect(screen.getByLabelText("종료일")).toHaveValue("2026-01-10");
+      // The menu-row list is not fetched while it is not on screen.
+      expect(useOrdersPageQueryMock).toHaveBeenLastCalledWith(expect.anything(), false);
+    });
+
+    it("maps the URL filters into the BillListQuery handed to the bill list", () => {
+      currentSearchParams = new URLSearchParams(
+        `${BILL_SEARCH}&page=2&pageSize=30&q=7&billStatus=PAID&source=CARD&status=READY`,
+      );
+
+      render(<OrderListPage />);
+
+      const props = lastBillListViewProps();
+      expect(props.enabled).toBe(true);
+      expect(props.query).toEqual({
+        page: 2,
+        pageSize: 30,
+        status: "PAID",
+        sourceType: "CARD",
+        search: "7",
+        dateFrom: "2026-01-01",
+        dateTo: "2026-01-10",
+      });
+    });
+
+    it("shows the selected bill filters with their labels", () => {
+      currentSearchParams = new URLSearchParams(`${BILL_SEARCH}&billStatus=PAID&source=ACCOUNT_TRANSFER`);
+
+      render(<OrderListPage />);
+
+      expect(screen.getByRole("combobox", { name: "계산서 상태" })).toHaveTextContent("결제완료");
+      expect(screen.getByRole("combobox", { name: "결제수단" })).toHaveTextContent("계좌이체");
+    });
+
+    it("pages the bill list through the URL, staying in the bill view", () => {
+      currentSearchParams = new URLSearchParams(`${BILL_SEARCH}&billStatus=OPEN`);
+
+      render(<OrderListPage />);
+      act(() => lastBillListViewProps().onPageChange(3));
+
+      expect(replaceMock).toHaveBeenLastCalledWith(expect.any(String), { scroll: false });
+      const params = lastReplacedParams();
+      expect(params.get("view")).toBe("bill");
+      expect(params.get("page")).toBe("3");
+      expect(params.get("billStatus")).toBe("OPEN");
+    });
+
+    it("switches back to the menu view with the view param omitted and the page reset", () => {
+      currentSearchParams = new URLSearchParams(`${BILL_SEARCH}&page=4&billStatus=OPEN&source=CASH`);
+
+      render(<OrderListPage />);
+      fireEvent.click(screen.getByRole("button", { name: "메뉴별" }));
+
+      const params = lastReplacedParams();
+      expect(params.has("view")).toBe(false);
+      expect(params.has("page")).toBe(false);
+      expect(params.has("billStatus")).toBe(false);
+      expect(params.has("source")).toBe(false);
+      expect(params.get("dateFrom")).toBe("2026-01-01");
+    });
   });
 });
