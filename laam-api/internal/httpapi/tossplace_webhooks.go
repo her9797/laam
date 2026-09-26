@@ -11,6 +11,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/her9797/laam/laam-api/internal/config"
@@ -83,8 +85,13 @@ func tossPlaceWebhookHandler(syncer *possync.Syncer, secret string) http.Handler
 			return
 		}
 
-		if !verifyTossPlaceWebhookSignature(secret, r.Header.Get("x-toss-timestamp"), r.Header.Get("x-toss-signature"), rawBody) {
+		timestamp := r.Header.Get("x-toss-timestamp")
+		if !verifyTossPlaceWebhookSignature(secret, timestamp, r.Header.Get("x-toss-signature"), rawBody) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid webhook signature"})
+			return
+		}
+		if !tossPlaceWebhookTimestampFresh(timestamp, time.Now()) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "stale webhook timestamp"})
 			return
 		}
 
@@ -135,6 +142,23 @@ func verifyTossPlaceWebhookSignature(secret string, timestamp string, signature 
 	expected := "v1=" + hex.EncodeToString(mac.Sum(nil))
 
 	return subtle.ConstantTimeCompare([]byte(signature), []byte(expected)) == 1
+}
+
+// tossPlaceWebhookMaxClockSkew bounds how far x-toss-timestamp may be from
+// now. TossPlace's docs recommend rejecting timestamps far from the current
+// time so a captured, correctly signed delivery cannot be replayed later.
+const tossPlaceWebhookMaxClockSkew = 5 * time.Minute
+
+// tossPlaceWebhookTimestampFresh reports whether x-toss-timestamp — epoch
+// milliseconds per TossPlace's docs (e.g. 1700000000000) — is within
+// tossPlaceWebhookMaxClockSkew of now, in either direction.
+func tossPlaceWebhookTimestampFresh(timestamp string, now time.Time) bool {
+	millis, err := strconv.ParseInt(strings.TrimSpace(timestamp), 10, 64)
+	if err != nil {
+		return false
+	}
+	skew := now.Sub(time.UnixMilli(millis))
+	return skew <= tossPlaceWebhookMaxClockSkew && skew >= -tossPlaceWebhookMaxClockSkew
 }
 
 func handleTossPlaceOrderCompleted(ctx context.Context, syncer *possync.Syncer, envelope tossPlaceWebhookEnvelope) {

@@ -38,7 +38,12 @@ func (f fakePOS) GetPaymentsByOrderID(_ context.Context, id string) ([]tossplace
 	return f.payments[id], nil
 }
 
-type spyWriter struct{ calls []string }
+type spyWriter struct {
+	calls []string
+	// recorded is what RecordPOSNativeLines hands its diff as the rows
+	// already on each POS order.
+	recorded map[string][]store.POSOrderLine
+}
 
 func (s *spyWriter) EnsurePOSBill(_ context.Context, id string) (string, error) {
 	s.calls = append(s.calls, "EnsurePOSBill "+id)
@@ -60,9 +65,17 @@ func (s *spyWriter) CancelPOSBill(_ context.Context, id string, _ string, _ time
 	return true, nil
 }
 
-func (s *spyWriter) CreatePOSNativeOrder(_ context.Context, input store.CreatePOSNativeOrderInput) (store.PaymentOrder, error) {
-	s.calls = append(s.calls, fmt.Sprintf("CreatePOSNativeOrder %s %s/%s %d", input.POSOrderID, input.CategoryName, input.MenuItemName, input.Amount))
-	return store.PaymentOrder{}, nil
+func (s *spyWriter) RecordPOSNativeLines(_ context.Context, id string, diff func([]store.POSOrderLine) []store.CreatePOSNativeOrderInput) (int, error) {
+	inputs := diff(s.recorded[id])
+	for _, input := range inputs {
+		s.calls = append(s.calls, fmt.Sprintf("RecordPOSNativeLine %s %s/%s %d", input.POSOrderID, input.CategoryName, input.MenuItemName, input.Amount))
+	}
+	return len(inputs), nil
+}
+
+func (s *spyWriter) SyncPOSPayments(_ context.Context, id string, _ []store.POSPaymentInput, expectStatus string) (bool, error) {
+	s.calls = append(s.calls, "SyncPOSPayments("+expectStatus+") "+id)
+	return true, nil
 }
 
 func (s *spyWriter) UpsertPOSPayments(_ context.Context, id string, _ []store.POSPaymentInput, fullSync bool) error {
@@ -124,7 +137,7 @@ func TestRunner_ApplyWritesInOrderAndOnlyFullSyncsFinishedBills(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 	want := []string{
-		"EnsurePOSBill pos-a", "SetPOSBillCharge pos-a", "CompletePOSBill pos-a", "UpsertPOSPayments(full) pos-a",
+		"EnsurePOSBill pos-a", "SetPOSBillCharge pos-a", "CompletePOSBill pos-a", "SyncPOSPayments(PAID) pos-a",
 		"EnsurePOSBill pos-b", "SetPOSBillCharge pos-b", "UpsertPOSPayments(partial) pos-b",
 	}
 	if strings.Join(writer.calls, "\n") != strings.Join(want, "\n") {
@@ -219,7 +232,9 @@ func TestRunner_DryRunReportsPOSNativeLinesWithoutWriting(t *testing.T) {
 
 func TestRunner_ApplyRecordsPOSNativeLinesBeforeCompletingTheBill(t *testing.T) {
 	source, pos := mixedBillFixture()
-	writer := &spyWriter{}
+	writer := &spyWriter{recorded: map[string][]store.POSOrderLine{
+		"pos-mixed": {{MenuItemName: "하우스 하이볼", CategoryName: "하이볼", Amount: 11000}},
+	}}
 	runner := &Runner{Source: source, POS: pos, Writer: writer, Out: &bytes.Buffer{}, Sleep: func(context.Context, time.Duration) error { return nil }}
 
 	if _, err := runner.Run(context.Background(), Options{Apply: true}); err != nil {
@@ -227,8 +242,8 @@ func TestRunner_ApplyRecordsPOSNativeLinesBeforeCompletingTheBill(t *testing.T) 
 	}
 	want := []string{
 		"EnsurePOSBill pos-mixed", "SetPOSBillCharge pos-mixed",
-		"CreatePOSNativeOrder pos-mixed 맥주/생맥주 12000",
-		"CompletePOSBill pos-mixed", "UpsertPOSPayments(full) pos-mixed",
+		"RecordPOSNativeLine pos-mixed 맥주/생맥주 12000",
+		"CompletePOSBill pos-mixed", "SyncPOSPayments(PAID) pos-mixed",
 	}
 	if strings.Join(writer.calls, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("writer calls =\n%s\nwant\n%s", strings.Join(writer.calls, "\n"), strings.Join(want, "\n"))
@@ -271,5 +286,41 @@ func TestBuildPlan_CancelledOrderWithoutCancelledAtFallsBackToPayments(t *testin
 	}
 	if want := time.Date(2026, 9, 1, 12, 30, 0, 0, time.UTC); !p.CancelledAt.Equal(want) {
 		t.Fatalf("cancelledAt = %v, want the payment's %v", p.CancelledAt, want)
+	}
+}
+
+// A completed bill whose APPROVED payments do not add up to the POS charge
+// (or has none) is not marked payment-synced, and both modes report it.
+func TestRunner_PaymentMismatchIsReportedAndNotFullSynced(t *testing.T) {
+	source, pos := twoOrderFixture()
+	pos.payments["pos-a"] = []tossplace.Payment{{ID: "pay-1", State: "APPROVED", SourceType: "CARD", Amount: 2000, ApprovedAt: "2026-09-01T13:00:00Z"}}
+
+	var dryOut bytes.Buffer
+	dry := &Runner{Source: source, POS: pos, Out: &dryOut, Sleep: func(context.Context, time.Duration) error { return nil }}
+	if _, err := dry.Run(context.Background(), Options{}); err != nil {
+		t.Fatalf("dry-run error = %v", err)
+	}
+	if !strings.Contains(dryOut.String(), "payment_mismatch=1") {
+		t.Fatalf("dry-run output missing payment_mismatch=1:\n%s", dryOut.String())
+	}
+
+	writer := &spyWriter{}
+	var applyOut bytes.Buffer
+	apply := &Runner{Source: source, POS: pos, Writer: writer, Out: &applyOut, Sleep: func(context.Context, time.Duration) error { return nil }}
+	if _, err := apply.Run(context.Background(), Options{Apply: true}); err != nil {
+		t.Fatalf("apply error = %v", err)
+	}
+	if !strings.Contains(strings.Join(writer.calls, "\n"), "UpsertPOSPayments(partial) pos-a") {
+		t.Fatalf("writer calls = %v, want pos-a payments stored without a full sync", writer.calls)
+	}
+	if !strings.Contains(applyOut.String(), "payment_mismatch=1") {
+		t.Fatalf("apply output missing payment_mismatch=1:\n%s", applyOut.String())
+	}
+}
+
+func TestPaymentInputFallsBackToCreatedAtWhenApprovedAtIsMissing(t *testing.T) {
+	input := paymentInput(tossplace.Payment{ID: "pay-1", State: "APPROVED", Amount: 1000, CreatedAt: "2026-09-01T13:00:00Z"})
+	if want := time.Date(2026, 9, 1, 13, 0, 0, 0, time.UTC); !input.ApprovedAt.Equal(want) {
+		t.Fatalf("ApprovedAt = %v, want createdAt %v", input.ApprovedAt, want)
 	}
 }

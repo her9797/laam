@@ -66,8 +66,12 @@ type Writer interface {
 	SetPOSBillCharge(ctx context.Context, posOrderID string, totalAmount int64, discountAmount int64) error
 	CompletePOSBill(ctx context.Context, input store.CompletePOSBillInput) (string, bool, error)
 	CancelPOSBill(ctx context.Context, posOrderID string, orderKey string, cancelledAt time.Time) (bool, error)
-	CreatePOSNativeOrder(ctx context.Context, input store.CreatePOSNativeOrderInput) (store.PaymentOrder, error)
+	// RecordPOSNativeLines diffs and inserts under the POS order's lock, so
+	// a completed webhook recording the same lines concurrently cannot
+	// make the backfill (or itself) record them twice.
+	RecordPOSNativeLines(ctx context.Context, posOrderID string, diff func(existing []store.POSOrderLine) []store.CreatePOSNativeOrderInput) (int, error)
 	UpsertPOSPayments(ctx context.Context, posOrderID string, payments []store.POSPaymentInput, fullSync bool) error
+	SyncPOSPayments(ctx context.Context, posOrderID string, payments []store.POSPaymentInput, expectStatus string) (bool, error)
 }
 
 type Options struct {
@@ -112,6 +116,11 @@ type Summary struct {
 	// represents yet (rung directly on the POS), recorded as DONE rows.
 	NativeLinesToCreate       int
 	NativeLinesToCreateAmount int64
+
+	// PaymentMismatches are bills that end up PAID but whose APPROVED
+	// payments are missing or do not add up to the POS charge; their
+	// payment list is stored but not marked synced.
+	PaymentMismatches int
 }
 
 type Runner struct {
@@ -147,6 +156,10 @@ type plan struct {
 	CompletedAt    time.Time
 	CancelledAt    time.Time
 	CancelEstimate bool
+
+	// PaymentMismatch is why the payments do not account for a PAID bill
+	// ("" when they do); such a bill is not marked payment-synced.
+	PaymentMismatch string
 }
 
 func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
@@ -326,7 +339,10 @@ func buildPlan(posOrderID string, order tossplace.Order, payments []tossplace.Pa
 		if currentStatus == "CANCELLED" || live == 0 {
 			p.BillStatusTo = "CANCELLED"
 		}
-		p.FullSync = true
+		// Same check as the webhook's payment sync: a PAID bill whose
+		// payments do not add up stays unsynced for the retry claim.
+		p.PaymentMismatch = possync.PaymentMismatch(p.BillStatusTo, charge.TotalAmount, payments)
+		p.FullSync = p.PaymentMismatch == ""
 	case orderStateCancelled:
 		p.CancelledAt, p.CancelEstimate = cancellationTime(order, payments, now)
 		for _, row := range snapshot.Rows {
@@ -361,21 +377,13 @@ func (r *Runner) apply(ctx context.Context, p plan) (string, error) {
 	case orderStateCompleted:
 		// Native lines go in before completing so the bill's PAID/CANCELLED
 		// status counts them; each row links to the bill ensured above.
-		orderedAt, _ := parseTossTime(p.Order.OpenedAt)
-		for _, native := range p.NativeLines {
-			vat := native.Amount / 11
-			if _, err := r.Writer.CreatePOSNativeOrder(ctx, store.CreatePOSNativeOrderInput{
-				MenuItemName:   native.MenuItemName,
-				CategoryName:   native.CategoryName,
-				Amount:         native.Amount,
-				OrderedAt:      orderedAt,
-				ApprovedAt:     p.CompletedAt,
-				VAT:            vat,
-				SuppliedAmount: native.Amount - vat,
-				POSOrderID:     p.POSOrderID,
-			}); err != nil {
-				return "CreatePOSNativeOrder", err
-			}
+		// The diff is re-run against the rows recorded at write time (not
+		// the plan's snapshot), under the POS order's lock, so lines a
+		// webhook recorded since the snapshot are not added again.
+		if _, err := r.Writer.RecordPOSNativeLines(ctx, p.POSOrderID, func(existing []store.POSOrderLine) []store.CreatePOSNativeOrderInput {
+			return possync.NativeOrderInputs(p.POSOrderID, p.Order, existing, p.CompletedAt)
+		}); err != nil {
+			return "RecordPOSNativeLines", err
 		}
 		if _, _, err := r.Writer.CompletePOSBill(ctx, store.CompletePOSBillInput{POSOrderID: p.POSOrderID, CompletedAt: p.CompletedAt}); err != nil {
 			return "CompletePOSBill", err
@@ -389,16 +397,28 @@ func (r *Runner) apply(ctx context.Context, p plan) (string, error) {
 	for _, payment := range p.Payments {
 		inputs = append(inputs, paymentInput(payment))
 	}
-	if err := r.Writer.UpsertPOSPayments(ctx, p.POSOrderID, inputs, p.FullSync); err != nil {
+	if p.FullSync {
+		// Marked synced only if no order event changed the bill's status
+		// since the payment list was fetched.
+		if _, err := r.Writer.SyncPOSPayments(ctx, p.POSOrderID, inputs, p.BillStatusTo); err != nil {
+			return "SyncPOSPayments", err
+		}
+		return "", nil
+	}
+	if err := r.Writer.UpsertPOSPayments(ctx, p.POSOrderID, inputs, false); err != nil {
 		return "UpsertPOSPayments", err
 	}
 	return "", nil
 }
 
 // paymentInput keeps only what pos_payments stores: no card or account
-// numbers (tossplace.Payment does not decode them either).
+// numbers (tossplace.Payment does not decode them either). A payment
+// without approvedAt falls back to its createdAt, as the webhook does.
 func paymentInput(payment tossplace.Payment) store.POSPaymentInput {
-	approvedAt, _ := parseTossTime(payment.ApprovedAt)
+	approvedAt, ok := parseTossTime(payment.ApprovedAt)
+	if !ok {
+		approvedAt, _ = parseTossTime(payment.CreatedAt)
+	}
 	cancelledAt, _ := parseTossTime(payment.CancelledAt)
 	return store.POSPaymentInput{
 		ID:              payment.ID,
@@ -535,6 +555,9 @@ func (p plan) line() string {
 		fmt.Fprintf(&b, " cancelled_at=%s%s", p.CancelledAt.UTC().Format(time.RFC3339), estimated)
 	}
 	fmt.Fprintf(&b, " payments=%d new=%d", len(p.Payments), p.NewPayments)
+	if p.PaymentMismatch != "" {
+		fmt.Fprintf(&b, " payment_mismatch=(%s)", p.PaymentMismatch)
+	}
 	for _, payment := range p.Payments {
 		fmt.Fprintf(&b, " %s:%d", paymentKey(payment), payment.Amount)
 	}
@@ -557,6 +580,9 @@ func (s *Summary) add(p plan) {
 		s.ChargesToSet++
 	}
 	s.NewPayments += p.NewPayments
+	if p.PaymentMismatch != "" {
+		s.PaymentMismatches++
+	}
 	for _, payment := range p.Payments {
 		key := paymentKey(payment)
 		if s.PaymentsByTypeKey[key] == nil {
@@ -590,6 +616,7 @@ func (s Summary) print(out io.Writer) {
 	fmt.Fprintf(out, "rows_to_cancelled=%d done_amount=%d (->CANCELLED, 그중 DONE 행 금액 = 매출 감소분)\n", s.RowsToCancel, s.RowsToCancelDone)
 	fmt.Fprintf(out, "native_lines_to_create=%d amount=%d (POS 직접 입력 메뉴 -> DONE 행 추가 = 매출 증가분)\n", s.NativeLinesToCreate, s.NativeLinesToCreateAmount)
 	fmt.Fprintf(out, "new_payments=%d\n", s.NewPayments)
+	fmt.Fprintf(out, "payment_mismatch=%d (PAID인데 APPROVED 결제가 없거나 합계가 POS 청구액과 달라 결제 동기화 완료로 표시하지 않음)\n", s.PaymentMismatches)
 	keys := make([]string, 0, len(s.PaymentsByTypeKey))
 	for key := range s.PaymentsByTypeKey {
 		keys = append(keys, key)

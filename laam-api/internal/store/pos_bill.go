@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // A pos_bills row is one TossPlace (POS) order — the "계산서" every web
@@ -22,6 +25,26 @@ import (
 // paymentSyncRetryInterval is how long a bill whose payments could not be
 // fetched waits before ClaimPOSBillsNeedingPaymentSync hands it out again.
 const paymentSyncRetryInterval = "5 minutes"
+
+// posOrderLockNamespace is the first key of the two-key advisory lock that
+// serializes writes to one POS order's bill, rows and payments; the second
+// key is hashtext(pos_order_id). Duplicate webhook deliveries and the
+// backfill can process the same POS order at once, and the POS-native line
+// diff (read the recorded rows, insert what is missing) is only safe when
+// no one else runs it for that order at the same time.
+//
+// The lock is transaction-scoped (pg_advisory_xact_lock) and everything done
+// under it runs on that transaction: a waiter never needs a second pooled
+// connection while holding one, and the lock also works through a
+// transaction-mode connection pooler, where session locks would not.
+const posOrderLockNamespace = 815234908
+
+func lockPOSOrder(ctx context.Context, tx pgx.Tx, posOrderID string) error {
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1::int, hashtext($2))`, posOrderLockNamespace, posOrderID); err != nil {
+		return classifyError(err)
+	}
+	return nil
+}
 
 // POSOrderLine is the snapshot of one payment_orders row on a POS order
 // that the completed-webhook handler diffs against TossPlace's line items
@@ -144,6 +167,9 @@ func (r *Repository) CompletePOSBill(ctx context.Context, input CompletePOSBillI
 		return "", false, err
 	}
 	defer tx.Rollback(ctx)
+	if err := lockPOSOrder(ctx, tx, posOrderID); err != nil {
+		return "", false, err
+	}
 
 	found, err := attachOrderKeyToPOSOrder(ctx, tx, posOrderID, input.OrderKey)
 	if err != nil || !found {
@@ -189,8 +215,16 @@ func (r *Repository) CompletePOSBill(ctx context.Context, input CompletePOSBillI
 
 // CancelPOSBill applies a TossPlace order.cancelled event to every order on
 // that POS order (READY, ACKNOWLEDGED and DONE alike — TossPlace sends it
-// for rejected orders and for refunded sales). found is false when no
-// payment_orders row belongs to the POS order.
+// for rejected orders and for refunded sales). A bill that exists without
+// any payment_orders row (created by payment events alone) is cancelled
+// too. found is false when neither a payment_orders row nor a bill belongs
+// to the POS order.
+//
+// Cancelling clears payments_synced_at: the payment list recorded so far
+// may still show payments the cancellation refunds, so the bill becomes
+// eligible for ClaimPOSBillsNeedingPaymentSync until its payments are
+// fetched again. It also counts as a payment sync attempt, since the caller
+// re-fetches the payments right after.
 func (r *Repository) CancelPOSBill(ctx context.Context, posOrderID string, orderKey string, cancelledAt time.Time) (bool, error) {
 	posOrderID = strings.TrimSpace(posOrderID)
 	if posOrderID == "" {
@@ -202,33 +236,135 @@ func (r *Repository) CancelPOSBill(ctx context.Context, posOrderID string, order
 		return false, err
 	}
 	defer tx.Rollback(ctx)
-
-	found, err := attachOrderKeyToPOSOrder(ctx, tx, posOrderID, orderKey)
-	if err != nil || !found {
+	if err := lockPOSOrder(ctx, tx, posOrderID); err != nil {
 		return false, err
 	}
-	billID, err := ensurePOSBill(ctx, tx, posOrderID)
+
+	hasRows, err := attachOrderKeyToPOSOrder(ctx, tx, posOrderID, orderKey)
 	if err != nil {
 		return false, err
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE payment_orders
-		SET status = 'CANCELLED', updated_at = NOW()
-		WHERE pos_order_id = $1 AND status IN ('READY', 'ACKNOWLEDGED', 'DONE')
-	`, posOrderID); err != nil {
+	if hasRows {
+		if _, err := ensurePOSBill(ctx, tx, posOrderID); err != nil {
+			return false, err
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE payment_orders
+			SET status = 'CANCELLED', updated_at = NOW()
+			WHERE pos_order_id = $1 AND status IN ('READY', 'ACKNOWLEDGED', 'DONE')
+		`, posOrderID); err != nil {
+			return false, classifyError(err)
+		}
+	}
+	tag, err := tx.Exec(ctx, `
+		UPDATE pos_bills
+		SET status = 'CANCELLED',
+			cancelled_at = COALESCE(cancelled_at, $2),
+			payments_synced_at = NULL,
+			payment_sync_attempted_at = NOW(),
+			updated_at = NOW()
+		WHERE pos_order_id = $1
+	`, posOrderID, cancelledAt)
+	if err != nil {
 		return false, classifyError(err)
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE pos_bills
-		SET status = 'CANCELLED', cancelled_at = COALESCE(cancelled_at, $2), updated_at = NOW()
-		WHERE id = $1
-	`, billID, cancelledAt); err != nil {
-		return false, classifyError(err)
+	if tag.RowsAffected() == 0 {
+		return false, nil
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// POSBillSyncState is what the payment sync needs to know about a bill
+// before trusting a fetched payment list.
+type POSBillSyncState struct {
+	Exists bool
+	Status string
+	// TotalAmount is the POS charge, nil until an order fetch recorded it
+	// (see SetPOSBillCharge).
+	TotalAmount *int64
+	CompletedAt *time.Time
+}
+
+// GetPOSBillSyncState reads the bill for posOrderID; a missing bill is
+// reported with Exists false, not an error.
+func (r *Repository) GetPOSBillSyncState(ctx context.Context, posOrderID string) (POSBillSyncState, error) {
+	state := POSBillSyncState{}
+	err := r.pool.QueryRow(ctx, `
+		SELECT status, total_amount, completed_at FROM pos_bills WHERE pos_order_id = $1
+	`, strings.TrimSpace(posOrderID)).Scan(&state.Status, &state.TotalAmount, &state.CompletedAt)
+	switch {
+	case err == nil:
+		state.Exists = true
+		return state, nil
+	case errors.Is(err, pgx.ErrNoRows):
+		return state, nil
+	default:
+		return POSBillSyncState{}, classifyError(err)
+	}
+}
+
+// RecordPOSNativeLines records the POS order's line items that no
+// payment_orders row represents yet. diff receives every row already on the
+// POS order (whatever its status) and returns the lines to insert; it runs
+// under the POS order's lock, in the same transaction as the inserts, so
+// concurrent deliveries of the same completed event (or the backfill racing
+// a webhook) cannot each see the line missing and record it twice. Nothing
+// is recorded on a bill that is already CANCELLED.
+func (r *Repository) RecordPOSNativeLines(ctx context.Context, posOrderID string, diff func(existing []POSOrderLine) []CreatePOSNativeOrderInput) (int, error) {
+	posOrderID = strings.TrimSpace(posOrderID)
+	if posOrderID == "" {
+		return 0, ErrInvalidInput
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockPOSOrder(ctx, tx, posOrderID); err != nil {
+		return 0, err
+	}
+
+	var cancelled bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM pos_bills WHERE pos_order_id = $1 AND status = 'CANCELLED')
+	`, posOrderID).Scan(&cancelled); err != nil {
+		return 0, classifyError(err)
+	}
+	if cancelled {
+		return 0, nil
+	}
+	existing, err := listPOSOrderLines(ctx, tx, posOrderID)
+	if err != nil {
+		return 0, err
+	}
+	inputs := diff(existing)
+	for _, input := range inputs {
+		if input.Amount <= 0 {
+			return 0, ErrInvalidInput
+		}
+		// Same row CreatePOSNativeOrder writes, inserted on this
+		// transaction so it stays under the lock.
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO payment_orders (
+				id, menu_item_name, category_name, table_number, amount,
+				status, payment_method, approved_at, vat, supplied_amount, tax_free_amount,
+				pos_sync_status, pos_order_id, created_at, bill_id
+			) VALUES ($1, $2, $3, '', $4, 'DONE', 'POS', $5, $6, $7, 0, 'SUCCEEDED', $8, COALESCE($9, NOW()),
+				(SELECT id FROM pos_bills WHERE pos_order_id = $8))
+		`, nextID("order"), input.MenuItemName, input.CategoryName, input.Amount,
+			input.ApprovedAt, input.VAT, input.SuppliedAmount, posOrderID,
+			nullableTime(input.OrderedAt)); err != nil {
+			return 0, classifyError(err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return len(inputs), nil
 }
 
 // SetPOSBillCharge records what the POS actually charged for the order
@@ -247,28 +383,52 @@ func (r *Repository) SetPOSBillCharge(ctx context.Context, posOrderID string, to
 // UpsertPOSPayments records TossPlace payments against the bill for
 // posOrderID, creating an OPEN bill when a payment event arrives before the
 // order's completion. Existing payments are overwritten with the newer
-// state (e.g. APPROVED -> CANCELLED). fullSync marks the bill's payment
-// list as complete — only set it when payments is the whole list from
-// GetPaymentsByOrderID, not a single payment event.
+// state (APPROVED -> CANCELLED), but a CANCELLED payment never goes back
+// to APPROVED: a retried approval event, or a payment list fetched before
+// the cancellation committed, is older news. fullSync marks the bill's
+// payment list as complete — only set it when payments is the whole list
+// from GetPaymentsByOrderID, not a single payment event.
 func (r *Repository) UpsertPOSPayments(ctx context.Context, posOrderID string, payments []POSPaymentInput, fullSync bool) error {
+	_, err := r.upsertPOSPayments(ctx, posOrderID, payments, fullSync, "")
+	return err
+}
+
+// SyncPOSPayments stores a bill's complete payment list like
+// UpsertPOSPayments(fullSync=true), but marks the list synced only while
+// the bill's status is still expectStatus — the status the caller saw
+// before fetching the list. If an order event changed the bill in between
+// (e.g. it was cancelled), the fetched list may predate that change, so the
+// bill stays unsynced for ClaimPOSBillsNeedingPaymentSync. synced reports
+// whether the bill was marked.
+func (r *Repository) SyncPOSPayments(ctx context.Context, posOrderID string, payments []POSPaymentInput, expectStatus string) (bool, error) {
+	if strings.TrimSpace(expectStatus) == "" {
+		return false, ErrInvalidInput
+	}
+	return r.upsertPOSPayments(ctx, posOrderID, payments, true, expectStatus)
+}
+
+func (r *Repository) upsertPOSPayments(ctx context.Context, posOrderID string, payments []POSPaymentInput, fullSync bool, expectStatus string) (bool, error) {
 	posOrderID = strings.TrimSpace(posOrderID)
 	if posOrderID == "" {
-		return ErrInvalidInput
+		return false, ErrInvalidInput
 	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer tx.Rollback(ctx)
+	if err := lockPOSOrder(ctx, tx, posOrderID); err != nil {
+		return false, err
+	}
 
 	billID, err := ensurePOSBill(ctx, tx, posOrderID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	for _, payment := range payments {
 		if strings.TrimSpace(payment.ID) == "" {
-			return ErrInvalidInput
+			return false, ErrInvalidInput
 		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO pos_payments (
@@ -277,7 +437,7 @@ func (r *Repository) UpsertPOSPayments(ctx context.Context, posOrderID string, p
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 			ON CONFLICT (id) DO UPDATE SET
 				bill_id = EXCLUDED.bill_id,
-				state = EXCLUDED.state,
+				state = CASE WHEN pos_payments.state = 'CANCELLED' THEN pos_payments.state ELSE EXCLUDED.state END,
 				source_type = EXCLUDED.source_type,
 				payment_method = EXCLUDED.payment_method,
 				card_brand = EXCLUDED.card_brand,
@@ -287,35 +447,53 @@ func (r *Repository) UpsertPOSPayments(ctx context.Context, posOrderID string, p
 				tax_exempt_amount = EXCLUDED.tax_exempt_amount,
 				approved_no = EXCLUDED.approved_no,
 				approved_at = COALESCE(EXCLUDED.approved_at, pos_payments.approved_at),
-				cancelled_at = COALESCE(EXCLUDED.cancelled_at, pos_payments.cancelled_at),
+				cancelled_at = CASE
+					WHEN pos_payments.state = 'CANCELLED' THEN COALESCE(pos_payments.cancelled_at, EXCLUDED.cancelled_at)
+					ELSE COALESCE(EXCLUDED.cancelled_at, pos_payments.cancelled_at)
+				END,
 				updated_at = NOW()
 		`, payment.ID, billID, payment.State, payment.SourceType, payment.PaymentMethod, payment.CardBrand,
 			payment.Amount, payment.TaxAmount, payment.SupplyAmount, payment.TaxExemptAmount, payment.ApprovedNo,
 			nullableTime(payment.ApprovedAt), nullableTime(payment.CancelledAt)); err != nil {
-			return classifyError(err)
+			return false, classifyError(err)
 		}
 	}
+	synced := false
 	if fullSync {
-		if _, err := tx.Exec(ctx, `
-			UPDATE pos_bills SET payments_synced_at = NOW(), updated_at = NOW() WHERE id = $1
-		`, billID); err != nil {
-			return classifyError(err)
+		tag, err := tx.Exec(ctx, `
+			UPDATE pos_bills SET payments_synced_at = NOW(), updated_at = NOW()
+			WHERE id = $1 AND ($2 = '' OR status = $2)
+		`, billID, expectStatus)
+		if err != nil {
+			return false, classifyError(err)
 		}
+		synced = tag.RowsAffected() > 0
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+	return synced, nil
 }
 
-// ClaimPOSBillsNeedingPaymentSync returns up to limit PAID bills whose
-// payment list has never been fetched successfully, stamping each as
-// attempted so a bill TossPlace keeps failing on is retried at most once
-// per paymentSyncRetryInterval instead of on every call.
+// ClaimPOSBillsNeedingPaymentSync returns up to limit bills whose payment
+// list still has to be fetched: PAID bills never synced successfully, and
+// CANCELLED bills that still have an APPROVED payment recorded and have not
+// been re-synced since the cancellation (CancelPOSBill clears
+// payments_synced_at). Each is stamped as attempted so a bill TossPlace
+// keeps failing on is retried at most once per paymentSyncRetryInterval
+// instead of on every call.
 func (r *Repository) ClaimPOSBillsNeedingPaymentSync(ctx context.Context, limit int) ([]string, error) {
 	rows, err := r.pool.Query(ctx, `
 		UPDATE pos_bills
 		SET payment_sync_attempted_at = NOW()
 		WHERE id IN (
 			SELECT id FROM pos_bills
-			WHERE status = 'PAID'
+			WHERE (
+					status = 'PAID'
+					OR (status = 'CANCELLED' AND EXISTS (
+						SELECT 1 FROM pos_payments p WHERE p.bill_id = pos_bills.id AND p.state = 'APPROVED'
+					))
+				)
 				AND payments_synced_at IS NULL
 				AND (payment_sync_attempted_at IS NULL OR payment_sync_attempted_at < NOW() - INTERVAL '`+paymentSyncRetryInterval+`')
 			ORDER BY payment_sync_attempted_at NULLS FIRST, completed_at, id
@@ -342,7 +520,11 @@ func (r *Repository) ClaimPOSBillsNeedingPaymentSync(ctx context.Context, limit 
 // ListPOSOrderLines returns every payment_orders row on posOrderID,
 // whatever its status, for the POS-native line item diff.
 func (r *Repository) ListPOSOrderLines(ctx context.Context, posOrderID string) ([]POSOrderLine, error) {
-	rows, err := r.pool.Query(ctx, `
+	return listPOSOrderLines(ctx, r.pool, posOrderID)
+}
+
+func listPOSOrderLines(ctx context.Context, q tableQuerier, posOrderID string) ([]POSOrderLine, error) {
+	rows, err := q.Query(ctx, `
 		SELECT menu_item_name, category_name, amount
 		FROM payment_orders
 		WHERE pos_order_id = $1

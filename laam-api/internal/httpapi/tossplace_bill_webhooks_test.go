@@ -266,7 +266,7 @@ func TestTossPlaceWebhook_RetriesPaymentSyncForPaidBillsMissingPayments(t *testi
 	handler := resetServerWithConfig(t, posNativeWebhookTestCfg(t, tossServer.URL))
 	seedBillWebhookOrder(t, "order-stale", "pos-stale", 11000, "DONE")
 	if _, err := testPool.Exec(t.Context(), `
-		UPDATE pos_bills SET status = 'PAID', completed_at = NOW() - INTERVAL '1 hour', payment_sync_attempted_at = NOW() - INTERVAL '1 hour'
+		UPDATE pos_bills SET status = 'PAID', total_amount = 11000, completed_at = NOW() - INTERVAL '1 hour', payment_sync_attempted_at = NOW() - INTERVAL '1 hour'
 		WHERE pos_order_id = 'pos-stale'
 	`); err != nil {
 		t.Fatalf("age bill: %v", err)

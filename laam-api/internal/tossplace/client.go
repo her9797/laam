@@ -465,22 +465,35 @@ func (c *Client) GetPayment(ctx context.Context, paymentID string) (Payment, err
 // recorded against one TossPlace order — a split bill has several. The docs
 // describe the result as Payment[] without showing the envelope, so a
 // success value wrapped as {"payments": [...]} is accepted too.
+//
+// Any other shape — null, a missing success value, or an object without a
+// payments array — is an error rather than an empty list: callers treat the
+// result as the bill's complete payment list, so misreading an unexpected
+// response as "no payments" would mark a paid bill as synced with nothing
+// recorded.
 func (c *Client) GetPaymentsByOrderID(ctx context.Context, orderID string) ([]Payment, error) {
 	var raw json.RawMessage
 	if err := c.getSuccess(ctx, "/payment/payments/by-order-id?orderId="+url.QueryEscape(orderID), &raw); err != nil {
 		return nil, err
 	}
-	var payments []Payment
-	if err := json.Unmarshal(raw, &payments); err == nil {
-		return payments, nil
+	list := bytes.TrimSpace(raw)
+	if len(list) > 0 && list[0] == '{' {
+		var wrapped struct {
+			Payments json.RawMessage `json:"payments"`
+		}
+		if err := json.Unmarshal(list, &wrapped); err != nil {
+			return nil, err
+		}
+		list = bytes.TrimSpace(wrapped.Payments)
 	}
-	var wrapped struct {
-		Payments []Payment `json:"payments"`
+	if len(list) == 0 || list[0] != '[' {
+		return nil, fmt.Errorf("tossplace: unexpected payment list shape for order %q", orderID)
 	}
-	if err := json.Unmarshal(raw, &wrapped); err != nil {
+	payments := make([]Payment, 0)
+	if err := json.Unmarshal(list, &payments); err != nil {
 		return nil, err
 	}
-	return wrapped.Payments, nil
+	return payments, nil
 }
 
 // getSuccess GETs a merchant-scoped Open API path and decodes the
