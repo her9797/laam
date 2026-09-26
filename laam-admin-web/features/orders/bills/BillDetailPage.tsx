@@ -3,9 +3,10 @@
 import "@/i18n/client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 
-import { buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states/PageStates";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -44,10 +45,28 @@ const MENU_STATUS_LABEL_KEY: Record<PaymentOrderStatus, string> = {
   CANCELLED: "statusCancelled",
 };
 
-// The list screen's bill view, not router history: a bill detail is also
-// opened from outside the list (e.g. a shared link), and the list toggle
-// keeps its own view in the URL.
+// Fallback for "목록으로" when there is no in-app history entry to go back
+// to (a direct, bookmarked or external-link load).
 const BILL_LIST_HREF = "/orders?view=bill";
+
+// Whether the previous history entry is (most likely) this app's own page.
+// Needs an entry before this one, and — when the browser reports where this
+// document was loaded from — that origin must be ours, so an external link
+// opened in the same tab doesn't send the operator off-site.
+function hasInAppPreviousEntry(): boolean {
+  if (window.history.length <= 1) {
+    return false;
+  }
+  const referrer = document.referrer;
+  if (!referrer) {
+    return true;
+  }
+  try {
+    return new URL(referrer).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * 계산서 상세 (`/orders/bills/{billId}`) — one POS order with the payments
@@ -55,10 +74,24 @@ const BILL_LIST_HREF = "/orders?view=bill";
  * out like `OrderDetailPage`: label/value cards for the bill itself, then
  * tables for its payments and menu rows, each menu row linking to its own
  * order detail.
+ *
+ * "목록으로" goes back via router history (`router.back()`), like
+ * `OrderDetailPage`, so the list's date range, search, filters and page —
+ * all kept in its URL — come back as they were. Without an in-app entry to
+ * return to it navigates to the bill view instead.
  */
 export function BillDetailPage({ billId }: { billId: string }) {
   const { t, i18n } = useTranslation("orders");
+  const router = useRouter();
   const billQuery = useBillQuery(billId);
+
+  function backToList() {
+    if (hasInAppPreviousEntry()) {
+      router.back();
+    } else {
+      router.push(BILL_LIST_HREF);
+    }
+  }
 
   if (billQuery.isLoading) {
     return <LoadingState label={t("billDetailLoading")} />;
@@ -109,9 +142,9 @@ export function BillDetailPage({ billId }: { billId: string }) {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-foreground">{t("billDetailTitle")}</h1>
-        <Link href={BILL_LIST_HREF} className={buttonVariants({ variant: "outline", size: "sm" })}>
+        <Button type="button" size="sm" variant="outline" onClick={backToList}>
           {t("billDetailBackToList")}
-        </Link>
+        </Button>
       </div>
 
       <Card>

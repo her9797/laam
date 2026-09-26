@@ -68,11 +68,42 @@ describe("mergePaymentMethodStats", () => {
     ]);
   });
 
-  it("keeps distinct known and pass-through values separate and does not mutate the input", () => {
+  it("merges legacy Korean method strings into their code's entry so a label never appears twice", () => {
+    const merged = mergePaymentMethodStats([
+      { paymentMethod: "CARD", revenue: 15000, orderCount: 3 },
+      { paymentMethod: "카드", revenue: 4000, orderCount: 1 },
+      { paymentMethod: "간편결제", revenue: 6000, orderCount: 2 },
+      { paymentMethod: "BARCODE", revenue: 1000, orderCount: 1 },
+      { paymentMethod: "현금", revenue: 2000, orderCount: 1 },
+      { paymentMethod: "계좌이체", revenue: 1500, orderCount: 1 },
+      { paymentMethod: "ACCOUNT_TRANSFER", revenue: 500, orderCount: 1 },
+    ]);
+
+    expect(merged).toEqual([
+      { paymentMethod: "CARD", revenue: 19000, orderCount: 4 },
+      { paymentMethod: "BARCODE", revenue: 7000, orderCount: 3 },
+      { paymentMethod: "CASH", revenue: 2000, orderCount: 1 },
+      { paymentMethod: "ACCOUNT_TRANSFER", revenue: 2000, orderCount: 2 },
+    ]);
+    const labels = merged.map((row) => paymentMethodLabel(row.paymentMethod, t));
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it.each([
+    ["선불결제", "PREPAID_VALUE"],
+    ["외부결제", "EXTERNAL"],
+  ])("maps the legacy string %j alone to its code %j", (legacy, code) => {
+    expect(mergePaymentMethodStats([{ paymentMethod: legacy, revenue: 1000, orderCount: 1 }])).toEqual([
+      { paymentMethod: code, revenue: 1000, orderCount: 1 },
+    ]);
+  });
+
+  it("keeps distinct known and unknown pass-through values separate and does not mutate the input", () => {
     const input = [
       { paymentMethod: "CARD", revenue: 2000, orderCount: 1 },
       { paymentMethod: "POS", revenue: 2000, orderCount: 1 },
-      { paymentMethod: "카드", revenue: 1000, orderCount: 1 },
+      { paymentMethod: "휴대폰", revenue: 1000, orderCount: 1 },
+      { paymentMethod: "SOMETHING_NEW", revenue: 500, orderCount: 1 },
     ];
     const snapshot = structuredClone(input);
 

@@ -12,6 +12,13 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+const backMock = vi.fn();
+const pushMock = vi.fn();
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ back: backMock, push: pushMock }),
+}));
+
 const useBillQueryMock = vi.fn();
 const refetchMock = vi.fn();
 
@@ -96,11 +103,14 @@ describe("BillDetailPage", () => {
   beforeEach(() => {
     refetchMock.mockClear();
     useBillQueryMock.mockClear();
+    backMock.mockClear();
+    pushMock.mockClear();
     mockQuery();
   });
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
 
   it("requests the bill by id", () => {
@@ -134,10 +144,49 @@ describe("BillDetailPage", () => {
     expect(screen.getByText("계산서를 찾을 수 없습니다.")).toBeInTheDocument();
   });
 
-  it("links back to the bill view of the order list", () => {
-    render(<BillDetailPage billId="bill-1" />);
+  function mockHistory({ length, referrer }: { length: number; referrer: string }) {
+    vi.spyOn(window.history, "length", "get").mockReturnValue(length);
+    vi.spyOn(document, "referrer", "get").mockReturnValue(referrer);
+  }
 
-    expect(screen.getByRole("link", { name: "목록으로" })).toHaveAttribute("href", "/orders?view=bill");
+  it("goes back in history to the list (keeping its filters and page) when opened from within the app", () => {
+    mockHistory({ length: 3, referrer: "" });
+
+    render(<BillDetailPage billId="bill-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "목록으로" }));
+
+    expect(backMock).toHaveBeenCalledTimes(1);
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("goes back in history when the previous page is a same-origin one", () => {
+    mockHistory({ length: 2, referrer: `${window.location.origin}/orders?view=bill&page=3` });
+
+    render(<BillDetailPage billId="bill-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "목록으로" }));
+
+    expect(backMock).toHaveBeenCalledTimes(1);
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the bill view of the order list when there is no previous history entry", () => {
+    mockHistory({ length: 1, referrer: "" });
+
+    render(<BillDetailPage billId="bill-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "목록으로" }));
+
+    expect(pushMock).toHaveBeenCalledWith("/orders?view=bill");
+    expect(backMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the bill view of the order list when opened from another site", () => {
+    mockHistory({ length: 4, referrer: "https://chat.example.com/some/thread" });
+
+    render(<BillDetailPage billId="bill-1" />);
+    fireEvent.click(screen.getByRole("button", { name: "목록으로" }));
+
+    expect(pushMock).toHaveBeenCalledWith("/orders?view=bill");
+    expect(backMock).not.toHaveBeenCalled();
   });
 
   it("renders the header with the table number, status and times", () => {
