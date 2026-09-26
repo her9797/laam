@@ -57,6 +57,8 @@
 | `d-mixed` | 웹 주문 2건 + POS에서 직접 찍은 생맥주 2잔, 완료 웹훅 2번 | PAID, POS 직접 입력 행(생맥주 12,000) 1건만 |
 | `e-refund` | 카드로 완료 후 POS에서 취소 | 계산서·주문 CANCELLED, 결제 CANCELLED |
 | `f-repay` | 카드 승인 → 카드 취소 → 현금 재결제 → 완료 | PAID, 카드 CANCELLED + 현금 APPROVED |
+| `g-moved-item` | 웹 제임슨(POS 주문 X)을 '한 번에 결제'로 조니워커 주문 Y에 옮김 → Y 카드 21,000 완료 → X에 고독 추가 후 계좌이체 15,000 완료 | 웹 제임슨 1행만 DONE이고 Y 계산서에 연결(`pos_order_id` Y, `pos_origin_order_id` X), Y PAID(조니워커 POS 직접 입력), X PAID(고독 POS 직접 입력) |
+| `h-moved-item-reverse` | `g`와 같지만 X(고독)가 Y보다 먼저 완료 | `g`와 같음 |
 
 사용 순서(저장소 루트에서, 터미널 3개):
 
@@ -80,11 +82,12 @@ node scripts/local-payment-bills/mock-tossplace/run-scenario.mjs reset  # mock-*
 - `psql`이 없으면 `DATABASE_URL`의 포트를 publish한 Docker 컨테이너(없으면 `laam-postgres-local`)에서 `docker exec psql`로 실행한다. `PG_CONTAINER`로 지정할 수 있다.
 - API 주소는 `LAAM_API_URL`(기본 `http://localhost:9090`), 목 서버 주소는 `MOCK_TOSSPLACE_URL`(기본 `http://localhost:18080`). `ADMIN_API_TOKEN`이 있으면 `GET /api/v1/admin/payment-bills/{id}` 결과도 함께 출력한다.
 - 같은 시나리오를 다시 실행하면 해당 시나리오의 기존 행을 지우고 처음부터 만든다.
+- `g`, `h`처럼 POS 주문 여러 건을 쓰는 시나리오는 `posOrders`와 웹훅 단계의 `orderId`로 주문을 지정하고, `mock` 단계로 주문의 `lineItems`를 바꾼다(배열은 통째로 교체). 기대값은 POS 주문별 `expect.bills`, 메뉴 이름별 행 수 `menuCounts`, 웹 주문별 상태·연결 `webOrders`로 확인한다.
 - 목 서버를 쓰는 동안 로컬 DB에 있던 다른(실제) 계산서의 결제 재조회는 목 서버에서 404가 되어 실패로 로그만 남고, 나중에 실제 키로 다시 띄우면 재시도된다.
 
 관리자 웹(`laam-admin-web`, 같은 laam-api에 연결)에서 확인할 것:
 
-1. 주문 내역에서 `계산서별` 토글로 전환하면 `mock-pos-*` 계산서 6건이 테이블 번호(T-03, B-02, T-07, T-05, B-04, T-09)와 상태(PAID 5건, CANCELLED 1건), 결제수단(카드·현금·계좌이체)으로 보인다.
+1. 주문 내역에서 `계산서별` 토글로 전환하면 a~f의 `mock-pos-*` 계산서 6건이 테이블 번호(T-03, B-02, T-07, T-05, B-04, T-09)와 상태(PAID 5건, CANCELLED 1건), 결제수단(카드·현금·계좌이체)으로 보인다.
 2. 계산서 상세에서 메뉴 목록(혼합 계산서는 POS 직접 입력 생맥주 포함), 결제 목록(취소된 결제 표시), 청구·결제 금액이 맞는지 본다.
 3. 매출 통계에서 오늘 매출에 취소 계산서(e-refund)와 취소된 카드 결제(f-repay)가 빠지고, 결제수단별 금액이 위 표와 맞는지 본다.
 

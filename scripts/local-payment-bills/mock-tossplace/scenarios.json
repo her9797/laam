@@ -192,6 +192,132 @@
         "orders": { "DONE": 2 }, "nativeRows": 0,
         "payments": { "mock-pay-f-card": "CANCELLED/CARD/20000", "mock-pay-f-cash": "APPROVED/CASH/20000" }
       }
+    },
+    {
+      "name": "g-moved-item",
+      "title": "주문 간 메뉴 이동: 웹 제임슨이 든 POS 주문 X에서 '한 번에 결제'로 제임슨을 조니워커 주문 Y로 옮겨 Y가 먼저 카드 결제, X는 고독 추가 후 계좌이체",
+      "posOrderId": "mock-pos-gx",
+      "webOrders": [
+        { "id": "mock-g-1", "menuItemName": "제임슨", "categoryName": "위스키", "tableNumber": "N-01", "amount": 10000, "requestNote": "사장님이 이뻐요", "createdAt": "now-60m" }
+      ],
+      "posOrders": [
+        {
+          "id": "mock-pos-gx", "orderKey": "mock-g-1", "orderNumber": "M-GX1", "source": "TABLE_ORDER", "orderState": "OPEN",
+          "openedAt": "now-60m",
+          "chargePrice": { "totalAmount": 10000, "discountAmount": 0 },
+          "lineItems": [
+            { "item": { "title": "제임슨", "category": { "title": "위스키" } }, "itemPrice": { "priceValue": 10000 }, "quantity": 1, "optionChoices": [{ "title": "니트", "priceValue": 0, "quantity": 1 }] }
+          ]
+        },
+        {
+          "id": "mock-pos-gy", "orderKey": "mock-key-gy", "orderNumber": "M-GY1", "source": "POS", "orderState": "OPEN",
+          "openedAt": "now-40m",
+          "chargePrice": { "totalAmount": 11000, "discountAmount": 0 },
+          "lineItems": [
+            { "item": { "title": "조니워커 블랙", "category": { "title": "위스키" } }, "itemPrice": { "priceValue": 11000 }, "quantity": 1, "optionChoices": [{ "title": "니트", "priceValue": 0, "quantity": 1 }] }
+          ]
+        }
+      ],
+      "posPayments": [],
+      "steps": [
+        { "mock": { "orders": {
+            "mock-pos-gx": { "chargePrice": { "totalAmount": 0, "discountAmount": 0 }, "lineItems": [] },
+            "mock-pos-gy": { "chargePrice": { "totalAmount": 21000, "discountAmount": 0 }, "lineItems": [
+              { "item": { "title": "조니워커 블랙", "category": { "title": "위스키" } }, "itemPrice": { "priceValue": 11000 }, "quantity": 1, "optionChoices": [{ "title": "니트", "priceValue": 0, "quantity": 1 }] },
+              { "item": { "title": "제임슨", "category": { "title": "위스키" } }, "itemPrice": { "priceValue": 10000 }, "quantity": 1, "optionChoices": [{ "title": "니트", "priceValue": 0, "quantity": 1 }] }
+            ] } } }, "note": "'한 번에 결제'로 제임슨을 X에서 Y로 이동 (라인에는 원래 주문 참조가 없음)" },
+        { "mock": { "orders": { "mock-pos-gy": { "orderState": "COMPLETED", "completedAt": "now" } },
+            "payments": { "mock-pay-gy-card": { "orderId": "mock-pos-gy", "state": "APPROVED", "sourceType": "CARD", "paymentMethod": "SAMSUNG_MST", "amount": 21000, "taxAmount": 1909, "supplyAmount": 19091, "taxExemptAmount": 0, "approvedNo": "MOCKG001", "approvedAt": "now", "createdAt": "now", "cardDetails": { "cardBrand": "삼성" } } } },
+          "note": "Y 카드 21,000원 결제·완료" },
+        { "webhook": "payment.approved", "paymentId": "mock-pay-gy-card" },
+        { "webhook": "order.completed", "orderId": "mock-pos-gy" },
+        { "mock": { "orders": { "mock-pos-gx": { "orderState": "COMPLETED", "completedAt": "now", "chargePrice": { "totalAmount": 15000, "discountAmount": 0 }, "lineItems": [
+              { "item": { "title": "고독", "category": { "title": "기타" } }, "itemPrice": { "priceValue": 15000 }, "quantity": 1, "optionChoices": [] }
+            ] } },
+            "payments": { "mock-pay-gx-transfer": { "orderId": "mock-pos-gx", "state": "APPROVED", "sourceType": "ACCOUNT_TRANSFER", "paymentMethod": "계좌이체", "amount": 15000, "taxAmount": 1363, "supplyAmount": 13637, "taxExemptAmount": 0, "approvedNo": "", "approvedAt": "now", "createdAt": "now" } } },
+          "note": "X에 고독 15,000원 추가 후 계좌이체로 완료" },
+        { "webhook": "payment.approved", "paymentId": "mock-pay-gx-transfer" },
+        { "webhook": "order.completed", "orderId": "mock-pos-gx" }
+      ],
+      "expect": {
+        "bills": {
+          "mock-pos-gy": {
+            "billStatus": "PAID", "totalAmount": 21000, "synced": true,
+            "orders": { "DONE": 2 }, "nativeRows": 1, "native": { "menuItemName": "조니워커 블랙", "amount": 11000 },
+            "payments": { "mock-pay-gy-card": "APPROVED/CARD/21000" }
+          },
+          "mock-pos-gx": {
+            "billStatus": "PAID", "totalAmount": 15000, "synced": true,
+            "orders": { "DONE": 1 }, "nativeRows": 1, "native": { "menuItemName": "고독", "amount": 15000 },
+            "payments": { "mock-pay-gx-transfer": "APPROVED/ACCOUNT_TRANSFER/15000" }
+          }
+        },
+        "menuCounts": { "제임슨": 1, "조니워커 블랙": 1, "고독": 1 },
+        "webOrders": { "mock-g-1": { "status": "DONE", "posOrderId": "mock-pos-gy", "posOriginOrderId": "mock-pos-gx", "billPosOrderId": "mock-pos-gy" } }
+      }
+    },
+    {
+      "name": "h-moved-item-reverse",
+      "title": "주문 간 메뉴 이동(역순): 제임슨이 Y로 옮겨진 뒤 X(고독)가 먼저 계좌이체로 완료되고 Y가 나중에 카드 결제",
+      "posOrderId": "mock-pos-hx",
+      "webOrders": [
+        { "id": "mock-h-1", "menuItemName": "제임슨", "categoryName": "위스키", "tableNumber": "N-01", "amount": 10000, "requestNote": "사장님이 이뻐요", "createdAt": "now-60m" }
+      ],
+      "posOrders": [
+        {
+          "id": "mock-pos-hx", "orderKey": "mock-h-1", "orderNumber": "M-HX1", "source": "TABLE_ORDER", "orderState": "OPEN",
+          "openedAt": "now-60m",
+          "chargePrice": { "totalAmount": 10000, "discountAmount": 0 },
+          "lineItems": [
+            { "item": { "title": "제임슨", "category": { "title": "위스키" } }, "itemPrice": { "priceValue": 10000 }, "quantity": 1, "optionChoices": [{ "title": "니트", "priceValue": 0, "quantity": 1 }] }
+          ]
+        },
+        {
+          "id": "mock-pos-hy", "orderKey": "mock-key-hy", "orderNumber": "M-HY1", "source": "POS", "orderState": "OPEN",
+          "openedAt": "now-40m",
+          "chargePrice": { "totalAmount": 11000, "discountAmount": 0 },
+          "lineItems": [
+            { "item": { "title": "조니워커 블랙", "category": { "title": "위스키" } }, "itemPrice": { "priceValue": 11000 }, "quantity": 1, "optionChoices": [{ "title": "니트", "priceValue": 0, "quantity": 1 }] }
+          ]
+        }
+      ],
+      "posPayments": [],
+      "steps": [
+        { "mock": { "orders": {
+            "mock-pos-hx": { "chargePrice": { "totalAmount": 15000, "discountAmount": 0 }, "lineItems": [
+              { "item": { "title": "고독", "category": { "title": "기타" } }, "itemPrice": { "priceValue": 15000 }, "quantity": 1, "optionChoices": [] }
+            ] },
+            "mock-pos-hy": { "chargePrice": { "totalAmount": 21000, "discountAmount": 0 }, "lineItems": [
+              { "item": { "title": "조니워커 블랙", "category": { "title": "위스키" } }, "itemPrice": { "priceValue": 11000 }, "quantity": 1, "optionChoices": [{ "title": "니트", "priceValue": 0, "quantity": 1 }] },
+              { "item": { "title": "제임슨", "category": { "title": "위스키" } }, "itemPrice": { "priceValue": 10000 }, "quantity": 1, "optionChoices": [{ "title": "니트", "priceValue": 0, "quantity": 1 }] }
+            ] } } }, "note": "제임슨을 X에서 Y로 이동하고 X에 고독 15,000원 추가" },
+        { "mock": { "orders": { "mock-pos-hx": { "orderState": "COMPLETED", "completedAt": "now" } },
+            "payments": { "mock-pay-hx-transfer": { "orderId": "mock-pos-hx", "state": "APPROVED", "sourceType": "ACCOUNT_TRANSFER", "paymentMethod": "계좌이체", "amount": 15000, "taxAmount": 1363, "supplyAmount": 13637, "taxExemptAmount": 0, "approvedNo": "", "approvedAt": "now", "createdAt": "now" } } },
+          "note": "X 계좌이체 15,000원 결제·완료 (Y보다 먼저)" },
+        { "webhook": "payment.approved", "paymentId": "mock-pay-hx-transfer" },
+        { "webhook": "order.completed", "orderId": "mock-pos-hx" },
+        { "mock": { "orders": { "mock-pos-hy": { "orderState": "COMPLETED", "completedAt": "now" } },
+            "payments": { "mock-pay-hy-card": { "orderId": "mock-pos-hy", "state": "APPROVED", "sourceType": "CARD", "paymentMethod": "SAMSUNG_MST", "amount": 21000, "taxAmount": 1909, "supplyAmount": 19091, "taxExemptAmount": 0, "approvedNo": "MOCKH001", "approvedAt": "now", "createdAt": "now", "cardDetails": { "cardBrand": "삼성" } } } },
+          "note": "Y 카드 21,000원 결제·완료" },
+        { "webhook": "payment.approved", "paymentId": "mock-pay-hy-card" },
+        { "webhook": "order.completed", "orderId": "mock-pos-hy" }
+      ],
+      "expect": {
+        "bills": {
+          "mock-pos-hy": {
+            "billStatus": "PAID", "totalAmount": 21000, "synced": true,
+            "orders": { "DONE": 2 }, "nativeRows": 1, "native": { "menuItemName": "조니워커 블랙", "amount": 11000 },
+            "payments": { "mock-pay-hy-card": "APPROVED/CARD/21000" }
+          },
+          "mock-pos-hx": {
+            "billStatus": "PAID", "totalAmount": 15000, "synced": true,
+            "orders": { "DONE": 1 }, "nativeRows": 1, "native": { "menuItemName": "고독", "amount": 15000 },
+            "payments": { "mock-pay-hx-transfer": "APPROVED/ACCOUNT_TRANSFER/15000" }
+          }
+        },
+        "menuCounts": { "제임슨": 1, "조니워커 블랙": 1, "고독": 1 },
+        "webOrders": { "mock-h-1": { "status": "DONE", "posOrderId": "mock-pos-hy", "posOriginOrderId": "mock-pos-hx", "billPosOrderId": "mock-pos-hy" } }
+      }
     }
   ]
 }
