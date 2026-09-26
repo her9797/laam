@@ -63,11 +63,20 @@ func newFakeTossPlace(t *testing.T) (*fakeTossPlace, *httptest.Server) {
 }
 
 func (f *fakeTossPlace) setOrder(id string, state string, completedAt string, total int64, discount int64, payments string) {
+	f.setOrderJSON(id, `{"id":"`+id+`","orderState":"`+state+`","completedAt":"`+completedAt+
+		`","chargePrice":{"totalAmount":`+itoa(total)+`,"discountAmount":`+itoa(discount)+`},"lineItems":[]}`, payments)
+}
+
+func (f *fakeTossPlace) setOrderJSON(id string, order string, payments string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.orders[id] = `{"id":"` + id + `","orderState":"` + state + `","completedAt":"` + completedAt +
-		`","chargePrice":{"totalAmount":` + itoa(total) + `,"discountAmount":` + itoa(discount) + `},"lineItems":[]}`
+	f.orders[id] = order
 	f.payments[id] = payments
+}
+
+func lineItemJSON(title string, category string, price int64, quantity int64) string {
+	return `{"item":{"title":"` + title + `","category":{"title":"` + category + `"}},"itemPrice":{"priceValue":` + itoa(price) +
+		`},"quantity":` + itoa(quantity) + `,"optionChoices":[]}`
 }
 
 func itoa(v int64) string {
@@ -379,6 +388,132 @@ func TestBackfill_LimitProcessesOnlyTheOldestOrders(t *testing.T) {
 		t.Fatalf("bills = %d, want 1 with --limit 1", state.Bills)
 	}
 	loadBill(t, "pos-paid")
+}
+
+// seedMixedBill is a historical mixed bill: a web order (하우스 하이볼) and
+// a 생맥주 x2 rung directly on the POS, completed before possync recorded
+// POS-native lines, so no row represents the 생맥주.
+func seedMixedBill(t *testing.T, fake *fakeTossPlace) {
+	t.Helper()
+	seedOrder(t, "order-web", "pos-mixed", 11000, "READY", time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
+	fake.setOrderJSON("pos-mixed", `{"id":"pos-mixed","orderState":"COMPLETED","openedAt":"2026-09-01T11:50:00Z",`+
+		`"completedAt":"2026-09-01T13:00:00Z","chargePrice":{"totalAmount":23000,"discountAmount":0},"lineItems":[`+
+		lineItemJSON("하우스 하이볼", "하이볼", 11000, 1)+`,`+lineItemJSON("생맥주", "맥주", 6000, 2)+`]}`,
+		`[`+paymentJSON("pay-mixed", "APPROVED", "CARD", 23000, "2026-09-01T13:00:00Z", "")+`]`)
+}
+
+type nativeRow struct {
+	Status     string
+	Method     string
+	Amount     int64
+	Linked     bool
+	ApprovedAt time.Time
+	CreatedAt  time.Time
+}
+
+func loadNativeRows(t *testing.T, posOrderID string) []nativeRow {
+	t.Helper()
+	rows, err := testPool.Query(context.Background(), `
+		SELECT status, COALESCE(payment_method, ''), amount, bill_id IS NOT NULL, approved_at, created_at
+		FROM payment_orders
+		WHERE pos_order_id = $1 AND menu_item_name = '생맥주'
+	`, posOrderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var native []nativeRow
+	for rows.Next() {
+		var row nativeRow
+		if err := rows.Scan(&row.Status, &row.Method, &row.Amount, &row.Linked, &row.ApprovedAt, &row.CreatedAt); err != nil {
+			t.Fatal(err)
+		}
+		native = append(native, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return native
+}
+
+func TestBackfill_DryRunReportsMissingPOSNativeLinesWithoutWriting(t *testing.T) {
+	resetTables(t)
+	fake, server := newFakeTossPlace(t)
+	seedMixedBill(t, fake)
+	before := snapshotDB(t)
+
+	code, out := runBackfill(t, testConfig(server.URL))
+	if code != 0 {
+		t.Fatalf("exit code = %d, output:\n%s", code, out)
+	}
+	after := snapshotDB(t)
+	if after.Bills != 0 || after.Payments != 0 || len(after.Rows) != len(before.Rows) {
+		t.Fatalf("dry-run wrote: bills=%d payments=%d rows %d -> %d", after.Bills, after.Payments, len(before.Rows), len(after.Rows))
+	}
+	for _, want := range []string{"native_lines_to_create=1(12000)", "native_lines_to_create=1 amount=12000"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestBackfill_ApplyRecordsMissingPOSNativeLineOnce(t *testing.T) {
+	resetTables(t)
+	fake, server := newFakeTossPlace(t)
+	seedMixedBill(t, fake)
+
+	if code, out := runBackfill(t, testConfig(server.URL), "--apply"); code != 0 {
+		t.Fatalf("exit code = %d, output:\n%s", code, out)
+	}
+	native := loadNativeRows(t, "pos-mixed")
+	if len(native) != 1 {
+		t.Fatalf("native rows = %+v, want exactly one 생맥주", native)
+	}
+	row := native[0]
+	if row.Status != "DONE" || row.Method != "POS" || row.Amount != 12000 || !row.Linked ||
+		!row.ApprovedAt.Equal(time.Date(2026, 9, 1, 13, 0, 0, 0, time.UTC)) ||
+		!row.CreatedAt.Equal(time.Date(2026, 9, 1, 11, 50, 0, 0, time.UTC)) {
+		t.Fatalf("native row = %+v, want DONE POS 12000 linked, approved at completedAt, ordered at openedAt", row)
+	}
+	if status := rowStatus(t, "order-web"); status != "DONE" {
+		t.Fatalf("order-web status = %q, want DONE", status)
+	}
+	if bill := loadBill(t, "pos-mixed"); bill.Status != "PAID" || bill.Total == nil || *bill.Total != 23000 {
+		t.Fatalf("pos-mixed bill = %+v, want PAID total 23000", bill)
+	}
+
+	code, out := runBackfill(t, testConfig(server.URL), "--apply")
+	if code != 0 {
+		t.Fatalf("second run exit code = %d, output:\n%s", code, out)
+	}
+	if native := loadNativeRows(t, "pos-mixed"); len(native) != 1 {
+		t.Fatalf("second run native rows = %+v, want still one", native)
+	}
+	if !strings.Contains(out, "native_lines_to_create=0 amount=0") {
+		t.Errorf("second run output missing native_lines_to_create=0:\n%s", out)
+	}
+}
+
+func TestBackfill_ApplyStampsTheOrdersCancelledAt(t *testing.T) {
+	resetTables(t)
+	fake, server := newFakeTossPlace(t)
+	seedOrder(t, "order-c", "pos-cancelled", 5000, "DONE", time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC))
+	fake.setOrderJSON("pos-cancelled", `{"id":"pos-cancelled","orderState":"CANCELLED","completedAt":"2026-09-01T12:10:00Z",`+
+		`"cancelledAt":"2026-09-01T12:45:00Z","chargePrice":{"totalAmount":5000,"discountAmount":0},"lineItems":[]}`,
+		`[`+paymentJSON("pay-c", "CANCELLED", "CARD", 5000, "2026-09-01T12:10:00Z", "2026-09-01T12:30:00Z")+`]`)
+
+	if code, out := runBackfill(t, testConfig(server.URL), "--apply"); code != 0 {
+		t.Fatalf("exit code = %d, output:\n%s", code, out)
+	}
+	var cancelledAt time.Time
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT cancelled_at FROM pos_bills WHERE pos_order_id = 'pos-cancelled'
+	`).Scan(&cancelledAt); err != nil {
+		t.Fatal(err)
+	}
+	if want := time.Date(2026, 9, 1, 12, 45, 0, 0, time.UTC); !cancelledAt.Equal(want) {
+		t.Fatalf("cancelled_at = %v, want the order's cancelledAt %v", cancelledAt, want)
+	}
 }
 
 func assertNoSecrets(t *testing.T, out string) {

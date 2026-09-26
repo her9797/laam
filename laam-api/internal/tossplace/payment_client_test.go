@@ -134,3 +134,20 @@ func TestClientGetOrderIncludesChargePrice(t *testing.T) {
 		t.Fatalf("chargePrice = %+v", order.ChargePrice)
 	}
 }
+
+func TestClientGetOrderIncludesCancelledAt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"resultType":"SUCCESS","success":{"id":"pos-order-9","orderState":"CANCELLED","cancelledAt":"2026-09-19T04:00:00Z","lineItems":[]}}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "access", "secret", "merchant-123", server.Client())
+	order, err := client.GetOrder(context.Background(), "pos-order-9")
+	if err != nil {
+		t.Fatalf("GetOrder() error = %v", err)
+	}
+	if order.CancelledAt != "2026-09-19T04:00:00Z" {
+		t.Fatalf("cancelledAt = %q, want 2026-09-19T04:00:00Z", order.CancelledAt)
+	}
+}

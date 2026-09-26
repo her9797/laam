@@ -1,7 +1,9 @@
 // Command backfill-payment-bills builds 계산서(pos_bills) and their
 // payments (pos_payments) for web orders that reached TossPlace before bills
 // existed, and completes the rows the old completion bug left READY or
-// ACKNOWLEDGED on a paid table's POS order.
+// ACKNOWLEDGED on a paid table's POS order. For completed POS orders it
+// also records, as the completed webhook does (possync.NativeLines), the
+// line items rung directly on the POS that no payment_orders row represents.
 //
 // It is a dry-run by default: it reads TossPlace and the database, prints
 // what would change, and writes nothing (the database session is also put
