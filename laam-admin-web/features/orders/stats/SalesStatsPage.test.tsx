@@ -3,6 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SalesStats } from "./model";
 
+// jsdom has no layout, so recharts' `ResponsiveContainer` measures 0x0 and
+// renders no chart at all. Swap it for a fixed-size pass-through so chart
+// content (the pie legend's names) is actually rendered and assertable.
+vi.mock("recharts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("recharts")>();
+  const { cloneElement } = await import("react");
+  return {
+    ...actual,
+    ResponsiveContainer: ({ children }: { children: React.ReactElement<{ width?: number; height?: number }> }) =>
+      cloneElement(children, { width: 400, height: 300 }),
+  };
+});
+
 const useSalesStatsQueryMock = vi.fn();
 const refetchMock = vi.fn();
 
@@ -126,6 +139,29 @@ describe("SalesStatsPage", () => {
     expect(within(rows[1]).getByText("Pizza")).toBeInTheDocument();
     expect(within(rows[1]).getByText("₩12,000")).toBeInTheDocument();
     expect(within(rows[2]).getByText("Beer")).toBeInTheDocument();
+  });
+
+  it("labels the payment-method breakdown with readable payment-method names", async () => {
+    mockQuery({
+      data: {
+        ...STATS,
+        byPaymentMethod: [
+          { paymentMethod: "CARD", revenue: 15000, orderCount: 1 },
+          { paymentMethod: "POS", revenue: 5000, orderCount: 1 },
+          { paymentMethod: "간편결제", revenue: 3000, orderCount: 1 },
+        ],
+      },
+    });
+
+    render(<SalesStatsPage />);
+
+    const chart = screen.getByRole("img", { name: "결제수단별 매출 비중" });
+    // The legend fills in after the pie registers its sectors, not on the
+    // first commit.
+    expect(await within(chart).findByText("카드")).toBeInTheDocument();
+    expect(within(chart).getByText("POS(미확인)")).toBeInTheDocument();
+    expect(within(chart).getByText("간편결제")).toBeInTheDocument();
+    expect(within(chart).queryByText("CARD")).not.toBeInTheDocument();
   });
 
   it("defaults the aggregation basis to '영업일' (business day)", () => {
