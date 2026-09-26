@@ -6,13 +6,20 @@ import type { SalesStats } from "./model";
 // jsdom has no layout, so recharts' `ResponsiveContainer` measures 0x0 and
 // renders no chart at all. Swap it for a fixed-size pass-through so chart
 // content (the pie legend's names) is actually rendered and assertable.
+// `Pie` is wrapped only to record the `data` it receives: jsdom never
+// finishes the sector animation, so slice values aren't in the DOM.
+const pieDataMock = vi.hoisted(() => vi.fn());
 vi.mock("recharts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("recharts")>();
-  const { cloneElement } = await import("react");
+  const { cloneElement, createElement } = await import("react");
   return {
     ...actual,
     ResponsiveContainer: ({ children }: { children: React.ReactElement<{ width?: number; height?: number }> }) =>
       cloneElement(children, { width: 400, height: 300 }),
+    Pie: (props: React.ComponentProps<typeof actual.Pie>) => {
+      pieDataMock(props.data);
+      return createElement(actual.Pie, props);
+    },
   };
 });
 
@@ -162,6 +169,38 @@ describe("SalesStatsPage", () => {
     expect(within(chart).getByText("POS(미확인)")).toBeInTheDocument();
     expect(within(chart).getByText("간편결제")).toBeInTheDocument();
     expect(within(chart).queryByText("CARD")).not.toBeInTheDocument();
+  });
+
+  it("shows unconfirmed payment methods as a single summed, revenue-ranked entry", async () => {
+    mockQuery({
+      data: {
+        ...STATS,
+        byPaymentMethod: [
+          { paymentMethod: "CARD", revenue: 15000, orderCount: 3 },
+          { paymentMethod: "CASH", revenue: 5000, orderCount: 1 },
+          { paymentMethod: "UNDEFINED", revenue: 4000, orderCount: 1 },
+          { paymentMethod: "", revenue: 3000, orderCount: 1 },
+        ],
+      },
+    });
+
+    render(<SalesStatsPage />);
+
+    const chart = screen.getByRole("img", { name: "결제수단별 매출 비중" });
+    await within(chart).findByText("카드");
+    expect(within(chart).getAllByText("미확인")).toHaveLength(1);
+    // The merged 미확인 slice (4,000 + 3,000 = 7,000) now outranks 현금
+    // (5,000).
+    const paymentSlices = pieDataMock.mock.calls
+      .map(([data]) => data as Array<{ paymentMethodLabel?: string; revenue: number; orderCount: number }>)
+      .findLast((data) => data.some((row) => row.paymentMethodLabel !== undefined));
+    expect(
+      paymentSlices?.map(({ paymentMethodLabel, revenue, orderCount }) => [paymentMethodLabel, revenue, orderCount]),
+    ).toEqual([
+      ["카드", 15000, 3],
+      ["미확인", 7000, 2],
+      ["현금", 5000, 1],
+    ]);
   });
 
   it("defaults the aggregation basis to '영업일' (business day)", () => {

@@ -41,7 +41,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatCurrencyKRW } from "@/lib/utils";
 
-import { paymentMethodLabel } from "../payment-method";
+import { mergePaymentMethodStats, paymentMethodLabel } from "../payment-method";
 
 import { defaultDateRange, resolveDateRange, type DayBasis } from "./date-range";
 import type { TrendUnit } from "./model";
@@ -304,7 +304,7 @@ function SalesStatsContent({
           </CardHeader>
           <CardContent>
             <ShareChart
-              data={data.byPaymentMethod.map((row) => ({
+              data={mergePaymentMethodStats(data.byPaymentMethod).map((row) => ({
                 ...row,
                 paymentMethodLabel: paymentMethodLabel(row.paymentMethod, t),
               }))}
