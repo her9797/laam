@@ -377,6 +377,7 @@ type Order struct {
 	// the order time the admin screens show. TossPlace may omit it.
 	OpenedAt    string           `json:"openedAt"`
 	CompletedAt string           `json:"completedAt"`
+	CancelledAt string           `json:"cancelledAt"` // empty unless the order was cancelled
 	ChargePrice OrderChargePrice `json:"chargePrice"`
 	LineItems   []OrderLineItem  `json:"lineItems"`
 }

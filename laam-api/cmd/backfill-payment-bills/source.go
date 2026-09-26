@@ -39,7 +39,7 @@ func (s dbSource) LoadSnapshot(ctx context.Context, posOrderID string, paymentID
 	}
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, status, amount, COALESCE(bill_id, '')
+		SELECT id, status, amount, COALESCE(bill_id, ''), menu_item_name, category_name
 		FROM payment_orders
 		WHERE pos_order_id = $1
 		ORDER BY created_at, id
@@ -49,7 +49,7 @@ func (s dbSource) LoadSnapshot(ctx context.Context, posOrderID string, paymentID
 	}
 	for rows.Next() {
 		var row SnapshotRow
-		if err := rows.Scan(&row.ID, &row.Status, &row.Amount, &row.BillID); err != nil {
+		if err := rows.Scan(&row.ID, &row.Status, &row.Amount, &row.BillID, &row.MenuItemName, &row.CategoryName); err != nil {
 			rows.Close()
 			return Snapshot{}, err
 		}

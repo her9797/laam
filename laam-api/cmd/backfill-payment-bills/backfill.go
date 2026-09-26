@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/her9797/laam/laam-api/internal/possync"
 	"github.com/her9797/laam/laam-api/internal/store"
 	"github.com/her9797/laam/laam-api/internal/tossplace"
 )
@@ -36,10 +37,12 @@ type Snapshot struct {
 
 // SnapshotRow is one payment_orders row on the POS order.
 type SnapshotRow struct {
-	ID     string
-	Status string
-	BillID string
-	Amount int64
+	ID           string
+	Status       string
+	BillID       string
+	Amount       int64
+	MenuItemName string
+	CategoryName string
 }
 
 // Source is the read side: which POS orders to backfill and their current
@@ -63,6 +66,7 @@ type Writer interface {
 	SetPOSBillCharge(ctx context.Context, posOrderID string, totalAmount int64, discountAmount int64) error
 	CompletePOSBill(ctx context.Context, input store.CompletePOSBillInput) (string, bool, error)
 	CancelPOSBill(ctx context.Context, posOrderID string, orderKey string, cancelledAt time.Time) (bool, error)
+	CreatePOSNativeOrder(ctx context.Context, input store.CreatePOSNativeOrderInput) (store.PaymentOrder, error)
 	UpsertPOSPayments(ctx context.Context, posOrderID string, payments []store.POSPaymentInput, fullSync bool) error
 }
 
@@ -103,6 +107,11 @@ type Summary struct {
 	OrdersByState     map[string]int
 	PaymentsByTypeKey map[string]*paymentTotal
 	Failures          []Failure
+
+	// NativeLinesToCreate are POS line items no payment_orders row
+	// represents yet (rung directly on the POS), recorded as DONE rows.
+	NativeLinesToCreate       int
+	NativeLinesToCreateAmount int64
 }
 
 type Runner struct {
@@ -131,6 +140,7 @@ type plan struct {
 	RowsToLink     int
 	RowsToDone     []SnapshotRow
 	RowsToCancel   []SnapshotRow
+	NativeLines    []possync.NativeLine
 	ChargeChanges  bool
 	NewPayments    int
 	FullSync       bool
@@ -294,7 +304,14 @@ func buildPlan(posOrderID string, order tossplace.Order, payments []tossplace.Pa
 			return plan{}, errors.New("completed order has no parseable completedAt or approved payment time")
 		}
 		p.CompletedAt = completedAt
-		live := 0
+		// Same diff the completed webhook runs (possync), against every
+		// recorded row whatever its status, so a re-run finds nothing new.
+		existing := make([]store.POSOrderLine, 0, len(snapshot.Rows))
+		for _, row := range snapshot.Rows {
+			existing = append(existing, store.POSOrderLine{MenuItemName: row.MenuItemName, CategoryName: row.CategoryName, Amount: row.Amount})
+		}
+		p.NativeLines = possync.NativeLines(order.LineItems, existing)
+		live := len(p.NativeLines)
 		for _, row := range snapshot.Rows {
 			switch row.Status {
 			case "READY", "ACKNOWLEDGED":
@@ -342,6 +359,24 @@ func (r *Runner) apply(ctx context.Context, p plan) (string, error) {
 	}
 	switch p.State {
 	case orderStateCompleted:
+		// Native lines go in before completing so the bill's PAID/CANCELLED
+		// status counts them; each row links to the bill ensured above.
+		orderedAt, _ := parseTossTime(p.Order.OpenedAt)
+		for _, native := range p.NativeLines {
+			vat := native.Amount / 11
+			if _, err := r.Writer.CreatePOSNativeOrder(ctx, store.CreatePOSNativeOrderInput{
+				MenuItemName:   native.MenuItemName,
+				CategoryName:   native.CategoryName,
+				Amount:         native.Amount,
+				OrderedAt:      orderedAt,
+				ApprovedAt:     p.CompletedAt,
+				VAT:            vat,
+				SuppliedAmount: native.Amount - vat,
+				POSOrderID:     p.POSOrderID,
+			}); err != nil {
+				return "CreatePOSNativeOrder", err
+			}
+		}
 		if _, _, err := r.Writer.CompletePOSBill(ctx, store.CompletePOSBillInput{POSOrderID: p.POSOrderID, CompletedAt: p.CompletedAt}); err != nil {
 			return "CompletePOSBill", err
 		}
@@ -417,9 +452,12 @@ func completionTime(order tossplace.Order, payments []tossplace.Payment) (time.T
 	return latest, !latest.IsZero()
 }
 
-// cancellationTime: tossplace.Order carries no cancelledAt, so use the
-// latest payment cancellation, else completedAt, else now (estimated).
+// cancellationTime is the order's cancelledAt, else the latest payment
+// cancellation, else completedAt, else now (estimated).
 func cancellationTime(order tossplace.Order, payments []tossplace.Payment, now func() time.Time) (time.Time, bool) {
+	if cancelledAt, ok := parseTossTime(order.CancelledAt); ok {
+		return cancelledAt, false
+	}
 	var latest time.Time
 	for _, payment := range payments {
 		if cancelledAt, ok := parseTossTime(payment.CancelledAt); ok && cancelledAt.After(latest) {
@@ -444,6 +482,14 @@ func sumAmount(rows []SnapshotRow, statuses ...string) int64 {
 				break
 			}
 		}
+	}
+	return total
+}
+
+func nativeAmount(lines []possync.NativeLine) int64 {
+	var total int64
+	for _, line := range lines {
+		total += line.Amount
 	}
 	return total
 }
@@ -478,7 +524,8 @@ func (p plan) line() string {
 		len(p.RowsToCancel), sumAmount(p.RowsToCancel, "DONE"),
 		p.Order.ChargePrice.TotalAmount, p.Order.ChargePrice.DiscountAmount)
 	if p.State == orderStateCompleted {
-		fmt.Fprintf(&b, " completed_at=%s", p.CompletedAt.UTC().Format(time.RFC3339))
+		fmt.Fprintf(&b, " completed_at=%s native_lines_to_create=%d(%d)",
+			p.CompletedAt.UTC().Format(time.RFC3339), len(p.NativeLines), nativeAmount(p.NativeLines))
 	}
 	if p.State == orderStateCancelled {
 		estimated := ""
@@ -504,6 +551,8 @@ func (s *Summary) add(p plan) {
 	s.RowsToDoneAmount += sumAmount(p.RowsToDone, "READY", "ACKNOWLEDGED")
 	s.RowsToCancel += len(p.RowsToCancel)
 	s.RowsToCancelDone += sumAmount(p.RowsToCancel, "DONE")
+	s.NativeLinesToCreate += len(p.NativeLines)
+	s.NativeLinesToCreateAmount += nativeAmount(p.NativeLines)
 	if p.ChargeChanges {
 		s.ChargesToSet++
 	}
@@ -539,6 +588,7 @@ func (s Summary) print(out io.Writer) {
 	fmt.Fprintf(out, "bills_to_create=%d rows_to_link=%d charges_to_set=%d\n", s.BillsToCreate, s.RowsToLink, s.ChargesToSet)
 	fmt.Fprintf(out, "rows_to_done=%d amount=%d (READY/ACKNOWLEDGED->DONE, 기존 메뉴 합산 기준 매출 증가분)\n", s.RowsToDone, s.RowsToDoneAmount)
 	fmt.Fprintf(out, "rows_to_cancelled=%d done_amount=%d (->CANCELLED, 그중 DONE 행 금액 = 매출 감소분)\n", s.RowsToCancel, s.RowsToCancelDone)
+	fmt.Fprintf(out, "native_lines_to_create=%d amount=%d (POS 직접 입력 메뉴 -> DONE 행 추가 = 매출 증가분)\n", s.NativeLinesToCreate, s.NativeLinesToCreateAmount)
 	fmt.Fprintf(out, "new_payments=%d\n", s.NewPayments)
 	keys := make([]string, 0, len(s.PaymentsByTypeKey))
 	for key := range s.PaymentsByTypeKey {
