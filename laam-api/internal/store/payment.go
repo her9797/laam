@@ -1126,9 +1126,13 @@ const paymentOrderStatsFilterWhere = `
 //
 //   - A bill whose payment list has been fully fetched from TossPlace
 //     (payments_synced_at set) contributes its APPROVED pos_payments, by
-//     their approved_at and source_type. This is what the customer paid —
-//     after POS discounts, split across card/cash/etc., without cancelled
-//     attempts — rather than the menu prices on its rows.
+//     their approved_at (the bill's completed_at when TossPlace sent none)
+//     and source_type. This is what the customer paid — after POS
+//     discounts, split across card/cash/etc., without cancelled attempts —
+//     rather than the menu prices on its rows. A CANCELLED (refunded) bill
+//     contributes nothing, even if a payment on it still reads APPROVED
+//     because its cancel event was missed; its menu rows are CANCELLED too,
+//     so it does not fall back to them either.
 //   - Every other DONE payment_orders row — no bill (orders from before
 //     bills existed) or a bill not synced yet — contributes its own amount
 //     by approved_at and payment_method, as before, so revenue is never
@@ -1136,12 +1140,14 @@ const paymentOrderStatsFilterWhere = `
 //     once it has them.
 const paymentStatsRevenueCTE = `
 	revenue AS (
-		SELECT p.approved_at AS paid_at, p.source_type AS method, p.amount
+		SELECT COALESCE(p.approved_at, b.completed_at) AS paid_at, p.source_type AS method, p.amount
 		FROM pos_payments p
 		JOIN pos_bills b ON b.id = p.bill_id
 		WHERE b.payments_synced_at IS NOT NULL
+			AND b.status <> 'CANCELLED'
 			AND p.state = 'APPROVED'
-			AND p.approved_at >= $1 AND p.approved_at < $2
+			AND COALESCE(p.approved_at, b.completed_at) >= $1
+			AND COALESCE(p.approved_at, b.completed_at) < $2
 		UNION ALL
 		SELECT approved_at, COALESCE(payment_method, ''), amount
 		FROM payment_orders

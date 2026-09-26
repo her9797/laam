@@ -107,6 +107,49 @@ func TestRouter_AdminPaymentBills_ListReturnsFilteredEnvelope(t *testing.T) {
 	}
 }
 
+func TestRouter_AdminPaymentBills_ListSearchesTableAndMenuName(t *testing.T) {
+	handler := resetServer(t)
+	base := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
+	seedPaymentBillViaSQL(t, "bill-a", "T-01", "CARD", 18000, base)
+	seedPaymentBillViaSQL(t, "bill-b", "T-02", "CASH", 9000, base.Add(time.Hour))
+
+	cases := []struct {
+		query string
+		want  []string
+	}{
+		{"q=t-01", []string{"bill-a"}},
+		{"q=beer", []string{"bill-b", "bill-a"}},
+		{"q=pizza", []string{}},
+	}
+	for _, tc := range cases {
+		rec := doRequest(t, handler, http.MethodGet, "/api/v1/admin/payment-bills?"+tc.query, nil, adminHeaders())
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want %d, body = %s", tc.query, rec.Code, http.StatusOK, rec.Body.String())
+		}
+		var envelope struct {
+			Items []struct {
+				ID string `json:"id"`
+			} `json:"items"`
+			Total int `json:"total"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+			t.Fatalf("%s decode: %v, body = %s", tc.query, err, rec.Body.String())
+		}
+		got := make([]string, 0, len(envelope.Items))
+		for _, item := range envelope.Items {
+			got = append(got, item.ID)
+		}
+		if envelope.Total != len(tc.want) || len(got) != len(tc.want) {
+			t.Fatalf("%s ids/total = %v/%d, want %v", tc.query, got, envelope.Total, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Fatalf("%s ids = %v, want %v", tc.query, got, tc.want)
+			}
+		}
+	}
+}
+
 func TestRouter_AdminPaymentBills_ListRejectsInvalidQuery(t *testing.T) {
 	handler := resetServer(t)
 

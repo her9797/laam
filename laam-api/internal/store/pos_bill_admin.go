@@ -18,7 +18,7 @@ const posBillMenuPreviewSize = 3
 type POSBillFilter struct {
 	Status     string     // "" = all | "OPEN" | "PAID" | "CANCELLED"
 	SourceType string     // "" = all | a pos_payments.source_type with an APPROVED payment on the bill
-	Search     string     // matched against table_number
+	Search     string     // matched against table_number or any of the bill's menu names
 	From       *time.Time // opened_at, inclusive
 	To         *time.Time // opened_at, exclusive
 	Page       int
@@ -57,7 +57,11 @@ func posBillFilterWhereClause(filter POSBillFilter) (string, []any) {
 		b.add("b.opened_at < " + b.bind(*filter.To))
 	}
 	if pattern := searchPatternOrEmpty(filter.Search); pattern != "" {
-		b.add("b.table_number ILIKE " + b.bind(pattern) + ` ESCAPE '\'`)
+		placeholder := b.bind(pattern)
+		b.add(`(b.table_number ILIKE ` + placeholder + ` ESCAPE '\' OR EXISTS (
+			SELECT 1 FROM payment_orders o
+			WHERE o.bill_id = b.id AND o.menu_item_name ILIKE ` + placeholder + ` ESCAPE '\'
+		))`)
 	}
 	return b.clause()
 }
