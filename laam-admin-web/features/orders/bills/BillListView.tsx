@@ -2,17 +2,13 @@
 
 import "@/i18n/client";
 
-import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useTranslation } from "react-i18next";
-
-import { RiArrowDownSLine } from "@remixicon/react";
 
 import { ListTotalCount } from "@/components/list/ListTotalCount";
 import { ListUpdatingRegion } from "@/components/list/ListUpdatingRegion";
 import { Pagination } from "@/components/list/Pagination";
 import { EmptyState, ErrorState, ListSkeletonState } from "@/components/states/PageStates";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -79,6 +75,37 @@ function groupPayments(bill: Bill, t: (key: string) => string): PaymentGroup[] {
   return [...groups.values()];
 }
 
+/**
+ * Groups a bill's menu names in first-seen order, so three highballs read as
+ * one "Highball ×3" line instead of three identical ones.
+ */
+function groupMenus(names: string[]): { name: string; count: number }[] {
+  const groups = new Map<string, number>();
+  for (const name of names) {
+    groups.set(name, (groups.get(name) ?? 0) + 1);
+  }
+  return [...groups].map(([name, count]) => ({ name, count }));
+}
+
+function BillMenus({ bill }: { bill: Bill }) {
+  const { t } = useTranslation("orders");
+  const menus = groupMenus(bill.menuPreview);
+
+  if (menus.length === 0) {
+    return <span className="text-muted-foreground">-</span>;
+  }
+
+  return (
+    <ul aria-label={t("billListColumnMenu")} className="flex flex-col gap-0.5">
+      {menus.map((menu) => (
+        <li key={menu.name}>
+          {menu.count > 1 ? t("billListMenuQuantity", { name: menu.name, count: menu.count }) : menu.name}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function BillPayments({ bill }: { bill: Bill }) {
   const { t, i18n } = useTranslation("orders");
   const numberFormat = new Intl.NumberFormat(resolveDateTimeLocale(i18n.language));
@@ -112,13 +139,12 @@ function BillPayments({ bill }: { bill: Bill }) {
 
 /**
  * Bill-grouped (계산서별) order history: one row per POS order, with its
- * payments summarised and its menu rows behind an expand toggle. Paging and
+ * payments summarised and every menu listed in its row. Paging and
  * failure handling follow the menu-row list (`OrderListPage`).
  */
 export function BillListView({ query, enabled, onPageChange, onPageSizeChange }: BillListViewProps) {
   const { t, i18n } = useTranslation("orders");
   const billsQuery = useRetainedListQuery(useBillsPageQuery(query, enabled), query);
-  const [expandedBillId, setExpandedBillId] = useState<string | null>(null);
 
   if (billsQuery.isLoading || (!enabled && !billsQuery.data)) {
     return <ListSkeletonState columns={COLUMN_COUNT} label={t("billListLoading")} />;
@@ -171,82 +197,45 @@ export function BillListView({ query, enabled, onPageChange, onPageSizeChange }:
               <TableRow>
                 <TableHead className="w-32">{t("billListColumnOpenedAt")}</TableHead>
                 <TableHead className="w-20">{t("common:columnTable")}</TableHead>
-                <TableHead className="w-32">{t("billListColumnMenu")}</TableHead>
+                <TableHead>{t("billListColumnMenu")}</TableHead>
                 <TableHead>{t("billListColumnPayments")}</TableHead>
                 <TableHead className="w-28">{t("billListColumnTotal")}</TableHead>
                 <TableHead className="w-24">{t("billListColumnStatus")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {bills.map((bill) => {
-                const expanded = expandedBillId === bill.id;
-                const panelId = `bill-menu-${bill.id}`;
-                const moreCount = bill.menuCount - bill.menuPreview.length;
-                const menuText = [
-                  bill.menuPreview.join(" · "),
-                  moreCount > 0 ? t("billListMenuMore", { count: moreCount }) : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ");
-
-                return (
-                  <Fragment key={bill.id}>
-                    <TableRow>
-                      <TableCell className="align-top">
-                        <Link
-                          href={`/orders/bills/${encodeURIComponent(bill.id)}`}
-                          className="text-foreground underline underline-offset-4 hover:font-bold"
-                        >
-                          {formatDateTime(bill.openedAt, i18n.language)}
-                        </Link>
-                        {bill.status === "PAID" && bill.completedAt ? (
-                          <div className="text-xs text-muted-foreground">
-                            {t("billListCompletedAt", {
-                              time: formatDateTime(bill.completedAt, i18n.language),
-                            })}
-                          </div>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="align-top">{bill.tableNumber || "-"}</TableCell>
-                      <TableCell className="align-top">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="-ml-2"
-                          aria-expanded={expanded}
-                          aria-controls={panelId}
-                          disabled={bill.menuCount === 0}
-                          onClick={() => setExpandedBillId(expanded ? null : bill.id)}
-                        >
-                          {t("billListMenuCount", { count: bill.menuCount })}
-                          <RiArrowDownSLine
-                            data-icon="inline-end"
-                            aria-hidden="true"
-                            className={cn("transition-transform", expanded && "rotate-180")}
-                          />
-                        </Button>
-                      </TableCell>
-                      <TableCell className="align-top whitespace-normal">
-                        <BillPayments bill={bill} />
-                      </TableCell>
-                      <TableCell className="align-top">
-                        {formatCurrencyKRW(bill.totalAmount, i18n.language)}
-                      </TableCell>
-                      <TableCell className={cn("align-top", STATUS_COLOR_CLASS[bill.status])}>
-                        {t(STATUS_LABEL_KEY[bill.status])}
-                      </TableCell>
-                    </TableRow>
-                    {expanded ? (
-                      <TableRow id={panelId} className="bg-muted/30 hover:bg-muted/30">
-                        <TableCell colSpan={COLUMN_COUNT} className="whitespace-normal text-muted-foreground">
-                          {menuText || "-"}
-                        </TableCell>
-                      </TableRow>
+              {bills.map((bill) => (
+                <TableRow key={bill.id}>
+                  <TableCell className="align-top">
+                    <Link
+                      href={`/orders/bills/${encodeURIComponent(bill.id)}`}
+                      className="text-foreground underline underline-offset-4 hover:font-bold"
+                    >
+                      {formatDateTime(bill.openedAt, i18n.language)}
+                    </Link>
+                    {bill.status === "PAID" && bill.completedAt ? (
+                      <div className="text-xs text-muted-foreground">
+                        {t("billListCompletedAt", {
+                          time: formatDateTime(bill.completedAt, i18n.language),
+                        })}
+                      </div>
                     ) : null}
-                  </Fragment>
-                );
-              })}
+                  </TableCell>
+                  <TableCell className="align-top">{bill.tableNumber || "-"}</TableCell>
+                  <TableCell className="align-top whitespace-normal">
+                    <BillMenus bill={bill} />
+                  </TableCell>
+                  <TableCell className="align-top whitespace-normal">
+                    <BillPayments bill={bill} />
+                  </TableCell>
+                  <TableCell className="align-top">
+                    {formatCurrencyKRW(bill.totalAmount, i18n.language)}
+                  </TableCell>
+                  <TableCell className={cn("align-top", STATUS_COLOR_CLASS[bill.status])}>
+                    {t(STATUS_LABEL_KEY[bill.status])}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         )}

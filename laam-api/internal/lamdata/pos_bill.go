@@ -10,7 +10,9 @@ type POSBillPaymentSummary struct {
 }
 
 // POSBill is one row of the admin bill list: a TossPlace (POS) order with
-// the menu rows and payments recorded against it.
+// the menu rows and payments recorded against it. MenuCount and MenuPreview
+// cover every menu on the bill except cancelled ones (all of them on a
+// cancelled bill), oldest first.
 type POSBill struct {
 	ID          string `json:"id"`
 	POSOrderID  string `json:"posOrderId"`

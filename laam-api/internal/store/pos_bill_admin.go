@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"strconv"
 	"strings"
 	"time"
 
@@ -10,8 +9,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// posBillMenuPreviewSize is how many menu names each bill-list row carries.
-const posBillMenuPreviewSize = 3
+// posBillListedMenuCondition picks the menu rows a bill-list row names and
+// counts: every row on the bill except cancelled ones, unless the whole bill
+// was cancelled, in which case its cancelled rows are what was ordered.
+const posBillListedMenuCondition = `(o.status <> 'CANCELLED' OR b.status = 'CANCELLED')`
 
 // POSBillFilter is the parsed, validated filter/page input for
 // ListPOSBillsPage.
@@ -68,7 +69,7 @@ func posBillFilterWhereClause(filter POSBillFilter) (string, []any) {
 
 // ListPOSBillsPage lists bills for the admin bill screen, newest opened
 // first, with the total matching count. Each row carries its payments in
-// summary form and a short preview of its menu names.
+// summary form and the names of its menus.
 func (r *Repository) ListPOSBillsPage(ctx context.Context, filter POSBillFilter) ([]lamdata.POSBill, int, error) {
 	page := clampListPage(filter.Page)
 	pageSize := clampListPageSize(filter.PageSize)
@@ -98,12 +99,11 @@ func (r *Repository) ListPOSBillsPage(ctx context.Context, filter POSBillFilter)
 			b.completed_at,
 			b.cancelled_at,
 			`+posBillAmountColumns+`,
-			(SELECT COUNT(*) FROM payment_orders o WHERE o.bill_id = b.id),
+			(SELECT COUNT(*) FROM payment_orders o WHERE o.bill_id = b.id AND `+posBillListedMenuCondition+`),
 			ARRAY(
 				SELECT o.menu_item_name FROM payment_orders o
-				WHERE o.bill_id = b.id
+				WHERE o.bill_id = b.id AND `+posBillListedMenuCondition+`
 				ORDER BY o.created_at, o.id
-				LIMIT `+strconv.Itoa(posBillMenuPreviewSize)+`
 			)
 		FROM pos_bills b
 	`+where+`

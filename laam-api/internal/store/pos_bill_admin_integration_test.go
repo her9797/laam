@@ -171,8 +171,9 @@ func TestRepository_ListPOSBillsPage_SummarizesEachBillNewestFirst(t *testing.T)
 	if paid.TotalAmount != 28000 || paid.PaidAmount != 28000 {
 		t.Errorf("bill-1 total/paid = %d/%d, want 28000/28000 (POS charge, approved payments)", paid.TotalAmount, paid.PaidAmount)
 	}
-	if paid.MenuCount != 4 || !reflect.DeepEqual(paid.MenuPreview, []string{"Beer", "Pizza", "Fries"}) {
-		t.Errorf("bill-1 menu = %d %v, want 4 [Beer Pizza Fries]", paid.MenuCount, paid.MenuPreview)
+	// Every menu on the bill, in order, without the cancelled Fries.
+	if paid.MenuCount != 3 || !reflect.DeepEqual(paid.MenuPreview, []string{"Beer", "Pizza", "Soda"}) {
+		t.Errorf("bill-1 menu = %d %v, want 3 [Beer Pizza Soda]", paid.MenuCount, paid.MenuPreview)
 	}
 	if len(paid.Payments) != 3 {
 		t.Fatalf("bill-1 payments = %+v, want 3", paid.Payments)
@@ -192,10 +193,17 @@ func TestRepository_ListPOSBillsPage_SummarizesEachBillNewestFirst(t *testing.T)
 	if open.Payments == nil || len(open.Payments) != 0 {
 		t.Errorf("bill-2 payments = %#v, want an empty non-nil slice", open.Payments)
 	}
+	if open.MenuCount != 1 || !reflect.DeepEqual(open.MenuPreview, []string{"Highball"}) {
+		t.Errorf("bill-2 menu = %d %v, want 1 [Highball] (cancelled Nachos left out)", open.MenuCount, open.MenuPreview)
+	}
 
 	cancelled := items[2]
 	if cancelled.Status != "CANCELLED" || cancelled.CancelledAt != "2026-01-09T10:00:00Z" || cancelled.PaidAmount != 0 {
 		t.Errorf("bill-3 = %+v, want CANCELLED with nothing paid", cancelled)
+	}
+	// A cancelled bill still shows what was ordered on it.
+	if cancelled.MenuCount != 1 || !reflect.DeepEqual(cancelled.MenuPreview, []string{"Beer"}) {
+		t.Errorf("bill-3 menu = %d %v, want 1 [Beer]", cancelled.MenuCount, cancelled.MenuPreview)
 	}
 }
 

@@ -29,7 +29,7 @@ const PAID_BILL: Bill = {
     { sourceType: "CARD", paymentMethod: "CARD", amount: 10000, state: "CANCELLED" },
   ],
   menuCount: 5,
-  menuPreview: ["Beer", "Cider", "Wine"],
+  menuPreview: ["Beer", "Cider", "Beer", "Wine", "Beer"],
 };
 
 const OPEN_BILL: Bill = {
@@ -222,29 +222,23 @@ describe("BillListView", () => {
     expect(within(rowOf(OPEN_BILL)).getByText("-")).toBeInTheDocument();
   });
 
-  it("expands a row to show its menu preview with the remaining count", () => {
+  it("lists every menu of a bill in its row, grouping repeats", () => {
     renderView();
 
-    const toggle = within(rowOf(PAID_BILL)).getByRole("button", { name: "메뉴 5개" });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText("Beer · Cider · Wine 외 2건")).not.toBeInTheDocument();
-
-    fireEvent.click(toggle);
-
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    const panel = screen.getByText("Beer · Cider · Wine 외 2건");
-    expect(panel.closest("[id]")).toHaveAttribute("id", toggle.getAttribute("aria-controls"));
-
-    fireEvent.click(toggle);
-    expect(screen.queryByText("Beer · Cider · Wine 외 2건")).not.toBeInTheDocument();
+    const menuCell = within(rowOf(PAID_BILL)).getByRole("list", { name: "메뉴" });
+    const items = within(menuCell).getAllByRole("listitem").map((item) => item.textContent);
+    expect(items).toEqual(["Beer ×3", "Cider", "Wine"]);
+    expect(within(rowOf(OPEN_BILL)).getByRole("listitem")).toHaveTextContent("Highball");
+    expect(screen.queryByRole("button", { name: /메뉴 d+개/ })).not.toBeInTheDocument();
   });
 
-  it("omits the remaining count when the preview covers every menu row", () => {
+  it("shows a dash when a bill has no menus", () => {
+    mockQuery({ data: pageFixture([{ ...OPEN_BILL, menuCount: 0, menuPreview: [] }]) });
+
     renderView();
 
-    fireEvent.click(within(rowOf(OPEN_BILL)).getByRole("button", { name: "메뉴 1개" }));
-
-    expect(screen.getByText("Highball")).toBeInTheDocument();
+    expect(within(rowOf(OPEN_BILL)).queryByRole("list", { name: "메뉴" })).not.toBeInTheDocument();
+    expect(within(rowOf(OPEN_BILL)).getAllByText("-").length).toBeGreaterThan(0);
   });
 
   it("calls onPageChange from the pagination", () => {
