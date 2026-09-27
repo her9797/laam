@@ -317,8 +317,7 @@ export const ko = {
     billListStatusPaid: "결제 완료",
     billListStatusCancelled: "취소",
     billListCompletedAt: "결제 {{time}}",
-    billListMenuCount: "메뉴 {{count}}개",
-    billListMenuMore: "외 {{count}}건",
+    billListMenuQuantity: "{{name}} ×{{count}}",
     billListPaymentCancelled: "{{payment}} 취소",
     billListPaymentUnconfirmed: "{{payment}} 상태 미확인",
     // bill detail
@@ -1130,8 +1129,7 @@ export const en = {
     billListStatusPaid: "Paid",
     billListStatusCancelled: "Cancelled",
     billListCompletedAt: "Paid {{time}}",
-    billListMenuCount: "Menu items: {{count}}",
-    billListMenuMore: "+{{count}} more",
+    billListMenuQuantity: "{{name}} ×{{count}}",
     billListPaymentCancelled: "{{payment}} cancelled",
     billListPaymentUnconfirmed: "{{payment}} status unconfirmed",
     // bill detail
