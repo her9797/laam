@@ -128,6 +128,11 @@ type Summary struct {
 	RowsToMoveOut int
 	RowsToAdopt   int
 
+	// NativesToReplace are legacy POS-native rows that duplicate a moved
+	// web row: deleted, and the web row paid on their bill instead.
+	NativesToReplace       int
+	NativesToReplaceAmount int64
+
 	// PaymentMismatches are bills that end up PAID but whose APPROVED
 	// payments are missing or do not add up to the POS charge; their
 	// payment list is stored but not marked synced.
@@ -174,6 +179,12 @@ type plan struct {
 	// PaymentMismatch is why the payments do not account for a PAID bill
 	// ("" when they do); such a bill is not marked payment-synced.
 	PaymentMismatch string
+
+	// Replacements are legacy POS-native rows replaced by the moved web
+	// row they duplicate (see planLegacyNativeReplacements); ReplacedAmount
+	// is their total, which the swap leaves unchanged as revenue.
+	Replacements   []store.POSNativeReplacement
+	ReplacedAmount int64
 }
 
 func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
@@ -298,6 +309,13 @@ func (r *Runner) planOrder(ctx context.Context, posOrderID string, delay time.Du
 		if err != nil {
 			return plan{}, "PlanCompletion", err
 		}
+		// Backfill-only: legacy POS-native duplicates of moved web rows.
+		replacements, err := planLegacyNativeReplacements(ctx, completion,
+			possync.OriginLookup(r.Source, pacedOrders{runner: r, delay: delay}))
+		if err != nil {
+			return plan{}, "PlanLegacyNativeReplacements", err
+		}
+		completion.Input.ReplaceNatives = replacements
 	}
 
 	now := time.Now
@@ -365,6 +383,10 @@ func buildPlan(posOrderID string, order tossplace.Order, payments []tossplace.Pa
 		// already DONE count as matched lines, so a re-run finds nothing new.
 		p.Completion = completion
 		p.NativeLines = completion.Plan.Natives
+		p.Replacements = completion.Input.ReplaceNatives
+		for _, pair := range p.Replacements {
+			p.ReplacedAmount += completion.Rows[pair.NativeRowID].Amount
+		}
 		settled := map[string]bool{}
 		for _, id := range completion.Plan.CompleteRowIDs {
 			settled[id] = true
@@ -606,6 +628,14 @@ func (p plan) line() string {
 		fmt.Fprintf(&b, " completed_at=%s native_lines_to_create=%d(%d) moved_out=%d adopted=%d natives=%d",
 			p.CompletedAt.UTC().Format(time.RFC3339), len(p.NativeLines), nativeAmount(p.NativeLines),
 			p.RowsToMoveOut, p.RowsToAdopt, len(p.NativeLines))
+		fmt.Fprintf(&b, " replaced_natives=%d", len(p.Replacements))
+		if len(p.Replacements) > 0 {
+			ids := make([]string, 0, len(p.Replacements))
+			for _, pair := range p.Replacements {
+				ids = append(ids, pair.WebRowID+"<-"+pair.NativeRowID)
+			}
+			fmt.Fprintf(&b, "[%s](%d)", strings.Join(ids, ","), p.ReplacedAmount)
+		}
 	}
 	if p.State == orderStateCancelled {
 		estimated := ""
@@ -638,6 +668,8 @@ func (s *Summary) add(p plan) {
 	s.NativeLinesToCreateAmount += nativeAmount(p.NativeLines)
 	s.RowsToMoveOut += p.RowsToMoveOut
 	s.RowsToAdopt += p.RowsToAdopt
+	s.NativesToReplace += len(p.Replacements)
+	s.NativesToReplaceAmount += p.ReplacedAmount
 	if p.ChargeChanges {
 		s.ChargesToSet++
 	}
@@ -678,6 +710,7 @@ func (s Summary) print(out io.Writer) {
 	fmt.Fprintf(out, "rows_to_cancelled=%d done_amount=%d (->CANCELLED, 그중 DONE 행 금액 = 매출 감소분)\n", s.RowsToCancel, s.RowsToCancelDone)
 	fmt.Fprintf(out, "native_lines_to_create=%d amount=%d (POS 직접 입력 메뉴 -> DONE 행 추가 = 매출 증가분)\n", s.NativeLinesToCreate, s.NativeLinesToCreateAmount)
 	fmt.Fprintf(out, "rows_moved_out=%d rows_adopted=%d (POS '한 번에 결제'로 다른 POS 주문으로 옮겨진 메뉴: 원래 계산서에서 빠지고, 결제된 주문의 계산서에서 DONE)\n", s.RowsToMoveOut, s.RowsToAdopt)
+	fmt.Fprintf(out, "replaced_natives=%d amount=%d (과거 코드가 이동된 웹 주문을 POS 직접 입력으로 중복 기록한 행: 삭제하고 웹 주문을 그 계산서에서 DONE, 매출 변화 없음)\n", s.NativesToReplace, s.NativesToReplaceAmount)
 	fmt.Fprintf(out, "new_payments=%d\n", s.NewPayments)
 	fmt.Fprintf(out, "payment_mismatch=%d (PAID인데 APPROVED 결제가 없거나 합계가 POS 청구액과 달라 결제 동기화 완료로 표시하지 않음)\n", s.PaymentMismatches)
 	keys := make([]string, 0, len(s.PaymentsByTypeKey))
