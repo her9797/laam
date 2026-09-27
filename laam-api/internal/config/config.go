@@ -32,6 +32,12 @@ type Config struct {
 	// as "sending is disabled", not an error.
 	SupabaseURL          string
 	SupabaseBroadcastKey string
+	// SupabaseAnonKey is the PUBLIC Supabase anon/publishable key
+	// (SUPABASE_ANON_KEY). The POS plugin uses it to open its Realtime
+	// websocket (see GET /api/v1/pos-plugin/realtime-config). It is the
+	// same value the web clients already ship to browsers — never the
+	// server-only broadcast/storage keys around it.
+	SupabaseAnonKey string
 	// SupabaseStorageKey is a server-only secret key for the private expense
 	// receipt photo bucket (see internal/objectstore), reusing SupabaseURL.
 	// Empty disables the receipt image endpoints (503); receipts themselves
@@ -141,6 +147,7 @@ func Load() Config {
 		YouTubeAPIBaseURL:      youTubeAPIBaseURL,
 		SupabaseURL:            os.Getenv("SUPABASE_URL"),
 		SupabaseBroadcastKey:   os.Getenv("SUPABASE_BROADCAST_KEY"),
+		SupabaseAnonKey:        os.Getenv("SUPABASE_ANON_KEY"),
 		SupabaseStorageKey:     os.Getenv("SUPABASE_STORAGE_KEY"),
 		ExpenseReceiptBucket:   expenseReceiptBucket,
 		QRSigningSecret:        os.Getenv("QR_SIGNING_SECRET"),

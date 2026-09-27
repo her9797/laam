@@ -78,6 +78,7 @@ func registerPaymentRoutes(mux *http.ServeMux, repository *store.Repository, cfg
 				writeStoreError(w, err)
 				return
 			}
+			sendPOSPluginBroadcastAsync(broadcaster, notify.POSOrderReadyEvent)
 		} else {
 			order = syncUnpaidOrderToPOS(r, repository, posClient, order)
 			if order.POSSyncStatus == "SUCCEEDED" {
@@ -226,6 +227,7 @@ func registerPaymentRoutes(mux *http.ServeMux, repository *store.Repository, cfg
 				writeStoreError(w, err)
 				return
 			}
+			sendPOSPluginBroadcastAsync(broadcaster, notify.POSOrderReadyEvent)
 		} else {
 			order = syncPaymentOrderToPOS(r, repository, posClient, order)
 		}

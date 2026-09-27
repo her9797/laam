@@ -108,7 +108,7 @@ deploy_api() {
     --min-instances=0 \
     --max-instances=1 \
     --set-secrets="$api_secrets" \
-    --set-env-vars="ALLOWED_ORIGIN=*,CUSTOMER_WEB_BASE_URL=$customer_web_base_url,POS_ORDER_PROVIDER=$POS_ORDER_PROVIDER" \
+    --set-env-vars="ALLOWED_ORIGIN=*,CUSTOMER_WEB_BASE_URL=$customer_web_base_url,POS_ORDER_PROVIDER=$POS_ORDER_PROVIDER,SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
     --quiet
 }
 
