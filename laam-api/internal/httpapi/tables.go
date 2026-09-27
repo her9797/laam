@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/her9797/laam/laam-api/internal/config"
+	"github.com/her9797/laam/laam-api/internal/notify"
 	"github.com/her9797/laam/laam-api/internal/store"
 )
 
@@ -47,7 +48,9 @@ type renameQrTableRequest struct {
 	ID string `json:"id"`
 }
 
-func registerTableRoutes(mux *http.ServeMux, repository *store.Repository, cfg config.Config) {
+// registerTableRoutes takes broadcaster to wake the POS plugin when a table
+// sync is requested (see sendPOSPluginBroadcastAsync in router.go).
+func registerTableRoutes(mux *http.ServeMux, repository *store.Repository, cfg config.Config, broadcaster *notify.Broadcaster) {
 	mux.HandleFunc("/api/v1/admin/tables", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
 		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
 			return
@@ -117,6 +120,13 @@ func registerTableRoutes(mux *http.ServeMux, repository *store.Repository, cfg c
 			if err != nil {
 				writeStoreError(w, err)
 				return
+			}
+			// A request the plugin has not claimed yet gets a wake-up
+			// signal. Re-sending it when the operator presses the button
+			// again on a still-PENDING request is harmless and recovers a
+			// signal the plugin may have missed.
+			if sync.Status == "PENDING" {
+				sendPOSPluginBroadcastAsync(broadcaster, notify.POSTableSyncRequestedEvent)
 			}
 			status := http.StatusOK
 			if created {

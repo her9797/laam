@@ -41,7 +41,26 @@ const (
 	// completed (payment confirmed and stored). A repeated confirmation of
 	// an already-completed order is idempotent and never republishes it.
 	NewOrderEvent = "new_order"
+
+	// POSPluginTopic is the public Broadcast channel the POS plugin worker
+	// listens on (joined as "realtime:pos-plugin") so it only calls its
+	// claim endpoints when there is work, instead of polling laam-api
+	// every few seconds. These names are a contract with laam-pos-plugin
+	// and GET /api/v1/pos-plugin/realtime-config; do not rename them.
+	POSPluginTopic = "pos-plugin"
+	// POSOrderReadyEvent is sent whenever a payment order becomes
+	// claimable through POST /api/v1/pos-plugin/orders/claim.
+	POSOrderReadyEvent = "order_ready"
+	// POSTableSyncRequestedEvent is sent when an admin table-sync request
+	// is waiting for POST /api/v1/pos-plugin/tables/claim.
+	POSTableSyncRequestedEvent = "table_sync_requested"
 )
+
+// POSPluginPayload is the POS plugin signal body: only the event name,
+// never order or table data, since the channel is public.
+type POSPluginPayload struct {
+	Type string `json:"type"`
+}
 
 // NewRequestPayload is intentionally the entire message body: a bare
 // signal with no request data, per the plan's public-channel design (4.2).

@@ -32,7 +32,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 	})
 	registerPaymentRoutes(mux, repository, cfg, broadcaster)
 	registerSongRoutes(mux, repository, cfg)
-	registerTableRoutes(mux, repository, cfg)
+	registerTableRoutes(mux, repository, cfg, broadcaster)
 	registerTossPlaceWebhookRoutes(mux, repository, cfg)
 	registerExpenseRoutes(mux, repository, cfg)
 	registerPaymentBillRoutes(mux, repository, cfg)
@@ -1349,6 +1349,20 @@ func sendNewOrderBroadcastAsync(broadcaster *notify.Broadcaster) {
 		defer cancel()
 		if err := broadcaster.Send(ctx, notify.OrdersTopic, notify.NewOrderEvent, notify.NewOrderPayload{Type: notify.NewOrderEvent}); err != nil {
 			log.Printf("notify: failed to send new-order broadcast: %v", err)
+		}
+	}()
+}
+
+// sendPOSPluginBroadcastAsync wakes the POS plugin worker so it calls the
+// matching claim endpoint now instead of on its next fallback poll. Same
+// best-effort contract as sendNewOrderBroadcastAsync: the work is already
+// stored and claimable, so a lost signal only delays it until that poll.
+func sendPOSPluginBroadcastAsync(broadcaster *notify.Broadcaster, event string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := broadcaster.Send(ctx, notify.POSPluginTopic, event, notify.POSPluginPayload{Type: event}); err != nil {
+			log.Printf("notify: failed to send POS plugin %s broadcast: %v", event, err)
 		}
 	}()
 }
