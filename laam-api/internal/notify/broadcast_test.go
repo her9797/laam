@@ -108,3 +108,37 @@ func TestBroadcaster_Send_PostsNewOrderEventToTheOrdersTopic(t *testing.T) {
 		t.Errorf("body = %+v, want a content-free {\"type\":\"new_order\"} signal", gotBody)
 	}
 }
+
+// TestBroadcaster_Send_PostsPOSPluginEventsToThePOSPluginTopic pins the
+// POS plugin half of the channel contract: laam-pos-plugin joins
+// "realtime:pos-plugin" and reacts to these two event names, and the
+// payload must stay a content-free signal because the channel is public.
+func TestBroadcaster_Send_PostsPOSPluginEventsToThePOSPluginTopic(t *testing.T) {
+	for event, wantPath := range map[string]string{
+		POSOrderReadyEvent:         "/realtime/v1/api/broadcast/pos-plugin/events/order_ready",
+		POSTableSyncRequestedEvent: "/realtime/v1/api/broadcast/pos-plugin/events/table_sync_requested",
+	} {
+		var (
+			gotPath string
+			gotBody map[string]any
+		)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotPath = r.URL.Path
+			_ = json.NewDecoder(r.Body).Decode(&gotBody)
+			w.WriteHeader(http.StatusAccepted)
+		}))
+
+		b := NewBroadcaster(server.URL, "test-broadcast-key")
+		err := b.Send(context.Background(), POSPluginTopic, event, POSPluginPayload{Type: event})
+		server.Close()
+		if err != nil {
+			t.Fatalf("Send(%s) error = %v", event, err)
+		}
+		if gotPath != wantPath {
+			t.Errorf("path = %q, want %q", gotPath, wantPath)
+		}
+		if len(gotBody) != 1 || gotBody["type"] != event {
+			t.Errorf("body = %+v, want only {\"type\":%q}", gotBody, event)
+		}
+	}
+}

@@ -566,6 +566,25 @@ func (r *Repository) GetPOSTableSync(ctx context.Context, id string) (POSTableSy
 	return sync, nil
 }
 
+// HasPendingPOSTableSync reports whether a table sync request is waiting
+// for the POS plugin to claim it. It is read-only: it neither claims the
+// request nor writes the TIMED_OUT transition, it just ignores requests
+// older than the timeout, which ClaimPOSTableSync would expire first.
+func (r *Repository) HasPendingPOSTableSync(ctx context.Context) (bool, error) {
+	var pending bool
+	if err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM pos_table_sync_requests
+			WHERE status = 'PENDING'
+				AND requested_at >= NOW() - make_interval(secs => $1)
+		)
+	`, posTableSyncTimeoutSeconds).Scan(&pending); err != nil {
+		return false, err
+	}
+	return pending, nil
+}
+
 // ClaimPOSTableSync hands the oldest waiting request to the POS plugin and
 // marks it RUNNING. It returns ErrNotFound when nothing is waiting.
 func (r *Repository) ClaimPOSTableSync(ctx context.Context) (string, error) {

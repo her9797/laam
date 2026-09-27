@@ -174,7 +174,7 @@ node scripts/local-payment-bills/mock-tossplace/run-scenario.mjs reset  # mock-*
 | `CLOUD_RUN_WEB_DOMAIN` | `www.barlaam.store` | laam-web 커스텀 도메인. 빈 문자열이면 매핑 확인·생성을 생략하고, laam-api에 넘기는 `CUSTOMER_WEB_BASE_URL`(관리자 테이블 QR이 여는 주소)도 이미 배포된 laam-web의 Cloud Run URL로 대체된다 |
 | `CLOUD_RUN_SERVICE_ACCOUNT` | `lam-cloud-run@<project>.iam.gserviceaccount.com` | 모든 Cloud Run 서비스의 실행 서비스 계정 |
 | `CLOUD_RUN_NEXT_PUBLIC_SUPABASE_URL` | 현재 운영 Supabase 프로젝트 URL | laam-admin-web 빌드 시점에 번들에 박히는 값 |
-| `CLOUD_RUN_NEXT_PUBLIC_SUPABASE_ANON_KEY` | 현재 운영 Supabase anon key | 위와 동일. anon/publishable key는 브라우저에 공개되도록 설계된 값이라 스크립트에 기본값으로 두어도 안전하다(RLS로 보호됨) |
+| `CLOUD_RUN_NEXT_PUBLIC_SUPABASE_ANON_KEY` | 현재 운영 Supabase anon key | 위와 동일. anon/publishable key는 브라우저에 공개되도록 설계된 값이라 스크립트에 기본값으로 두어도 안전하다(RLS로 보호됨). 같은 값을 laam-api에도 일반 환경변수 `SUPABASE_ANON_KEY`로 넘겨 POS 플러그인 Realtime 설정(`GET /api/v1/pos-plugin/realtime-config`)에 쓴다 |
 
 ### 배포 후 확인
 

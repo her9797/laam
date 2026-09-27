@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/her9797/laam/laam-api/internal/config"
@@ -35,7 +36,102 @@ type failPOSPluginOrderRequest struct {
 	Error      string `json:"error"`
 }
 
+// tableSyncPendingHeaderName lets the plugin's fallback order poll learn
+// whether an admin table sync is waiting, so it only calls
+// POST /api/v1/pos-plugin/tables/claim when there is something to claim.
+const tableSyncPendingHeaderName = "X-Table-Sync-Pending"
+
+// tableSyncPendingHeaderValue answers "1" when a table sync request waits
+// to be claimed. A failed lookup also answers "1": the worst case is one
+// extra tables/claim call, while "0" could hide a sync until it times out.
+func tableSyncPendingHeaderValue(r *http.Request, repository *store.Repository) string {
+	pending, err := repository.HasPendingPOSTableSync(r.Context())
+	if err != nil {
+		log.Printf("pos-plugin: failed to check pending table sync: %v", err)
+		return "1"
+	}
+	if pending {
+		return "1"
+	}
+	return "0"
+}
+
+const (
+	// posPluginRealtimeFallbackPollSeconds is how often the plugin still
+	// polls while its Realtime socket is up: it covers lost signals and
+	// failed orders that become claimable again after their retry delay
+	// (no signal is sent for those).
+	posPluginRealtimeFallbackPollSeconds = 60
+	// posPluginPollingOnlySeconds keeps the plugin's original fast polling
+	// when Realtime is not configured.
+	posPluginPollingOnlySeconds = 3
+)
+
+type posPluginRealtimeEvents struct {
+	OrderReady         string `json:"orderReady"`
+	TableSyncRequested string `json:"tableSyncRequested"`
+}
+
+type posPluginRealtimeConfig struct {
+	Enabled             bool                     `json:"enabled"`
+	URL                 string                   `json:"url,omitempty"`
+	APIKey              string                   `json:"apiKey,omitempty"`
+	Topic               string                   `json:"topic,omitempty"`
+	Events              *posPluginRealtimeEvents `json:"events,omitempty"`
+	FallbackPollSeconds int                      `json:"fallbackPollSeconds"`
+}
+
+// buildPOSPluginRealtimeConfig tells the plugin how to open its Supabase
+// Realtime websocket. It only ever exposes the PUBLIC anon key. Realtime is
+// reported disabled unless laam-api can also send the signals (broadcast
+// key set) — otherwise the plugin would wait on a socket nobody writes to.
+func buildPOSPluginRealtimeConfig(cfg config.Config) posPluginRealtimeConfig {
+	disabled := posPluginRealtimeConfig{Enabled: false, FallbackPollSeconds: posPluginPollingOnlySeconds}
+	anonKey := strings.TrimSpace(cfg.SupabaseAnonKey)
+	if anonKey == "" || strings.TrimSpace(cfg.SupabaseBroadcastKey) == "" {
+		return disabled
+	}
+	base, err := url.Parse(strings.TrimSpace(cfg.SupabaseURL))
+	if err != nil || base.Host == "" {
+		return disabled
+	}
+	socket := url.URL{Host: base.Host, Path: "/realtime/v1/websocket"}
+	switch base.Scheme {
+	case "https":
+		socket.Scheme = "wss"
+	case "http":
+		socket.Scheme = "ws"
+	default:
+		return disabled
+	}
+	socket.RawQuery = url.Values{"apikey": {anonKey}, "vsn": {"1.0.0"}}.Encode()
+
+	return posPluginRealtimeConfig{
+		Enabled: true,
+		URL:     socket.String(),
+		APIKey:  anonKey,
+		Topic:   "realtime:" + notify.POSPluginTopic,
+		Events: &posPluginRealtimeEvents{
+			OrderReady:         notify.POSOrderReadyEvent,
+			TableSyncRequested: notify.POSTableSyncRequestedEvent,
+		},
+		FallbackPollSeconds: posPluginRealtimeFallbackPollSeconds,
+	}
+}
+
 func registerPOSPluginRoutes(mux *http.ServeMux, repository *store.Repository, cfg config.Config, broadcaster *notify.Broadcaster) {
+	mux.HandleFunc("/api/v1/pos-plugin/realtime-config", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
+		if !requirePOSPluginAuth(w, r, cfg.POSPluginAPIToken) {
+			return
+		}
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowed(w)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		writeJSON(w, http.StatusOK, buildPOSPluginRealtimeConfig(cfg))
+	}))
+
 	mux.HandleFunc("/api/v1/pos-plugin/diagnostics", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeMethodNotAllowed(w)
@@ -58,10 +154,14 @@ func registerPOSPluginRoutes(mux *http.ServeMux, repository *store.Repository, c
 			writeMethodNotAllowed(w)
 			return
 		}
+		w.Header().Set("Access-Control-Expose-Headers", tableSyncPendingHeaderName)
 		if !posPluginClaimsEnabled(cfg.POSOrderProvider) {
+			// Table sync requests can only be created in plugin mode.
+			w.Header().Set(tableSyncPendingHeaderName, "0")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		w.Header().Set(tableSyncPendingHeaderName, tableSyncPendingHeaderValue(r, repository))
 
 		claim, err := repository.ClaimPendingPOSPluginOrder(r.Context())
 		if errors.Is(err, store.ErrNotFound) {
