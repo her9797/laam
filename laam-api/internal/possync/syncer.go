@@ -32,19 +32,21 @@ func New(repo *store.Repository, client *tossplace.Client) *Syncer {
 	return &Syncer{repo: repo, client: client}
 }
 
-// CompleteOrder applies order.order.completed.v1: every web order on the
-// POS order becomes DONE, items rung up directly on the POS are recorded
-// as POS-native rows, the bill is marked PAID with the POS's charged total,
-// and the bill's payments are fetched.
+// CompleteOrder applies order.order.completed.v1. The order is fetched
+// first because TossPlace is the source of truth: an order it reports
+// CANCELLED (e.g. a completed delivery arriving after the cancellation)
+// goes through CancelOrder instead.
 //
-// The order is fetched first because TossPlace is the source of truth for
-// its state: an order it reports CANCELLED (e.g. a completed delivery
-// arriving after the cancellation) goes through CancelOrder instead.
+// Otherwise the completion is planned from the order's final line items
+// (see PlanOrderCompletion) — TossPlace's "한 번에 결제" can move items
+// between POS orders, so a web row may have left this POS order or come in
+// from another — and applied in one transaction together with the POS
+// charge (store.ApplyPOSCompletion); then the bill's payments are synced.
 //
-// When the order cannot be fetched, the web orders are still completed and
-// the payments recorded, but the bill's payment list is left unsynced and
-// its charge unset, so RetryMissingPayments later re-runs the order refresh
-// (POS-native lines and charge) before marking it synced.
+// When the plan cannot be made (the order, or the origin of an item that
+// may have moved in, cannot be fetched), nothing is guessed: the bill is
+// marked PAID without a charge (store.MarkPOSBillCompletionPending) and
+// RetryMissingPayments later re-runs the whole completion.
 func (s *Syncer) CompleteOrder(ctx context.Context, posOrderID string, orderKey string, completedAt time.Time) error {
 	posOrderID = strings.TrimSpace(posOrderID)
 	if posOrderID == "" {
@@ -58,86 +60,66 @@ func (s *Syncer) CompleteOrder(ctx context.Context, posOrderID string, orderKey 
 		return err
 	}
 
-	order, orderErr := s.client.GetOrder(ctx, posOrderID)
-	if orderErr == nil && order.OrderState == orderStateCancelled {
-		log.Printf("possync: completed event for POS order %q that TossPlace reports CANCELLED; applying the cancellation", posOrderID)
-		return s.CancelOrder(ctx, posOrderID, orderKey, orderCancelledAt(order, completedAt))
+	if err := s.repo.AttachPOSOrderKey(ctx, posOrderID, orderKey); err != nil {
+		return fmt.Errorf("attach order %q to %q: %w", orderKey, posOrderID, err)
 	}
-
-	_, found, err := s.repo.CompletePOSBill(ctx, store.CompletePOSBillInput{POSOrderID: posOrderID, OrderKey: orderKey, CompletedAt: completedAt})
-	if err != nil {
-		return fmt.Errorf("complete bill %q: %w", posOrderID, err)
-	}
-	if orderErr != nil {
-		if !found {
-			return fmt.Errorf("fetch POS-native order %q: %w", posOrderID, orderErr)
-		}
-		s.recordPaymentsUnsynced(ctx, posOrderID)
-		return fmt.Errorf("fetch POS order %q for native items/charge (left for retry): %w", posOrderID, orderErr)
-	}
-	return s.applyOrder(ctx, posOrderID, order, completedAt, found)
+	return s.completeOrder(ctx, posOrderID, completedAt)
 }
 
-// applyOrder records the fetched order's POS-native lines and charge on the
-// bill, completes a bill that only POS-native lines make up, then syncs the
-// bill's payments.
-func (s *Syncer) applyOrder(ctx context.Context, posOrderID string, order tossplace.Order, completedAt time.Time, found bool) error {
-	if _, err := s.recordNativeLines(ctx, posOrderID, order, completedAt); err != nil {
-		return err
-	}
-	if !found {
-		// Completing is idempotent, and found now also covers native lines
-		// a concurrent delivery recorded first.
-		var err error
-		if _, found, err = s.repo.CompletePOSBill(ctx, store.CompletePOSBillInput{POSOrderID: posOrderID, CompletedAt: completedAt}); err != nil {
-			return fmt.Errorf("complete POS-native bill %q: %w", posOrderID, err)
+// completeOrder fetches, plans and applies the completion of posOrderID,
+// leaving it pending for the retry when TossPlace cannot be read.
+func (s *Syncer) completeOrder(ctx context.Context, posOrderID string, completedAt time.Time) error {
+	order, err := s.client.GetOrder(ctx, posOrderID)
+	if errors.Is(err, tossplace.ErrNotConfigured) {
+		// Without Open API access the final lines can never be read, so
+		// moves cannot be told apart: the rows linked to the order complete
+		// as they are, as they did before moves were tracked.
+		if _, _, err := s.repo.CompletePOSBill(ctx, store.CompletePOSBillInput{POSOrderID: posOrderID, CompletedAt: completedAt}); err != nil {
+			return fmt.Errorf("complete bill %q: %w", posOrderID, err)
 		}
-		if !found {
+		return fmt.Errorf("POS order %q completed without its line items or payments: %w", posOrderID, err)
+	}
+	if err != nil {
+		return s.leaveCompletionPending(ctx, posOrderID, completedAt, fmt.Errorf("fetch POS order %q: %w", posOrderID, err))
+	}
+	if order.OrderState == orderStateCancelled {
+		log.Printf("possync: completed event for POS order %q that TossPlace reports CANCELLED; applying the cancellation", posOrderID)
+		return s.CancelOrder(ctx, posOrderID, "", orderCancelledAt(order, completedAt))
+	}
+
+	completion, err := PlanOrderCompletion(ctx, s.repo, s.client, posOrderID, order, completedAt)
+	if err != nil {
+		return s.leaveCompletionPending(ctx, posOrderID, completedAt, err)
+	}
+	if completion.RowsOnOrder == 0 && isEmptyPlan(completion.Plan) {
+		state, err := s.repo.GetPOSBillSyncState(ctx, posOrderID)
+		if err != nil {
+			return fmt.Errorf("load bill %q: %w", posOrderID, err)
+		}
+		if !state.Exists {
+			// Nothing of ours is on the order and nothing is to be recorded.
 			return nil
 		}
 	}
-	if err := s.repo.SetPOSBillCharge(ctx, posOrderID, order.ChargePrice.TotalAmount, order.ChargePrice.DiscountAmount); err != nil {
-		return fmt.Errorf("set bill charge %q: %w", posOrderID, err)
+	if _, err := s.repo.ApplyPOSCompletion(ctx, completion.Input); err != nil {
+		return fmt.Errorf("apply completion of %q: %w", posOrderID, err)
 	}
 	return s.SyncPayments(ctx, posOrderID)
 }
 
-func (s *Syncer) recordNativeLines(ctx context.Context, posOrderID string, order tossplace.Order, completedAt time.Time) (int, error) {
-	approvedAt := completedAt
-	if parsed := ParseTimestamp(order.CompletedAt); !parsed.IsZero() {
-		approvedAt = parsed
+// leaveCompletionPending marks the bill for the retry (see CompleteOrder),
+// stores whatever payments TossPlace reports without marking them synced,
+// and returns cause.
+func (s *Syncer) leaveCompletionPending(ctx context.Context, posOrderID string, completedAt time.Time, cause error) error {
+	if err := s.repo.MarkPOSBillCompletionPending(ctx, posOrderID, completedAt); err != nil {
+		return fmt.Errorf("%v (could not mark the completion pending: %w)", cause, err)
 	}
-	created, err := s.repo.RecordPOSNativeLines(ctx, posOrderID, func(existing []store.POSOrderLine) []store.CreatePOSNativeOrderInput {
-		return NativeOrderInputs(posOrderID, order, existing, approvedAt)
-	})
-	if err != nil {
-		return 0, fmt.Errorf("record POS-native lines for %q: %w", posOrderID, err)
-	}
-	return created, nil
+	s.recordPaymentsUnsynced(ctx, posOrderID)
+	return fmt.Errorf("completion of POS order %q left for retry: %w", posOrderID, cause)
 }
 
-// NativeOrderInputs turns the order's line items that no existing row
-// represents (see NativeLines) into POS-native rows approved at approvedAt.
-// The order's openedAt is optional; a zero OrderedAt makes the row fall
-// back to NOW().
-func NativeOrderInputs(posOrderID string, order tossplace.Order, existing []store.POSOrderLine, approvedAt time.Time) []store.CreatePOSNativeOrderInput {
-	natives := NativeLines(order.LineItems, existing)
-	orderedAt := ParseTimestamp(order.OpenedAt)
-	inputs := make([]store.CreatePOSNativeOrderInput, 0, len(natives))
-	for _, native := range natives {
-		vat := native.Amount / 11
-		inputs = append(inputs, store.CreatePOSNativeOrderInput{
-			MenuItemName:   native.MenuItemName,
-			CategoryName:   native.CategoryName,
-			Amount:         native.Amount,
-			OrderedAt:      orderedAt,
-			ApprovedAt:     approvedAt,
-			VAT:            vat,
-			SuppliedAmount: native.Amount - vat,
-			POSOrderID:     posOrderID,
-		})
-	}
-	return inputs
+func isEmptyPlan(plan CompletionPlan) bool {
+	return len(plan.CompleteRowIDs) == 0 && len(plan.MoveOutRowIDs) == 0 && len(plan.AdoptRowIDs) == 0 && len(plan.Natives) == 0
 }
 
 // CancelOrder applies order.order.cancelled.v1 to every order on the POS
@@ -258,9 +240,9 @@ func (s *Syncer) RecordPayment(ctx context.Context, payment tossplace.Payment) e
 
 // RetryMissingPayments re-syncs up to limit bills whose payment list is not
 // known to be complete (see store.ClaimPOSBillsNeedingPaymentSync). A PAID
-// bill whose POS charge was never recorded — its order fetch failed when it
-// completed — first gets the order refresh CompleteOrder could not do
-// (POS-native lines and charge). It runs piggybacked on incoming webhooks
+// bill whose POS charge was never recorded — its completion could not be
+// planned when it arrived (see CompleteOrder) — first gets the whole
+// completion re-run. It runs piggybacked on incoming webhooks
 // rather than on a timer, since an idle Cloud Run instance does not get CPU
 // for background work; failures are logged and retried later.
 func (s *Syncer) RetryMissingPayments(ctx context.Context, limit int) {
@@ -289,15 +271,7 @@ func (s *Syncer) resyncBill(ctx context.Context, posOrderID string) error {
 	if state.CompletedAt != nil {
 		completedAt = *state.CompletedAt
 	}
-	order, err := s.client.GetOrder(ctx, posOrderID)
-	if err != nil {
-		s.recordPaymentsUnsynced(ctx, posOrderID)
-		return fmt.Errorf("fetch POS order %q for native items/charge (left for retry): %w", posOrderID, err)
-	}
-	if order.OrderState == orderStateCancelled {
-		return s.CancelOrder(ctx, posOrderID, "", orderCancelledAt(order, completedAt))
-	}
-	return s.applyOrder(ctx, posOrderID, order, completedAt, true)
+	return s.completeOrder(ctx, posOrderID, completedAt)
 }
 
 // orderCancelledAt is the order's cancelledAt, else fallback.

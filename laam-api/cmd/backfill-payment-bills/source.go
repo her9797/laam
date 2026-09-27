@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +23,16 @@ func (s dbSource) ListPOSOrderIDsForBackfill(ctx context.Context) ([]string, err
 	return s.repo.ListPOSOrderIDsForBackfill(ctx)
 }
 
+// ListPOSRowsOnOrder and ListPOSMoveCandidates are the store's plain
+// SELECTs the completion planner reads (see possync.CompletionReader).
+func (s dbSource) ListPOSRowsOnOrder(ctx context.Context, posOrderID string) ([]store.POSRow, error) {
+	return s.repo.ListPOSRowsOnOrder(ctx, posOrderID)
+}
+
+func (s dbSource) ListPOSMoveCandidates(ctx context.Context, posOrderID string, from, to time.Time) ([]store.POSRow, error) {
+	return s.repo.ListPOSMoveCandidates(ctx, posOrderID, from, to)
+}
+
 func (s dbSource) LoadSnapshot(ctx context.Context, posOrderID string, paymentIDs []string) (Snapshot, error) {
 	snapshot := Snapshot{KnownPaymentIDs: map[string]bool{}}
 
@@ -39,7 +50,7 @@ func (s dbSource) LoadSnapshot(ctx context.Context, posOrderID string, paymentID
 	}
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, status, amount, COALESCE(bill_id, ''), menu_item_name, category_name
+		SELECT id, status, amount, COALESCE(bill_id, ''), menu_item_name, category_name, pos_moved_out_at IS NOT NULL
 		FROM payment_orders
 		WHERE pos_order_id = $1
 		ORDER BY created_at, id
@@ -49,7 +60,7 @@ func (s dbSource) LoadSnapshot(ctx context.Context, posOrderID string, paymentID
 	}
 	for rows.Next() {
 		var row SnapshotRow
-		if err := rows.Scan(&row.ID, &row.Status, &row.Amount, &row.BillID, &row.MenuItemName, &row.CategoryName); err != nil {
+		if err := rows.Scan(&row.ID, &row.Status, &row.Amount, &row.BillID, &row.MenuItemName, &row.CategoryName, &row.MovedOut); err != nil {
 			rows.Close()
 			return Snapshot{}, err
 		}

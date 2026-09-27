@@ -147,6 +147,67 @@ func attachOrderKeyToPOSOrder(ctx context.Context, q tableQuerier, posOrderID st
 	return exists, nil
 }
 
+// AttachPOSOrderKey gives the row named by orderKey the POS order ID when
+// it has none yet (see CompletePOSBillInput.OrderKey). An empty orderKey is
+// a no-op.
+func (r *Repository) AttachPOSOrderKey(ctx context.Context, posOrderID string, orderKey string) error {
+	posOrderID = strings.TrimSpace(posOrderID)
+	if posOrderID == "" {
+		return ErrInvalidInput
+	}
+	if strings.TrimSpace(orderKey) == "" {
+		return nil
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockPOSOrder(ctx, tx, posOrderID); err != nil {
+		return err
+	}
+	if _, err := attachOrderKeyToPOSOrder(ctx, tx, posOrderID, orderKey); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// MarkPOSBillCompletionPending records that the POS order completed but its
+// completion could not be planned yet (TossPlace could not be read): the
+// bill is created if needed and marked PAID with completed_at, leaving its
+// rows, POS charge and payment sync untouched. A PAID bill without a charge
+// is what ClaimPOSBillsNeedingPaymentSync hands back for the full completion
+// to be re-run. A CANCELLED bill stays CANCELLED.
+func (r *Repository) MarkPOSBillCompletionPending(ctx context.Context, posOrderID string, completedAt time.Time) error {
+	posOrderID = strings.TrimSpace(posOrderID)
+	if posOrderID == "" {
+		return ErrInvalidInput
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := lockPOSOrder(ctx, tx, posOrderID); err != nil {
+		return err
+	}
+	billID, err := ensurePOSBill(ctx, tx, posOrderID)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE pos_bills
+		SET status = CASE WHEN status = 'CANCELLED' THEN 'CANCELLED' ELSE 'PAID' END,
+			completed_at = COALESCE(completed_at, $2),
+			payment_sync_attempted_at = NOW(),
+			updated_at = NOW()
+		WHERE id = $1
+	`, billID, completedAt); err != nil {
+		return classifyError(err)
+	}
+	return tx.Commit(ctx)
+}
+
 // CompletePOSBill applies a TossPlace order.completed event to every order
 // on that POS order at once — web orders appended to a table's POS order
 // all complete together, not only the one whose id is the POS orderKey.
@@ -188,7 +249,7 @@ func (r *Repository) CompletePOSBill(ctx context.Context, input CompletePOSBillI
 			supplied_amount = amount - amount / 11,
 			tax_free_amount = 0,
 			updated_at = NOW()
-		WHERE pos_order_id = $1 AND status IN ('READY', 'ACKNOWLEDGED')
+		WHERE pos_order_id = $1 AND status IN ('READY', 'ACKNOWLEDGED') AND pos_moved_out_at IS NULL
 	`, posOrderID, input.CompletedAt); err != nil {
 		return "", false, classifyError(err)
 	}
@@ -306,58 +367,6 @@ func (r *Repository) GetPOSBillSyncState(ctx context.Context, posOrderID string)
 	default:
 		return POSBillSyncState{}, classifyError(err)
 	}
-}
-
-// RecordPOSNativeLines records the POS order's line items that no
-// payment_orders row represents yet. diff receives every row already on the
-// POS order (whatever its status) and returns the lines to insert; it runs
-// under the POS order's lock, in the same transaction as the inserts, so
-// concurrent deliveries of the same completed event (or the backfill racing
-// a webhook) cannot each see the line missing and record it twice. Nothing
-// is recorded on a bill that is already CANCELLED.
-func (r *Repository) RecordPOSNativeLines(ctx context.Context, posOrderID string, diff func(existing []POSOrderLine) []CreatePOSNativeOrderInput) (int, error) {
-	posOrderID = strings.TrimSpace(posOrderID)
-	if posOrderID == "" {
-		return 0, ErrInvalidInput
-	}
-
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback(ctx)
-	if err := lockPOSOrder(ctx, tx, posOrderID); err != nil {
-		return 0, err
-	}
-
-	var cancelled bool
-	if err := tx.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM pos_bills WHERE pos_order_id = $1 AND status = 'CANCELLED')
-	`, posOrderID).Scan(&cancelled); err != nil {
-		return 0, classifyError(err)
-	}
-	if cancelled {
-		return 0, nil
-	}
-	existing, err := listPOSOrderLines(ctx, tx, posOrderID)
-	if err != nil {
-		return 0, err
-	}
-	inputs := diff(existing)
-	for _, input := range inputs {
-		if input.Amount <= 0 {
-			return 0, ErrInvalidInput
-		}
-		// Inserted on this transaction so it stays under the lock.
-		input.POSOrderID = posOrderID
-		if err := insertPOSNativeOrder(ctx, tx, nextID("order"), input); err != nil {
-			return 0, err
-		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, err
-	}
-	return len(inputs), nil
 }
 
 // SetPOSBillCharge records what the POS actually charged for the order
