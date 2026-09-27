@@ -25,6 +25,7 @@ import (
 type POSRow struct {
 	ID           string
 	POSOrderID   string
+	MenuItemID   string // "" for a POS-native row (or a web row whose menu item was deleted)
 	MenuItemName string
 	CategoryName string
 	Status       string
@@ -33,7 +34,7 @@ type POSRow struct {
 	MovedOutAt   time.Time // zero when not moved out
 }
 
-const posRowColumns = `id, COALESCE(pos_order_id, ''), menu_item_name, category_name, status, amount, created_at, pos_moved_out_at`
+const posRowColumns = `id, COALESCE(pos_order_id, ''), COALESCE(menu_item_id, ''), menu_item_name, category_name, status, amount, created_at, pos_moved_out_at`
 
 // ListPOSRowsOnOrder returns every row whose pos_order_id = posOrderID (any
 // status, moved out or not), oldest first.
@@ -71,7 +72,7 @@ func queryPOSRows(ctx context.Context, q tableQuerier, sql string, args ...any) 
 	for rows.Next() {
 		var row POSRow
 		var movedOutAt *time.Time
-		if err := rows.Scan(&row.ID, &row.POSOrderID, &row.MenuItemName, &row.CategoryName,
+		if err := rows.Scan(&row.ID, &row.POSOrderID, &row.MenuItemID, &row.MenuItemName, &row.CategoryName,
 			&row.Status, &row.Amount, &row.CreatedAt, &movedOutAt); err != nil {
 			return nil, err
 		}
@@ -92,6 +93,22 @@ type ApplyPOSCompletionInput struct {
 	Natives        []CreatePOSNativeOrderInput // POSOrderID field is set by ApplyPOSCompletion
 	TotalAmount    *int64                      // POS charge; nil = unknown (leave as is)
 	DiscountAmount *int64
+	// ReplaceNatives is backfill-only legacy cleanup (the completed
+	// webhook never sets it); see POSNativeReplacement.
+	ReplaceNatives []POSNativeReplacement
+}
+
+// POSNativeReplacement pairs a legacy POS-native row on the completing POS
+// order with the web row it duplicates. Before moves were tracked, a web
+// item moved here by "한 번에 결제" was recorded again as a POS-native row
+// while the web row stayed unpaid on its origin order. ApplyPOSCompletion
+// deletes the native row and adopts the web row in its place — only when
+// the native row is still a POS-native (menu_item_id NULL) DONE row on this
+// order and the web row is still an unpaid web row (menu_item_id set) with
+// the same menu name and amount; otherwise the pair is skipped.
+type POSNativeReplacement struct {
+	NativeRowID string
+	WebRowID    string
 }
 
 // posCompletionLockAttempts bounds how often ApplyPOSCompletion restarts
@@ -118,6 +135,9 @@ const posCompletionLockAttempts = 5
 //     recorded on the order (DONE rows not named in CompleteRowIDs or
 //     AdoptRowIDs, matched by name, category and amount) are not recorded
 //     twice. Nothing is recorded on a CANCELLED bill.
+//   - ReplaceNatives (backfill only): each legacy POS-native row still
+//     duplicating its web row is deleted and the web row adopted like
+//     AdoptRowIDs; a pair that no longer holds is skipped entirely.
 //
 // Re-applying the same input changes nothing.
 func (r *Repository) ApplyPOSCompletion(ctx context.Context, in ApplyPOSCompletionInput) (string, error) {
@@ -154,7 +174,11 @@ func (r *Repository) applyPOSCompletion(ctx context.Context, in ApplyPOSCompleti
 	completeIDs := uniqueIDs(in.CompleteRowIDs)
 	moveOutIDs := uniqueIDs(in.MoveOutRowIDs)
 	adoptIDs := uniqueIDs(in.AdoptRowIDs)
-	settledIDs := uniqueIDs(append(append([]string{}, completeIDs...), adoptIDs...))
+	replacements := uniqueReplacements(in.ReplaceNatives)
+	replaceWebIDs := make([]string, 0, len(replacements))
+	for _, pair := range replacements {
+		replaceWebIDs = append(replaceWebIDs, pair.WebRowID)
+	}
 
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -170,7 +194,7 @@ func (r *Repository) applyPOSCompletion(ctx context.Context, in ApplyPOSCompleti
 	origins, err := queryStrings(ctx, tx, `
 		SELECT DISTINCT pos_order_id FROM payment_orders
 		WHERE id = ANY($1) AND status IN ('READY', 'ACKNOWLEDGED') AND pos_order_id IS NOT NULL
-	`, adoptIDs)
+	`, uniqueIDs(append(append([]string{}, adoptIDs...), replaceWebIDs...)))
 	if err != nil {
 		return "", nil, err
 	}
@@ -196,6 +220,17 @@ func (r *Repository) applyPOSCompletion(ctx context.Context, in ApplyPOSCompleti
 	`, moveOutIDs, posOrderID); err != nil {
 		return "", nil, classifyError(err)
 	}
+	for _, pair := range replacements {
+		replaced, err := deleteReplacedPOSNative(ctx, tx, posOrderID, pair)
+		if err != nil {
+			return "", nil, err
+		}
+		if replaced {
+			adoptIDs = append(adoptIDs, pair.WebRowID)
+		}
+	}
+	adoptIDs = uniqueIDs(adoptIDs)
+	settledIDs := uniqueIDs(append(append([]string{}, completeIDs...), adoptIDs...))
 	if _, err := tx.Exec(ctx, `
 		UPDATE payment_orders
 		SET pos_origin_order_id = COALESCE(pos_origin_order_id, pos_order_id),
@@ -303,6 +338,47 @@ func insertMissingPOSNatives(ctx context.Context, q tableQuerier, posOrderID str
 		}
 	}
 	return nil
+}
+
+// deleteReplacedPOSNative deletes pair's legacy native row if the
+// replacement still holds (see POSNativeReplacement): the native is a
+// POS-native DONE row on posOrderID, and the web row is an unpaid web row on
+// another POS order with the same menu name and amount. It reports whether
+// the row was deleted — only then may the web row be adopted in its place.
+func deleteReplacedPOSNative(ctx context.Context, q tableQuerier, posOrderID string, pair POSNativeReplacement) (bool, error) {
+	tag, err := q.Exec(ctx, `
+		DELETE FROM payment_orders n
+		USING payment_orders w
+		WHERE n.id = $1 AND n.pos_order_id = $3 AND n.menu_item_id IS NULL
+			AND n.status = 'DONE' AND n.pos_moved_out_at IS NULL
+			AND w.id = $2 AND w.id <> n.id AND w.menu_item_id IS NOT NULL
+			AND w.status IN ('READY', 'ACKNOWLEDGED')
+			AND w.pos_order_id IS NOT NULL AND w.pos_order_id <> $3
+			AND w.menu_item_name = n.menu_item_name AND w.amount = n.amount
+	`, pair.NativeRowID, pair.WebRowID, posOrderID)
+	if err != nil {
+		return false, classifyError(err)
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// uniqueReplacements trims the ids and drops empty pairs and any pair whose
+// native or web row an earlier pair already names: each native row is
+// replaced at most once, by one web row.
+func uniqueReplacements(pairs []POSNativeReplacement) []POSNativeReplacement {
+	out := make([]POSNativeReplacement, 0, len(pairs))
+	used := map[string]bool{}
+	for _, pair := range pairs {
+		pair.NativeRowID = strings.TrimSpace(pair.NativeRowID)
+		pair.WebRowID = strings.TrimSpace(pair.WebRowID)
+		if pair.NativeRowID == "" || pair.WebRowID == "" || used[pair.NativeRowID] || used[pair.WebRowID] {
+			continue
+		}
+		used[pair.NativeRowID] = true
+		used[pair.WebRowID] = true
+		out = append(out, pair)
+	}
+	return out
 }
 
 func queryStrings(ctx context.Context, q tableQuerier, sql string, args ...any) ([]string, error) {
