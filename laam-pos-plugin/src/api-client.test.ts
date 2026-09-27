@@ -1,4 +1,4 @@
-import { POSAPIClient, type PluginHTTP } from "./api-client";
+import { loadRealtimeConfig, POSAPIClient, type PluginHTTP } from "./api-client";
 
 function httpWith(
   post: jest.MockedFunction<PluginHTTP["post"]>,
@@ -27,7 +27,7 @@ it("claims one pending order with the plugin bearer token", async () => {
   });
   const client = new POSAPIClient(httpWith(post), "https://api.example.com/", "plugin-token");
 
-  await expect(client.claim()).resolves.toMatchObject({ claimToken: "claim-token" });
+  await expect(client.claim()).resolves.toMatchObject({ claim: { claimToken: "claim-token" } });
   expect(post).toHaveBeenCalledWith(
     "https://api.example.com/api/v1/pos-plugin/orders/claim",
     {},
@@ -40,7 +40,35 @@ it("returns no work for a 204 claim response", async () => {
   const post = jest.fn().mockResolvedValue({ code: 204, headers: [], body: "" });
   const client = new POSAPIClient(httpWith(post), "https://api.example.com", "plugin-token");
 
-  await expect(client.claim()).resolves.toBeUndefined();
+  await expect(client.claim()).resolves.toEqual({ claim: undefined, tableSyncPending: undefined });
+});
+
+it("reads the table sync pending header from a claim response", async () => {
+  const post = jest
+    .fn()
+    .mockResolvedValueOnce({ code: 204, headers: [["X-Table-Sync-Pending", "1"]], body: "" })
+    .mockResolvedValueOnce({ code: 204, headers: [["x-table-sync-pending", "0"]], body: "" })
+    .mockResolvedValueOnce({ code: 204, headers: [["x-table-sync-pending", "maybe"]], body: "" });
+  const client = new POSAPIClient(httpWith(post), "https://api.example.com", "plugin-token");
+
+  await expect(client.claim()).resolves.toEqual({ claim: undefined, tableSyncPending: true });
+  await expect(client.claim()).resolves.toEqual({ claim: undefined, tableSyncPending: false });
+  // 알 수 없는 값은 헤더가 없는 옛 API처럼 취급해 테이블 claim을 건너뛰지 않게 한다.
+  await expect(client.claim()).resolves.toEqual({ claim: undefined, tableSyncPending: undefined });
+});
+
+it("reads the table sync pending header alongside a claimed order", async () => {
+  const post = jest.fn().mockResolvedValue({
+    code: 200,
+    headers: [["X-Table-Sync-Pending", "0"]],
+    body: JSON.stringify({ claimToken: "claim-token", order: { orderId: "order-1" } })
+  });
+  const client = new POSAPIClient(httpWith(post), "https://api.example.com", "plugin-token");
+
+  await expect(client.claim()).resolves.toMatchObject({
+    claim: { claimToken: "claim-token" },
+    tableSyncPending: false
+  });
 });
 
 it("rejects an unexpected API response without exposing the token", async () => {
@@ -149,4 +177,69 @@ it("rejects a failed table mapping fetch", async () => {
   const client = new POSAPIClient(httpWith(jest.fn(), get), "https://api.example.com", "plugin-token");
 
   await expect(client.fetchTableMappings()).rejects.toThrow("HTTP 500");
+});
+
+const enabledRealtimeConfig = {
+  enabled: true,
+  url: "wss://project.supabase.co/realtime/v1/websocket?apikey=anon&vsn=1.0.0",
+  apiKey: "anon",
+  topic: "realtime:pos-plugin",
+  events: { orderReady: "order_ready", tableSyncRequested: "table_sync_requested" },
+  fallbackPollSeconds: 60
+};
+
+it("fetches the realtime config with the plugin bearer token", async () => {
+  const get = jest.fn().mockResolvedValue({
+    code: 200,
+    headers: [],
+    body: JSON.stringify(enabledRealtimeConfig)
+  });
+  const client = new POSAPIClient(httpWith(jest.fn(), get), "https://api.example.com", "plugin-token");
+
+  await expect(client.fetchRealtimeConfig()).resolves.toEqual(enabledRealtimeConfig);
+  expect(get).toHaveBeenCalledWith(
+    "https://api.example.com/api/v1/pos-plugin/realtime-config",
+    [["Authorization", "Bearer plugin-token"]],
+    { timeoutMs: 10000 }
+  );
+});
+
+it("accepts a disabled realtime config", async () => {
+  const get = jest.fn().mockResolvedValue({
+    code: 200,
+    headers: [],
+    body: JSON.stringify({ enabled: false, fallbackPollSeconds: 3 })
+  });
+  const client = new POSAPIClient(httpWith(jest.fn(), get), "https://api.example.com", "plugin-token");
+
+  await expect(client.fetchRealtimeConfig()).resolves.toEqual({ enabled: false, fallbackPollSeconds: 3 });
+});
+
+it("rejects a realtime config without a websocket url", async () => {
+  const get = jest.fn().mockResolvedValue({
+    code: 200,
+    headers: [],
+    body: JSON.stringify({ ...enabledRealtimeConfig, url: "https://not-a-websocket" })
+  });
+  const client = new POSAPIClient(httpWith(jest.fn(), get), "https://api.example.com", "plugin-token");
+
+  await expect(client.fetchRealtimeConfig()).rejects.toThrow("실시간");
+});
+
+it("falls back to 3 second polling when the realtime config route is missing", async () => {
+  const get = jest.fn().mockResolvedValue({ code: 404, headers: [], body: "not found" });
+  const client = new POSAPIClient(httpWith(jest.fn(), get), "https://api.example.com", "plugin-token");
+
+  await expect(loadRealtimeConfig(client)).resolves.toEqual({ enabled: false, fallbackPollSeconds: 3 });
+});
+
+it("uses a default fallback interval when the server sends an invalid one", async () => {
+  const get = jest.fn().mockResolvedValue({
+    code: 200,
+    headers: [],
+    body: JSON.stringify({ ...enabledRealtimeConfig, fallbackPollSeconds: "soon" })
+  });
+  const client = new POSAPIClient(httpWith(jest.fn(), get), "https://api.example.com", "plugin-token");
+
+  await expect(loadRealtimeConfig(client)).resolves.toMatchObject({ enabled: true, fallbackPollSeconds: 60 });
 });
