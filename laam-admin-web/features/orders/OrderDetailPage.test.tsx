@@ -119,6 +119,20 @@ describe("OrderDetailPage", () => {
     expect(screen.getByText("얼음은 적게 주세요")).toBeInTheDocument();
   });
 
+  it.each([
+    ["CARD", "카드"],
+    ["BARCODE", "간편결제"],
+    ["POS", "POS(미확인)"],
+    ["UNDEFINED", "미확인"],
+  ])("renders the %s payment method as its label %j", (paymentMethod, label) => {
+    mockQuery({ data: { ...ORDER, paymentMethod } });
+
+    render(<OrderDetailPage orderId="order-1" />);
+
+    expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.queryByText(paymentMethod)).not.toBeInTheDocument();
+  });
+
   it("renders a CANCELLED order's status label", () => {
     mockQuery({ data: { ...ORDER, status: "CANCELLED" } });
 

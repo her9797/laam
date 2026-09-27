@@ -1,5 +1,6 @@
 import { PAGE_SIZE_OPTIONS } from "@/components/list/Pagination";
 
+import type { BillListQuery, BillStatus } from "./bills/model";
 import type {
   OrderListQuery,
   PaymentOrderPosSyncStatus,
@@ -126,4 +127,91 @@ export function buildOrderListSearchParams(query: OrderListQuery): URLSearchPara
   }
 
   return params;
+}
+
+/**
+ * `/orders` has two views of the same history: one row per menu item
+ * (`menu`, the original list and the default) and one row per 계산서
+ * (`bill`). The view is a URL param too, but `menu` is omitted so every
+ * link/bookmark made before the toggle existed still means the same list.
+ *
+ * Date range, search, page size, and page are shared by both views and keep
+ * their existing param names. Each view only writes its own filters:
+ * `status`/`posSync`/`sort`/`order` in `menu`, `billStatus`/`source` in
+ * `bill`.
+ */
+export type OrderListView = "menu" | "bill";
+
+/** TossPlace `PaymentSourceType` values offered as the bill 결제수단 filter. */
+export const BILL_SOURCE_TYPES = [
+  "CARD",
+  "CASH",
+  "ACCOUNT_TRANSFER",
+  "BARCODE",
+  "PREPAID_VALUE",
+  "EXTERNAL",
+] as const;
+export type BillSourceType = (typeof BILL_SOURCE_TYPES)[number];
+
+export const BILL_STATUSES: readonly BillStatus[] = ["OPEN", "PAID", "CANCELLED"];
+
+export type OrderListUrlState = {
+  view: OrderListView;
+  /** Menu-view query; its paging/search/date fields are shared with the bill view. */
+  query: OrderListQuery;
+  billStatus?: BillStatus;
+  billSource?: BillSourceType;
+};
+
+const DEFAULT_VIEW: OrderListView = "menu";
+const MENU_ONLY_PARAMS = ["status", "posSync", "sort", "order"];
+
+function isValidBillStatus(value: string | null): value is BillStatus {
+  return BILL_STATUSES.includes(value as BillStatus);
+}
+
+function isValidBillSource(value: string | null): value is BillSourceType {
+  return BILL_SOURCE_TYPES.includes(value as BillSourceType);
+}
+
+export function parseOrderListUrlState(searchParams: URLSearchParams): OrderListUrlState {
+  const billStatusRaw = searchParams.get("billStatus");
+  const billSourceRaw = searchParams.get("source");
+  return {
+    view: searchParams.get("view") === "bill" ? "bill" : DEFAULT_VIEW,
+    query: parseOrderListQuery(searchParams),
+    billStatus: isValidBillStatus(billStatusRaw) ? billStatusRaw : undefined,
+    billSource: isValidBillSource(billSourceRaw) ? billSourceRaw : undefined,
+  };
+}
+
+export function buildOrderListUrlSearchParams(state: OrderListUrlState): URLSearchParams {
+  const params = buildOrderListSearchParams(state.query);
+  if (state.view === DEFAULT_VIEW) {
+    return params;
+  }
+
+  for (const name of MENU_ONLY_PARAMS) {
+    params.delete(name);
+  }
+  params.set("view", state.view);
+  if (state.billStatus) {
+    params.set("billStatus", state.billStatus);
+  }
+  if (state.billSource) {
+    params.set("source", state.billSource);
+  }
+  return params;
+}
+
+export function toBillListQuery(state: OrderListUrlState): BillListQuery {
+  return {
+    page: state.query.page,
+    pageSize: state.query.pageSize,
+    status: state.billStatus,
+    sourceType: state.billSource,
+    search: state.query.search,
+    dateFrom: state.query.dateFrom,
+    dateTo: state.query.dateTo,
+  };
 }

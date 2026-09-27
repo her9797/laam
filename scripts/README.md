@@ -10,6 +10,87 @@
 2. 그 주문에 쓰인 `laam-api` 인스턴스와 **같은** `TOSS_PLACE_WEBHOOK_SECRET` 값을 환경변수로 넘겨 스크립트를 실행한다. Docker Compose로 띄웠다면 저장소 루트 `.env`의 값, `go run`으로 직접 띄웠다면 `laam-api/.env`(또는 `.env.local`)의 값이다(`laam-api`가 시작 시 자동으로 읽는다). 둘은 서로 다른 값일 수 있다.
 3. 응답이 `200`이고 주문의 `status`가 바뀌었는지 확인한다(REST로는 관리자 주문 조회, 직접 확인하려면 `payment_orders` 테이블 조회).
 
+## local-payment-bills/seed.sh
+
+실제 결제 없이 관리자 웹의 계산서 기능(주문내역 메뉴별/계산서별 보기, 계산서 상세 `/orders/bills/{id}`, 결제수단 라벨, 매출 통계)을 확인하도록 **로컬 DB에만** 테스트 계산서를 넣는다.
+
+```bash
+./scripts/local-payment-bills/seed.sh          # 시드 다시 넣기(기존 시드를 먼저 지운다)
+./scripts/local-payment-bills/seed.sh reset    # 시드만 지우기
+```
+
+- DB는 `DATABASE_URL` 환경변수 → `laam-api/.env.local` → `laam-api/.env` → 루트 `.env.local` → 루트 `.env` → `postgres://laam:laam@localhost:5432/laam` 순으로 정한다. 호스트가 `localhost`/`127.0.0.1`/`::1`이 아니면 거부한다.
+- `psql`이 없으면 그 포트를 게시한 Postgres 컨테이너를 찾아 `docker exec`로 실행한다(`SEED_PG_CONTAINER=<이름>`으로 지정 가능).
+- 스키마는 laam-api가 시작할 때 만든다. `pos_bills`가 없다는 오류가 나면 그 DB로 laam-api를 한 번 띄운 뒤 다시 실행한다.
+- id가 `seed-`로 시작하는 계산서·결제·메뉴 행만 넣고 지운다. 시각은 실행 시점 기준 1~4 영업일 전(16:00~06:00 KST)이라 기본 조회 범위(최근 7 영업일)에서 바로 보인다.
+
+| 계산서 | 테이블 | 확인할 것 |
+| --- | --- | --- |
+| `seed-bill-01` | T-01 | 카드 단독 48,000원, 메뉴 3개(옵션·요청사항 포함) |
+| `seed-bill-02` | T-03 | 카드 35,000 + 현금 20,000 분할 결제, 추가 주문 |
+| `seed-bill-03` | B-03 | 계좌이체 32,000원 |
+| `seed-bill-04` | T-05 | 메뉴 50,000 / 현금 결제 45,000, 할인 5,000 표시 |
+| `seed-bill-05` | B-01 | 카드 42,000 취소 후 현금 42,000 재결제 |
+| `seed-bill-06` | T-02 | 환불: 계산서·메뉴·결제 모두 취소, 매출 0 |
+| `seed-bill-07` | T-07 | 결제 대기(OPEN), 메뉴 접수/대기 상태, 결제 없음(실행 40분 전) |
+| `seed-bill-08` | T-04 | 결제 완료지만 결제 목록 미동기화: 상세에 "결제 내역을 아직 불러오는 중" 안내, 카드 20,000만 표시, 통계는 메뉴 금액 37,000을 `POS(미확인)`으로 집계 |
+| `seed-bill-09` | B-02 | 간편결제 51,000, POS에서 직접 찍은 메뉴(카스 병맥주, 테이블 없음) 포함 |
+| `seed-legacy-1~3` | T-06, T-08 | 계산서 없는 과거 행 32,000원, 결제수단 `POS(미확인)` |
+
+시드만 놓고 보면 매출 통계(결제 기준)는 카드 83,000 / 현금 107,000 / 계좌이체 32,000 / 간편결제 51,000 / POS(미확인) 69,000, 합계 342,000원, 주문 23건이다. 카테고리·테이블·메뉴별 통계는 메뉴 금액 기준이라 합계가 347,000원(할인 5,000 차이)이다. laam-api가 처음 만드는 샘플 주문(`sample-order-*`)이나 직접 만든 주문이 같은 기간에 있으면 그만큼 더해진다.
+
+`seed-bill-08`은 결제 목록 재동기화 대상이라, TossPlace 키가 설정된 laam-api에 웹훅이 들어오면 존재하지 않는 POS 주문(`seed-pos-08`)을 조회하려다 실패 로그를 남긴다. 확인이 끝나면 `reset`으로 지운다.
+
+## local-payment-bills/mock-tossplace
+
+실제 POS 없이 토스플레이스 웹훅 → 계산서(`pos_bills`·`pos_payments`) 흐름을 로컬에서 끝까지 돌려보는 도구. Node만 있으면 되고 npm 의존성은 없다.
+
+- `server.mjs`: 토스플레이스 Open API 목 서버. laam-api가 웹훅 처리 중 호출하는 주문 조회, 주문별 결제 목록, 결제 단건 조회만 흉내 내고, 데이터는 `scenarios.json`에서 메모리로 읽는다. 키 값은 검사하지 않는다.
+- `scenarios.json`: 시나리오별 웹 주문, POS 주문·결제, 웹훅 순서, 기대 결과.
+- `run-scenario.mjs`: 로컬 DB에 웹 주문(`payment_orders`, id `mock-*`, POS 주문 id `mock-pos-*`)과 OPEN 계산서를 넣고, 서명한 웹훅을 순서대로 laam-api에 보낸 뒤 DB 결과를 출력하고 기대값과 비교해 PASS/FAIL을 표시한다.
+
+| 시나리오 | 내용 | 기대 결과 |
+| --- | --- | --- |
+| `a-card` | 웹 주문 3건, 카드 1건 | PAID, 주문 3건 DONE, 카드 29,000 APPROVED |
+| `b-split` | 카드 20,000 + 현금 12,000 | PAID, 결제 2건 |
+| `c-transfer` | 결제 웹훅 없이 완료 웹훅만, 계좌이체 | PAID, 결제 목록 조회로 계좌이체 28,000 반영 |
+| `d-mixed` | 웹 주문 2건 + POS에서 직접 찍은 생맥주 2잔, 완료 웹훅 2번 | PAID, POS 직접 입력 행(생맥주 12,000) 1건만 |
+| `e-refund` | 카드로 완료 후 POS에서 취소 | 계산서·주문 CANCELLED, 결제 CANCELLED |
+| `f-repay` | 카드 승인 → 카드 취소 → 현금 재결제 → 완료 | PAID, 카드 CANCELLED + 현금 APPROVED |
+| `g-moved-item` | 웹 제임슨(POS 주문 X)을 '한 번에 결제'로 조니워커 주문 Y에 옮김 → Y 카드 21,000 완료 → X에 고독 추가 후 계좌이체 15,000 완료 | 웹 제임슨 1행만 DONE이고 Y 계산서에 연결(`pos_order_id` Y, `pos_origin_order_id` X), Y PAID(조니워커 POS 직접 입력), X PAID(고독 POS 직접 입력) |
+| `h-moved-item-reverse` | `g`와 같지만 X(고독)가 Y보다 먼저 완료 | `g`와 같음 |
+
+사용 순서(저장소 루트에서, 터미널 3개):
+
+```bash
+# 1) 목 서버 (기본 포트 18080, --port 또는 MOCK_TOSSPLACE_PORT로 변경)
+node scripts/local-payment-bills/mock-tossplace/server.mjs
+
+# 2) laam-api를 목 서버에 연결해 실행
+cd laam-api
+TOSS_PLACE_API_BASE_URL=http://localhost:18080 TOSS_PLACE_ACCESS_KEY=mock TOSS_PLACE_SECRET_KEY=mock \
+  TOSS_PLACE_MERCHANT_ID=mock-merchant go run ./cmd/server
+
+# 3) 시나리오 실행
+node scripts/local-payment-bills/mock-tossplace/run-scenario.mjs list   # 목록
+node scripts/local-payment-bills/mock-tossplace/run-scenario.mjs all    # 전체 (또는 a, d-mixed처럼 개별)
+node scripts/local-payment-bills/mock-tossplace/run-scenario.mjs reset  # mock-* 주문과 그 계산서·결제 삭제
+```
+
+- 2)에서 셸로 넘긴 값은 `.env.local`보다 우선한다(`laam-api`는 비어 있는 환경변수만 `.env` 파일에서 채운다). 그래서 이 실행에서는 `.env.local`의 실제 토스플레이스 키와 운영 API 주소가 쓰이지 않는다. 네 값 중 하나라도 빠뜨리면 `.env.local`의 실제 값이 섞이므로 모두 넘긴다. 시작할 때 `catalog sync failed` 로그가 나오는 것은 목 서버가 카탈로그 API를 제공하지 않기 때문이며 정상이다.
+- `run-scenario.mjs`는 `DATABASE_URL`, `TOSS_PLACE_WEBHOOK_SECRET`을 환경변수에서, 없으면 `laam-api/.env.local` → `laam-api/.env` → 루트 `.env.local` → `.env` 순으로 읽는다(laam-api가 읽는 순서와 같다). 서명 키는 출력하지 않는다. `DATABASE_URL`의 host가 `localhost`/`127.0.0.1`/`::1`이 아니면 실행을 거부한다.
+- `psql`이 없으면 `DATABASE_URL`의 포트를 publish한 Docker 컨테이너(없으면 `laam-postgres-local`)에서 `docker exec psql`로 실행한다. `PG_CONTAINER`로 지정할 수 있다.
+- API 주소는 `LAAM_API_URL`(기본 `http://localhost:9090`), 목 서버 주소는 `MOCK_TOSSPLACE_URL`(기본 `http://localhost:18080`). `ADMIN_API_TOKEN`이 있으면 `GET /api/v1/admin/payment-bills/{id}` 결과도 함께 출력한다.
+- 같은 시나리오를 다시 실행하면 해당 시나리오의 기존 행을 지우고 처음부터 만든다.
+- `g`, `h`처럼 POS 주문 여러 건을 쓰는 시나리오는 `posOrders`와 웹훅 단계의 `orderId`로 주문을 지정하고, `mock` 단계로 주문의 `lineItems`를 바꾼다(배열은 통째로 교체). 기대값은 POS 주문별 `expect.bills`, 메뉴 이름별 행 수 `menuCounts`, 웹 주문별 상태·연결 `webOrders`로 확인한다.
+- 목 서버를 쓰는 동안 로컬 DB에 있던 다른(실제) 계산서의 결제 재조회는 목 서버에서 404가 되어 실패로 로그만 남고, 나중에 실제 키로 다시 띄우면 재시도된다.
+
+관리자 웹(`laam-admin-web`, 같은 laam-api에 연결)에서 확인할 것:
+
+1. 주문 내역에서 `계산서별` 토글로 전환하면 a~f의 `mock-pos-*` 계산서 6건이 테이블 번호(T-03, B-02, T-07, T-05, B-04, T-09)와 상태(PAID 5건, CANCELLED 1건), 결제수단(카드·현금·계좌이체)으로 보인다.
+2. 계산서 상세에서 메뉴 목록(혼합 계산서는 POS 직접 입력 생맥주 포함), 결제 목록(취소된 결제 표시), 청구·결제 금액이 맞는지 본다.
+3. 매출 통계에서 오늘 매출에 취소 계산서(e-refund)와 취소된 카드 결제(f-repay)가 빠지고, 결제수단별 금액이 위 표와 맞는지 본다.
+
 ## deploy-cloud-run.sh
 
 `laam-api`, `laam-web`, `laam-admin-web`를 Google Cloud Run에 배포하는 스크립트.

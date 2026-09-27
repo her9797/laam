@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +27,11 @@ func signTossPlaceWebhook(t *testing.T, secret string, timestamp string, body []
 
 func tossPlaceWebhookRequest(t *testing.T, handler http.Handler, secret string, body []byte, corrupt bool) *httptest.ResponseRecorder {
 	t.Helper()
+	return tossPlaceWebhookRequestTo(t, handler, "/api/v1/webhooks/tossplace/orders", secret, body, corrupt)
+}
+
+func tossPlaceWebhookRequestTo(t *testing.T, handler http.Handler, path string, secret string, body []byte, corrupt bool) *httptest.ResponseRecorder {
+	t.Helper()
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	signature := signTossPlaceWebhook(t, secret, timestamp, body)
 	if corrupt {
@@ -38,7 +44,7 @@ func tossPlaceWebhookRequest(t *testing.T, handler http.Handler, secret string, 
 		"x-toss-delivery-id": "dv_test",
 		"x-toss-event-id":    "ev_test",
 	}
-	return doRequest(t, handler, http.MethodPost, "/api/v1/webhooks/tossplace/orders", body, headers)
+	return doRequest(t, handler, http.MethodPost, path, body, headers)
 }
 
 func webhookTestCfg() config.Config {
@@ -223,20 +229,41 @@ func TestTossPlaceWebhook_CompletedEventOnCancelledOrderDoesNotOverwriteButStill
 	}
 }
 
-// mockTossPlaceOrderServer serves a single GetOrder response for orderID,
-// asserting the request path/auth headers match what tossplace.Client sends.
+// mockTossPlaceOrderServer serves a single GetOrder response for orderID
+// (and an empty payment list for it), asserting the request path/auth
+// headers match what tossplace.Client sends.
 func mockTossPlaceOrderServer(t *testing.T, orderID string, responseBody string) *httptest.Server {
 	t.Helper()
+	return mockTossPlaceServer(t, map[string]string{orderID: responseBody}, map[string]string{orderID: `[]`})
+}
+
+// mockTossPlaceServer serves GetOrder responses (orders, keyed by POS order
+// id, each a full success object) and GetPaymentsByOrderID responses
+// (payments, keyed by POS order id, each a JSON array). Anything else is a
+// 404 and a test error.
+func mockTossPlaceServer(t *testing.T, orders map[string]string, payments map[string]string) *httptest.Server {
+	t.Helper()
+	const prefix = "/api-public/openapi/v1/merchants/merchant-1"
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wantPath := "/api-public/openapi/v1/merchants/merchant-1/order/orders/" + orderID
-		if r.Method != http.MethodGet || r.URL.Path != wantPath {
-			t.Fatalf("request = %s %s, want GET %s", r.Method, r.URL.Path, wantPath)
-		}
 		if r.Header.Get("x-access-key") != "test-access" || r.Header.Get("x-secret-key") != "test-secret" {
-			t.Fatal("missing TossPlace authentication headers")
+			t.Error("missing TossPlace authentication headers")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(responseBody))
+		if r.Method == http.MethodGet && r.URL.Path == prefix+"/payment/payments/by-order-id" {
+			if body, ok := payments[r.URL.Query().Get("orderId")]; ok {
+				_, _ = w.Write([]byte(`{"resultType":"SUCCESS","success":` + body + `}`))
+				return
+			}
+		}
+		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, prefix+"/order/orders/") {
+			if body, ok := orders[strings.TrimPrefix(r.URL.Path, prefix+"/order/orders/")]; ok {
+				_, _ = w.Write([]byte(body))
+				return
+			}
+		}
+		t.Errorf("unexpected TossPlace request %s %s", r.Method, r.URL.String())
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"resultType":"FAILURE","error":{"errorCode":"NOT_FOUND"}}`))
 	}))
 }
 

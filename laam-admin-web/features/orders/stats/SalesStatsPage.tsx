@@ -41,6 +41,8 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatCurrencyKRW } from "@/lib/utils";
 
+import { mergePaymentMethodStats, paymentMethodLabel } from "../payment-method";
+
 import { defaultDateRange, resolveDateRange, type DayBasis } from "./date-range";
 import type { TrendUnit } from "./model";
 import { useSalesStatsQuery } from "./queries";
@@ -73,14 +75,22 @@ const TREND_UNIT_LABEL_KEY: Record<TrendUnit, string> = {
 // until then.
 const EPOCH = new Date(0);
 
+type ShareTooltipContent = (props: {
+  active?: boolean;
+  payload?: ReadonlyArray<{ payload?: Record<string, unknown> }>;
+}) => React.ReactNode;
+
 function ShareChart({
   data,
   nameKey,
   ariaLabel,
+  tooltipContent,
 }: {
   data: Array<{ revenue: number; orderCount: number }>;
   nameKey: string;
   ariaLabel: string;
+  /** Replaces recharts' default tooltip body (name + revenue) when given. */
+  tooltipContent?: ShareTooltipContent;
 }) {
   return (
     <div role="img" aria-label={ariaLabel} className="h-64 w-full">
@@ -91,7 +101,7 @@ function ShareChart({
               <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
             ))}
           </Pie>
-          <RechartsTooltip />
+          {tooltipContent ? <RechartsTooltip content={tooltipContent} /> : <RechartsTooltip />}
           <Legend />
         </PieChart>
       </ResponsiveContainer>
@@ -241,6 +251,24 @@ function SalesStatsContent({
   t: (key: string, options?: Record<string, unknown>) => string;
   language: string;
 }) {
+  // The payment-method breakdown counts payments (결제 건수), not menu rows,
+  // so its tooltip labels the count explicitly instead of leaving it out.
+  const paymentMethodTooltip: ShareTooltipContent = ({ active, payload }) => {
+    const row = active ? payload?.[0]?.payload : undefined;
+    if (!row) {
+      return null;
+    }
+    return (
+      <div className="flex flex-col gap-0.5 rounded-md border bg-background px-3 py-2 text-sm shadow-sm">
+        <span className="font-medium text-foreground">{String(row.paymentMethodLabel ?? "")}</span>
+        <span className="text-foreground">{formatCurrencyKRW(Number(row.revenue), language)}</span>
+        <span className="text-muted-foreground">
+          {t("statsPaymentCountLabel")}: {Number(row.orderCount)}
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 sm:grid-cols-3">
@@ -302,9 +330,13 @@ function SalesStatsContent({
           </CardHeader>
           <CardContent>
             <ShareChart
-              data={data.byPaymentMethod}
-              nameKey="paymentMethod"
+              data={mergePaymentMethodStats(data.byPaymentMethod).map((row) => ({
+                ...row,
+                paymentMethodLabel: paymentMethodLabel(row.paymentMethod, t),
+              }))}
+              nameKey="paymentMethodLabel"
               ariaLabel={t("statsByPaymentMethodTitle")}
+              tooltipContent={paymentMethodTooltip}
             />
           </CardContent>
         </Card>

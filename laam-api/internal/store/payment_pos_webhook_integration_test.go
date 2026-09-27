@@ -236,7 +236,7 @@ func resetPaymentOrdersTable(t *testing.T, ctx context.Context) {
 	if testPool == nil {
 		t.Skip("docker not available; skipping integration test")
 	}
-	if _, err := testPool.Exec(ctx, `TRUNCATE payment_orders RESTART IDENTITY CASCADE`); err != nil {
+	if _, err := testPool.Exec(ctx, `TRUNCATE pos_payments, pos_bills, payment_orders RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("truncate payment_orders: %v", err)
 	}
 }

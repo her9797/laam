@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/states/PageSt
 import { formatCurrencyKRW, formatDateTime } from "@/lib/utils";
 
 import type { PaymentOrder, PaymentOrderPosSyncStatus, PaymentOrderStatus } from "./model";
+import { paymentMethodLabel } from "./payment-method";
 import { useAcknowledgeOrderMutation, useOrderQuery } from "./queries";
 
 // Translation keys in the `orders` namespace, not rendered text. Mirrors
@@ -120,6 +121,9 @@ export function OrderDetailPage({ orderId }: { orderId: string }) {
     }
     if (key === "posSyncStatus") {
       return t(POS_SYNC_LABEL_KEY[order.posSyncStatus]);
+    }
+    if (key === "paymentMethod") {
+      return paymentMethodLabel(order.paymentMethod, t);
     }
     if (AMOUNT_FIELD_KEYS.has(key)) {
       return formatCurrencyKRW(value as number, i18n.language);

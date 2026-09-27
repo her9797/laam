@@ -3,6 +3,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SalesStats } from "./model";
 
+// jsdom has no layout, so recharts' `ResponsiveContainer` measures 0x0 and
+// renders no chart at all. Swap it for a fixed-size pass-through so chart
+// content (the pie legend's names) is actually rendered and assertable.
+// `Pie` is wrapped only to record the `data` it receives: jsdom never
+// finishes the sector animation, so slice values aren't in the DOM.
+const pieDataMock = vi.hoisted(() => vi.fn());
+// `Tooltip` is wrapped the same way to record its props: jsdom never
+// hovers a sector, so the tooltip body is rendered by hand from them.
+const tooltipPropsMock = vi.hoisted(() => vi.fn());
+vi.mock("recharts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("recharts")>();
+  const { cloneElement, createElement } = await import("react");
+  return {
+    ...actual,
+    ResponsiveContainer: ({ children }: { children: React.ReactElement<{ width?: number; height?: number }> }) =>
+      cloneElement(children, { width: 400, height: 300 }),
+    Pie: (props: React.ComponentProps<typeof actual.Pie>) => {
+      pieDataMock(props.data);
+      return createElement(actual.Pie, props);
+    },
+    Tooltip: (props: React.ComponentProps<typeof actual.Tooltip>) => {
+      tooltipPropsMock(props);
+      return createElement(actual.Tooltip, props);
+    },
+  };
+});
+
 const useSalesStatsQueryMock = vi.fn();
 const refetchMock = vi.fn();
 
@@ -126,6 +153,93 @@ describe("SalesStatsPage", () => {
     expect(within(rows[1]).getByText("Pizza")).toBeInTheDocument();
     expect(within(rows[1]).getByText("₩12,000")).toBeInTheDocument();
     expect(within(rows[2]).getByText("Beer")).toBeInTheDocument();
+  });
+
+  it("labels the payment-method breakdown with readable payment-method names", async () => {
+    mockQuery({
+      data: {
+        ...STATS,
+        byPaymentMethod: [
+          { paymentMethod: "CARD", revenue: 15000, orderCount: 1 },
+          { paymentMethod: "POS", revenue: 5000, orderCount: 1 },
+          { paymentMethod: "간편결제", revenue: 3000, orderCount: 1 },
+        ],
+      },
+    });
+
+    render(<SalesStatsPage />);
+
+    const chart = screen.getByRole("img", { name: "결제수단별 매출 비중" });
+    // The legend fills in after the pie registers its sectors, not on the
+    // first commit.
+    expect(await within(chart).findByText("카드")).toBeInTheDocument();
+    expect(within(chart).getByText("POS(미확인)")).toBeInTheDocument();
+    expect(within(chart).getByText("간편결제")).toBeInTheDocument();
+    expect(within(chart).queryByText("CARD")).not.toBeInTheDocument();
+  });
+
+  it("shows unconfirmed payment methods as a single summed, revenue-ranked entry", async () => {
+    mockQuery({
+      data: {
+        ...STATS,
+        byPaymentMethod: [
+          { paymentMethod: "CARD", revenue: 15000, orderCount: 3 },
+          { paymentMethod: "CASH", revenue: 5000, orderCount: 1 },
+          { paymentMethod: "UNDEFINED", revenue: 4000, orderCount: 1 },
+          { paymentMethod: "", revenue: 3000, orderCount: 1 },
+        ],
+      },
+    });
+
+    render(<SalesStatsPage />);
+
+    const chart = screen.getByRole("img", { name: "결제수단별 매출 비중" });
+    await within(chart).findByText("카드");
+    expect(within(chart).getAllByText("미확인")).toHaveLength(1);
+    // The merged 미확인 slice (4,000 + 3,000 = 7,000) now outranks 현금
+    // (5,000).
+    const paymentSlices = pieDataMock.mock.calls
+      .map(([data]) => data as Array<{ paymentMethodLabel?: string; revenue: number; orderCount: number }>)
+      .findLast((data) => data.some((row) => row.paymentMethodLabel !== undefined));
+    expect(
+      paymentSlices?.map(({ paymentMethodLabel, revenue, orderCount }) => [paymentMethodLabel, revenue, orderCount]),
+    ).toEqual([
+      ["카드", 15000, 3],
+      ["미확인", 7000, 2],
+      ["현금", 5000, 1],
+    ]);
+  });
+
+  it("labels the payment-method breakdown's count as the number of payments (결제 건수)", () => {
+    tooltipPropsMock.mockClear();
+    mockQuery({
+      data: {
+        ...STATS,
+        byPaymentMethod: [{ paymentMethod: "CARD", revenue: 15000, orderCount: 3 }],
+      },
+    });
+
+    render(<SalesStatsPage />);
+
+    // Only the payment-method pie gets a custom tooltip body; the category
+    // pie and the trend bar keep recharts' default one.
+    const contents = tooltipPropsMock.mock.calls
+      .map(([props]) => (props as { content?: unknown }).content)
+      .filter((content): content is (props: unknown) => React.ReactNode => typeof content === "function");
+    expect(new Set(contents).size).toBe(1);
+
+    cleanup();
+    render(
+      <>
+        {contents[0]({
+          active: true,
+          payload: [{ payload: { paymentMethodLabel: "카드", revenue: 15000, orderCount: 3 } }],
+        })}
+      </>,
+    );
+    expect(screen.getByText("카드")).toBeInTheDocument();
+    expect(screen.getByText("₩15,000")).toBeInTheDocument();
+    expect(screen.getByText("결제 건수: 3")).toBeInTheDocument();
   });
 
   it("defaults the aggregation basis to '영업일' (business day)", () => {
