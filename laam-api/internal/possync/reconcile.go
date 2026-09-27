@@ -52,7 +52,9 @@ type unitLine struct {
 // added to ("한 번에 결제" can move an item between POS orders), so matching
 // is by multiset:
 //
-//  1. onOrder rows are matched to unit lines by name and amount, then by
+//  1. onOrder rows are matched to unit lines by name and amount, then to
+//     whole quantity lines by name and line total (a POS-native row
+//     recorded for that line earlier), then by
 //     amount alone (web names can differ from POS catalog titles). Matched
 //     rows complete here; the rest moved out.
 //  2. Each unit line still unmatched may adopt one candidate with the same
@@ -70,19 +72,12 @@ func PlanCompletion(ctx context.Context, lines []tossplace.OrderLineItem, onOrde
 	positives := make([]positiveLine, 0, len(lines))
 	units := make([]unitLine, 0, len(lines))
 	for _, line := range lines {
-		amount := line.ItemPrice.PriceValue * line.Quantity
-		for _, choice := range line.OptionChoices {
-			amount += choice.PriceValue * choice.Quantity
-		}
-		if amount <= 0 {
+		count, unitAmount, ok := lineUnits(line)
+		if !ok {
 			continue
 		}
 		index := len(positives)
 		positives = append(positives, positiveLine{name: line.Item.Title, category: line.Item.Category.Title})
-		count, unitAmount := int64(1), amount
-		if line.Quantity > 1 && amount%line.Quantity == 0 {
-			count, unitAmount = line.Quantity, amount/line.Quantity
-		}
 		for u := int64(0); u < count; u++ {
 			units = append(units, unitLine{line: index, name: line.Item.Title, amount: unitAmount})
 		}
@@ -107,7 +102,35 @@ func PlanCompletion(ctx context.Context, lines []tossplace.OrderLineItem, onOrde
 			}
 		}
 	}
+	// A quantity line recorded earlier as one POS-native row (its units
+	// recombined, see step 3) is represented by that row as a whole.
+	matchWholeLines := func() {
+		for start := 0; start < len(units); {
+			end := start
+			var total int64
+			free := true
+			for end < len(units) && units[end].line == units[start].line {
+				total += units[end].amount
+				free = free && !matched[end]
+				end++
+			}
+			if free && end-start > 1 {
+				for j, row := range own {
+					if ownUsed[j] || row.Amount != total || row.MenuItemName != units[start].name {
+						continue
+					}
+					ownUsed[j] = true
+					for i := start; i < end; i++ {
+						matched[i] = true
+					}
+					break
+				}
+			}
+			start = end
+		}
+	}
 	matchOwn(true)
+	matchWholeLines()
 	matchOwn(false)
 
 	plan := CompletionPlan{
@@ -205,6 +228,24 @@ func PlanCompletion(ctx context.Context, lines []tossplace.OrderLineItem, onOrde
 		}
 	}
 	return plan, nil
+}
+
+// lineUnits splits a POS line item into the units a web row can match: a
+// quantity-q line whose amount (priceValue*quantity plus its option
+// choices) divides evenly is q units of amount/q, otherwise one unit of the
+// whole amount. ok is false for a line with a non-positive amount.
+func lineUnits(line tossplace.OrderLineItem) (count int64, unitAmount int64, ok bool) {
+	amount := line.ItemPrice.PriceValue * line.Quantity
+	for _, choice := range line.OptionChoices {
+		amount += choice.PriceValue * choice.Quantity
+	}
+	if amount <= 0 {
+		return 0, 0, false
+	}
+	if line.Quantity > 1 && amount%line.Quantity == 0 {
+		return line.Quantity, amount / line.Quantity, true
+	}
+	return 1, amount, true
 }
 
 // sortedRows returns a copy of rows ordered oldest first, ties by ID.

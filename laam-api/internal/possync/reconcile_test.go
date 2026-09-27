@@ -323,6 +323,28 @@ func TestPlanCompletion_IgnoresNonPositiveLines(t *testing.T) {
 	assertNatives(t, plan.Natives, NativeLine{MenuItemName: "생맥주", CategoryName: "맥주", Amount: 6000})
 }
 
+// A quantity line recorded earlier as ONE POS-native row (생맥주 x2 =
+// 12,000) is already represented on a re-run: the row matches the whole
+// line, so nothing is recorded again and no candidate is looked up for
+// its units.
+func TestPlanCompletion_RecordedQuantityNativeMatchesItsWholeLine(t *testing.T) {
+	lines := []tossplace.OrderLineItem{line("하우스 하이볼", "하이볼", 11000, 1), line("생맥주", "맥주", 6000, 2)}
+	onOrder := []RowRef{
+		rowRef("row-web", "pos-A", "하우스 하이볼", 11000, 0, false),
+		rowRef("row-native", "pos-A", "생맥주", 12000, 5, false),
+	}
+	candidates := []RowRef{rowRef("row-elsewhere", "pos-B", "생맥주", 6000, 1, false)}
+
+	plan, err := PlanCompletion(context.Background(), lines, onOrder, candidates, noLookup(t))
+	if err != nil {
+		t.Fatalf("PlanCompletion() error = %v", err)
+	}
+	assertIDs(t, "CompleteRowIDs", plan.CompleteRowIDs, "row-web", "row-native")
+	assertIDs(t, "MoveOutRowIDs", plan.MoveOutRowIDs)
+	assertIDs(t, "AdoptRowIDs", plan.AdoptRowIDs)
+	assertNatives(t, plan.Natives)
+}
+
 func TestPlanCompletion_EmptyInputs(t *testing.T) {
 	plan, err := PlanCompletion(context.Background(), nil, nil, nil, nil)
 	if err != nil {
