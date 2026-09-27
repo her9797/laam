@@ -518,6 +518,95 @@ func TestBackfill_ApplyStampsTheOrdersCancelledAt(t *testing.T) {
 	}
 }
 
+// seedMovedItem is the "한 번에 결제" case the backfill can see: web 제임슨
+// on POS order X was paid on Y, which also holds a web 조니워커 블랙 (so Y is
+// a backfill candidate too); X was paid with only 고독 on it.
+func seedMovedItem(t *testing.T, fake *fakeTossPlace) {
+	t.Helper()
+	for _, row := range []struct {
+		id, posOrderID, name string
+		amount               int64
+		createdAt            time.Time
+	}{
+		{"order-jameson", "pos-x", "제임슨", 10000, time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)},
+		{"order-johnnie", "pos-y", "조니워커 블랙", 11000, time.Date(2026, 9, 1, 12, 10, 0, 0, time.UTC)},
+	} {
+		if _, err := testPool.Exec(context.Background(), `
+			INSERT INTO payment_orders (id, menu_item_name, category_name, table_number, amount, status, pos_sync_status, pos_order_id, created_at)
+			VALUES ($1, $2, '위스키', 'N-01', $3, 'READY', 'SUCCEEDED', $4, $5)
+		`, row.id, row.name, row.amount, row.posOrderID, row.createdAt); err != nil {
+			t.Fatalf("seed %s: %v", row.id, err)
+		}
+	}
+	fake.setOrderJSON("pos-x", `{"id":"pos-x","orderState":"COMPLETED","completedAt":"2026-09-01T13:00:00Z",`+
+		`"chargePrice":{"totalAmount":15000,"discountAmount":0},"lineItems":[`+lineItemJSON("고독", "기타", 15000, 1)+`]}`,
+		`[`+paymentJSON("pay-x", "APPROVED", "ACCOUNT_TRANSFER", 15000, "2026-09-01T13:00:00Z", "")+`]`)
+	fake.setOrderJSON("pos-y", `{"id":"pos-y","orderState":"COMPLETED","completedAt":"2026-09-01T12:30:00Z",`+
+		`"chargePrice":{"totalAmount":21000,"discountAmount":0},"lineItems":[`+lineItemJSON("조니워커 블랙", "위스키", 11000, 1)+`,`+
+		lineItemJSON("제임슨", "위스키", 10000, 1)+`]}`,
+		`[`+paymentJSON("pay-y", "APPROVED", "CARD", 21000, "2026-09-01T12:30:00Z", "")+`]`)
+}
+
+func TestBackfill_MovedItemDryRunWritesNothingAndApplySettlesItOnThePayingOrder(t *testing.T) {
+	resetTables(t)
+	fake, server := newFakeTossPlace(t)
+	seedMovedItem(t, fake)
+	before := snapshotDB(t)
+
+	code, out := runBackfill(t, testConfig(server.URL))
+	if code != 0 {
+		t.Fatalf("dry-run exit code = %d, output:\n%s", code, out)
+	}
+	after := snapshotDB(t)
+	if after.Bills != 0 || after.Payments != 0 || len(after.Rows) != len(before.Rows) {
+		t.Fatalf("dry-run wrote: bills=%d payments=%d rows %d -> %d", after.Bills, after.Payments, len(before.Rows), len(after.Rows))
+	}
+	for id, row := range before.Rows {
+		if after.Rows[id] != row {
+			t.Fatalf("dry-run changed %s: %q -> %q", id, row, after.Rows[id])
+		}
+	}
+	for _, want := range []string{"moved_out=1 adopted=0 natives=1", "moved_out=0 adopted=1 natives=0"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("dry-run output missing %q:\n%s", want, out)
+		}
+	}
+
+	if code, out := runBackfill(t, testConfig(server.URL), "--apply"); code != 0 {
+		t.Fatalf("apply exit code = %d, output:\n%s", code, out)
+	}
+	var status, posOrderID, origin, billOf string
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT o.status, o.pos_order_id, COALESCE(o.pos_origin_order_id, ''), COALESCE(b.pos_order_id, '')
+		FROM payment_orders o LEFT JOIN pos_bills b ON b.id = o.bill_id WHERE o.id = 'order-jameson'
+	`).Scan(&status, &posOrderID, &origin, &billOf); err != nil {
+		t.Fatal(err)
+	}
+	if status != "DONE" || posOrderID != "pos-y" || origin != "pos-x" || billOf != "pos-y" {
+		t.Fatalf("제임슨 = %s on %s (origin %q, bill of %q), want DONE on pos-y from pos-x in Y's bill", status, posOrderID, origin, billOf)
+	}
+	for posOrderID, want := range map[string]int64{"pos-x": 15000, "pos-y": 21000} {
+		var rowsSum, count int64
+		if err := testPool.QueryRow(context.Background(), `
+			SELECT COALESCE(SUM(o.amount), 0), COUNT(*) FROM payment_orders o JOIN pos_bills b ON b.id = o.bill_id
+			WHERE b.pos_order_id = $1 AND o.status = 'DONE'
+		`, posOrderID).Scan(&rowsSum, &count); err != nil {
+			t.Fatal(err)
+		}
+		if bill := loadBill(t, posOrderID); rowsSum != want || bill.Status != "PAID" || bill.Total == nil || *bill.Total != want || !bill.Synced {
+			t.Fatalf("%s: DONE rows %d (%d rows), bill %+v; want %d PAID synced", posOrderID, rowsSum, count, bill, want)
+		}
+	}
+
+	code, out = runBackfill(t, testConfig(server.URL), "--apply")
+	if code != 0 {
+		t.Fatalf("second apply exit code = %d, output:\n%s", code, out)
+	}
+	if strings.Count(out, "moved_out=0 adopted=0 natives=0") != 2 {
+		t.Errorf("second apply should change nothing:\n%s", out)
+	}
+}
+
 func assertNoSecrets(t *testing.T, out string) {
 	t.Helper()
 	for _, secret := range []string{fakeAccessKey, fakeSecretKey, fakeCardNo, "admin-token-DO-NOT-PRINT", "laam:laam@", "AP-1"} {

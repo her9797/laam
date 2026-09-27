@@ -43,13 +43,18 @@ type SnapshotRow struct {
 	Amount       int64
 	MenuItemName string
 	CategoryName string
+	// MovedOut marks a row whose item left this POS order for another
+	// (pos_moved_out_at is set): it is no longer a line of this order.
+	MovedOut bool
 }
 
 // Source is the read side: which POS orders to backfill and their current
-// state. Nothing on it writes.
+// state. Nothing on it writes. Its possync.CompletionReader methods are the
+// reads the completion is planned from, shared with the completed webhook.
 type Source interface {
 	ListPOSOrderIDsForBackfill(ctx context.Context) ([]string, error)
 	LoadSnapshot(ctx context.Context, posOrderID string, paymentIDs []string) (Snapshot, error)
+	possync.CompletionReader
 }
 
 // POS is the TossPlace read API the backfill needs.
@@ -64,12 +69,12 @@ type POS interface {
 type Writer interface {
 	EnsurePOSBill(ctx context.Context, posOrderID string) (string, error)
 	SetPOSBillCharge(ctx context.Context, posOrderID string, totalAmount int64, discountAmount int64) error
-	CompletePOSBill(ctx context.Context, input store.CompletePOSBillInput) (string, bool, error)
 	CancelPOSBill(ctx context.Context, posOrderID string, orderKey string, cancelledAt time.Time) (bool, error)
-	// RecordPOSNativeLines diffs and inserts under the POS order's lock, so
-	// a completed webhook recording the same lines concurrently cannot
-	// make the backfill (or itself) record them twice.
-	RecordPOSNativeLines(ctx context.Context, posOrderID string, diff func(existing []store.POSOrderLine) []store.CreatePOSNativeOrderInput) (int, error)
+	// ApplyPOSCompletion applies the same completion plan the completed
+	// webhook applies, in one transaction under the POS orders' locks; it
+	// skips POS-native lines already recorded, so a webhook recording them
+	// concurrently cannot make them count twice.
+	ApplyPOSCompletion(ctx context.Context, in store.ApplyPOSCompletionInput) (string, error)
 	UpsertPOSPayments(ctx context.Context, posOrderID string, payments []store.POSPaymentInput, fullSync bool) error
 	SyncPOSPayments(ctx context.Context, posOrderID string, payments []store.POSPaymentInput, expectStatus string) (bool, error)
 }
@@ -117,6 +122,17 @@ type Summary struct {
 	NativeLinesToCreate       int
 	NativeLinesToCreateAmount int64
 
+	// RowsToMoveOut are unpaid rows whose item left their POS order for
+	// another ("한 번에 결제"); RowsToAdopt are rows whose item moved into the
+	// completed order and are paid there (also counted in RowsToDone).
+	RowsToMoveOut int
+	RowsToAdopt   int
+
+	// NativesToReplace are legacy POS-native rows that duplicate a moved
+	// web row: deleted, and the web row paid on their bill instead.
+	NativesToReplace       int
+	NativesToReplaceAmount int64
+
 	// PaymentMismatches are bills that end up PAID but whose APPROVED
 	// payments are missing or do not add up to the POS charge; their
 	// payment list is stored but not marked synced.
@@ -150,6 +166,9 @@ type plan struct {
 	RowsToDone     []SnapshotRow
 	RowsToCancel   []SnapshotRow
 	NativeLines    []possync.NativeLine
+	RowsToMoveOut  int
+	RowsToAdopt    int
+	Completion     possync.OrderCompletion
 	ChargeChanges  bool
 	NewPayments    int
 	FullSync       bool
@@ -160,6 +179,12 @@ type plan struct {
 	// PaymentMismatch is why the payments do not account for a PAID bill
 	// ("" when they do); such a bill is not marked payment-synced.
 	PaymentMismatch string
+
+	// Replacements are legacy POS-native rows replaced by the moved web
+	// row they duplicate (see planLegacyNativeReplacements); ReplacedAmount
+	// is their total, which the swap leaves unchanged as revenue.
+	Replacements   []store.POSNativeReplacement
+	ReplacedAmount int64
 }
 
 func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
@@ -272,18 +297,55 @@ func (r *Runner) planOrder(ctx context.Context, posOrderID string, delay time.Du
 		return plan{}, "LoadSnapshot", err
 	}
 
+	var completion possync.OrderCompletion
+	if order.OrderState == orderStateCompleted {
+		completedAt, ok := completionTime(order, payments)
+		if !ok {
+			return plan{}, "plan", errors.New("completed order has no parseable completedAt or approved payment time")
+		}
+		// The completed webhook's own planner: origin orders of rows that
+		// may have moved in are fetched (paced) but nothing is written.
+		completion, err = possync.PlanOrderCompletion(ctx, r.Source, pacedOrders{runner: r, delay: delay}, posOrderID, order, completedAt)
+		if err != nil {
+			return plan{}, "PlanCompletion", err
+		}
+		// Backfill-only: legacy POS-native duplicates of moved web rows.
+		replacements, err := planLegacyNativeReplacements(ctx, completion,
+			possync.OriginLookup(r.Source, pacedOrders{runner: r, delay: delay}))
+		if err != nil {
+			return plan{}, "PlanLegacyNativeReplacements", err
+		}
+		completion.Input.ReplaceNatives = replacements
+	}
+
 	now := time.Now
 	if r.Now != nil {
 		now = r.Now
 	}
-	p, err := buildPlan(posOrderID, order, payments, snapshot, now)
+	p, err := buildPlan(posOrderID, order, payments, snapshot, completion, now)
 	if err != nil {
 		return plan{}, "plan", err
 	}
 	return p, "", nil
 }
 
-func buildPlan(posOrderID string, order tossplace.Order, payments []tossplace.Payment, snapshot Snapshot, now func() time.Time) (plan, error) {
+// pacedOrders fetches origin orders for the completion planner, waiting
+// between TossPlace calls like every other call the backfill makes.
+type pacedOrders struct {
+	runner *Runner
+	delay  time.Duration
+}
+
+func (p pacedOrders) GetOrder(ctx context.Context, orderID string) (tossplace.Order, error) {
+	if err := p.runner.wait(ctx, p.delay); err != nil {
+		return tossplace.Order{}, err
+	}
+	return p.runner.POS.GetOrder(ctx, orderID)
+}
+
+// buildPlan summarizes what applying one POS order changes. For a
+// completed order, completion is its plan from possync.PlanOrderCompletion.
+func buildPlan(posOrderID string, order tossplace.Order, payments []tossplace.Payment, snapshot Snapshot, completion possync.OrderCompletion, now func() time.Time) (plan, error) {
 	p := plan{
 		POSOrderID: posOrderID,
 		State:      order.OrderState,
@@ -293,7 +355,7 @@ func buildPlan(posOrderID string, order tossplace.Order, payments []tossplace.Pa
 		CreateBill: !snapshot.BillExists,
 	}
 	for _, row := range snapshot.Rows {
-		if !snapshot.BillExists || row.BillID != snapshot.BillID {
+		if !row.MovedOut && (!snapshot.BillExists || row.BillID != snapshot.BillID) {
 			p.RowsToLink++
 		}
 	}
@@ -317,26 +379,43 @@ func buildPlan(posOrderID string, order tossplace.Order, payments []tossplace.Pa
 			return plan{}, errors.New("completed order has no parseable completedAt or approved payment time")
 		}
 		p.CompletedAt = completedAt
-		// Same diff the completed webhook runs (possync), against every
-		// recorded row whatever its status, so a re-run finds nothing new.
-		existing := make([]store.POSOrderLine, 0, len(snapshot.Rows))
-		for _, row := range snapshot.Rows {
-			existing = append(existing, store.POSOrderLine{MenuItemName: row.MenuItemName, CategoryName: row.CategoryName, Amount: row.Amount})
+		// The same plan the completed webhook applies (possync): rows
+		// already DONE count as matched lines, so a re-run finds nothing new.
+		p.Completion = completion
+		p.NativeLines = completion.Plan.Natives
+		p.Replacements = completion.Input.ReplaceNatives
+		for _, pair := range p.Replacements {
+			p.ReplacedAmount += completion.Rows[pair.NativeRowID].Amount
 		}
-		p.NativeLines = possync.NativeLines(order.LineItems, existing)
-		live := len(p.NativeLines)
+		settled := map[string]bool{}
+		for _, id := range completion.Plan.CompleteRowIDs {
+			settled[id] = true
+		}
+		hasCancelled := false
 		for _, row := range snapshot.Rows {
-			switch row.Status {
-			case "READY", "ACKNOWLEDGED":
+			switch {
+			case row.MovedOut:
+			case row.Status == "CANCELLED":
+				hasCancelled = true
+			case settled[row.ID] && isUnpaid(row.Status):
 				p.RowsToDone = append(p.RowsToDone, row)
-				live++
-			case "CANCELLED":
-			default:
-				live++
 			}
 		}
+		for _, id := range completion.Plan.MoveOutRowIDs {
+			if isUnpaid(completion.Rows[id].Status) {
+				p.RowsToMoveOut++
+			}
+		}
+		for _, id := range completion.Plan.AdoptRowIDs {
+			row := completion.Rows[id]
+			p.RowsToAdopt++
+			p.RowsToDone = append(p.RowsToDone, SnapshotRow{ID: row.ID, Status: row.Status, Amount: row.Amount, MenuItemName: row.MenuItemName, CategoryName: row.CategoryName})
+		}
+		// Mirrors ApplyPOSCompletion: a bill whose remaining rows are all
+		// cancelled is CANCELLED, otherwise PAID.
+		live := len(p.NativeLines) + len(completion.Plan.CompleteRowIDs) + len(completion.Plan.AdoptRowIDs)
 		p.BillStatusTo = "PAID"
-		if currentStatus == "CANCELLED" || live == 0 {
+		if currentStatus == "CANCELLED" || (live == 0 && hasCancelled) {
 			p.BillStatusTo = "CANCELLED"
 		}
 		// Same check as the webhook's payment sync: a PAID bill whose
@@ -346,6 +425,10 @@ func buildPlan(posOrderID string, order tossplace.Order, payments []tossplace.Pa
 	case orderStateCancelled:
 		p.CancelledAt, p.CancelEstimate = cancellationTime(order, payments, now)
 		for _, row := range snapshot.Rows {
+			if row.MovedOut {
+				// CancelPOSBill leaves it: its item lives on another order.
+				continue
+			}
 			switch row.Status {
 			case "READY", "ACKNOWLEDGED", "DONE":
 				p.RowsToCancel = append(p.RowsToCancel, row)
@@ -367,28 +450,22 @@ func buildPlan(posOrderID string, order tossplace.Order, payments []tossplace.Pa
 // apply performs the plan's writes. Every call is idempotent, so a partial
 // failure is fixed by re-running.
 func (r *Runner) apply(ctx context.Context, p plan) (string, error) {
-	if _, err := r.Writer.EnsurePOSBill(ctx, p.POSOrderID); err != nil {
-		return "EnsurePOSBill", err
-	}
-	if err := r.Writer.SetPOSBillCharge(ctx, p.POSOrderID, p.Order.ChargePrice.TotalAmount, p.Order.ChargePrice.DiscountAmount); err != nil {
-		return "SetPOSBillCharge", err
-	}
-	switch p.State {
-	case orderStateCompleted:
-		// Native lines go in before completing so the bill's PAID/CANCELLED
-		// status counts them; each row links to the bill ensured above.
-		// The diff is re-run against the rows recorded at write time (not
-		// the plan's snapshot), under the POS order's lock, so lines a
-		// webhook recorded since the snapshot are not added again.
-		if _, err := r.Writer.RecordPOSNativeLines(ctx, p.POSOrderID, func(existing []store.POSOrderLine) []store.CreatePOSNativeOrderInput {
-			return possync.NativeOrderInputs(p.POSOrderID, p.Order, existing, p.CompletedAt)
-		}); err != nil {
-			return "RecordPOSNativeLines", err
+	if p.State == orderStateCompleted {
+		// One transaction: bill, charge, completed/moved/adopted rows and
+		// POS-native lines (natives a webhook recorded since the plan was
+		// made are not added again).
+		if _, err := r.Writer.ApplyPOSCompletion(ctx, p.Completion.Input); err != nil {
+			return "ApplyPOSCompletion", err
 		}
-		if _, _, err := r.Writer.CompletePOSBill(ctx, store.CompletePOSBillInput{POSOrderID: p.POSOrderID, CompletedAt: p.CompletedAt}); err != nil {
-			return "CompletePOSBill", err
+	} else {
+		if _, err := r.Writer.EnsurePOSBill(ctx, p.POSOrderID); err != nil {
+			return "EnsurePOSBill", err
 		}
-	case orderStateCancelled:
+		if err := r.Writer.SetPOSBillCharge(ctx, p.POSOrderID, p.Order.ChargePrice.TotalAmount, p.Order.ChargePrice.DiscountAmount); err != nil {
+			return "SetPOSBillCharge", err
+		}
+	}
+	if p.State == orderStateCancelled {
 		if _, err := r.Writer.CancelPOSBill(ctx, p.POSOrderID, "", p.CancelledAt); err != nil {
 			return "CancelPOSBill", err
 		}
@@ -493,6 +570,10 @@ func cancellationTime(order tossplace.Order, payments []tossplace.Payment, now f
 	return now().UTC(), true
 }
 
+func isUnpaid(status string) bool {
+	return status == "READY" || status == "ACKNOWLEDGED"
+}
+
 func sumAmount(rows []SnapshotRow, statuses ...string) int64 {
 	var total int64
 	for _, row := range rows {
@@ -544,8 +625,17 @@ func (p plan) line() string {
 		len(p.RowsToCancel), sumAmount(p.RowsToCancel, "DONE"),
 		p.Order.ChargePrice.TotalAmount, p.Order.ChargePrice.DiscountAmount)
 	if p.State == orderStateCompleted {
-		fmt.Fprintf(&b, " completed_at=%s native_lines_to_create=%d(%d)",
-			p.CompletedAt.UTC().Format(time.RFC3339), len(p.NativeLines), nativeAmount(p.NativeLines))
+		fmt.Fprintf(&b, " completed_at=%s native_lines_to_create=%d(%d) moved_out=%d adopted=%d natives=%d",
+			p.CompletedAt.UTC().Format(time.RFC3339), len(p.NativeLines), nativeAmount(p.NativeLines),
+			p.RowsToMoveOut, p.RowsToAdopt, len(p.NativeLines))
+		fmt.Fprintf(&b, " replaced_natives=%d", len(p.Replacements))
+		if len(p.Replacements) > 0 {
+			ids := make([]string, 0, len(p.Replacements))
+			for _, pair := range p.Replacements {
+				ids = append(ids, pair.WebRowID+"<-"+pair.NativeRowID)
+			}
+			fmt.Fprintf(&b, "[%s](%d)", strings.Join(ids, ","), p.ReplacedAmount)
+		}
 	}
 	if p.State == orderStateCancelled {
 		estimated := ""
@@ -576,6 +666,10 @@ func (s *Summary) add(p plan) {
 	s.RowsToCancelDone += sumAmount(p.RowsToCancel, "DONE")
 	s.NativeLinesToCreate += len(p.NativeLines)
 	s.NativeLinesToCreateAmount += nativeAmount(p.NativeLines)
+	s.RowsToMoveOut += p.RowsToMoveOut
+	s.RowsToAdopt += p.RowsToAdopt
+	s.NativesToReplace += len(p.Replacements)
+	s.NativesToReplaceAmount += p.ReplacedAmount
 	if p.ChargeChanges {
 		s.ChargesToSet++
 	}
@@ -615,6 +709,8 @@ func (s Summary) print(out io.Writer) {
 	fmt.Fprintf(out, "rows_to_done=%d amount=%d (READY/ACKNOWLEDGED->DONE, 기존 메뉴 합산 기준 매출 증가분)\n", s.RowsToDone, s.RowsToDoneAmount)
 	fmt.Fprintf(out, "rows_to_cancelled=%d done_amount=%d (->CANCELLED, 그중 DONE 행 금액 = 매출 감소분)\n", s.RowsToCancel, s.RowsToCancelDone)
 	fmt.Fprintf(out, "native_lines_to_create=%d amount=%d (POS 직접 입력 메뉴 -> DONE 행 추가 = 매출 증가분)\n", s.NativeLinesToCreate, s.NativeLinesToCreateAmount)
+	fmt.Fprintf(out, "rows_moved_out=%d rows_adopted=%d (POS '한 번에 결제'로 다른 POS 주문으로 옮겨진 메뉴: 원래 계산서에서 빠지고, 결제된 주문의 계산서에서 DONE)\n", s.RowsToMoveOut, s.RowsToAdopt)
+	fmt.Fprintf(out, "replaced_natives=%d amount=%d (과거 코드가 이동된 웹 주문을 POS 직접 입력으로 중복 기록한 행: 삭제하고 웹 주문을 그 계산서에서 DONE, 매출 변화 없음)\n", s.NativesToReplace, s.NativesToReplaceAmount)
 	fmt.Fprintf(out, "new_payments=%d\n", s.NewPayments)
 	fmt.Fprintf(out, "payment_mismatch=%d (PAID인데 APPROVED 결제가 없거나 합계가 POS 청구액과 달라 결제 동기화 완료로 표시하지 않음)\n", s.PaymentMismatches)
 	keys := make([]string, 0, len(s.PaymentsByTypeKey))
