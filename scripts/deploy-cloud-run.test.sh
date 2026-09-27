@@ -73,6 +73,10 @@ grep -Fq 'TOSS_PLACE_MERCHANT_ID=laam-toss-place-merchant-id:latest' "$GCLOUD_LO
 grep -Fq 'TOSS_PLACE_WEBHOOK_SECRET=laam-toss-place-webhook-secret:latest' "$GCLOUD_LOG"
 grep -Fq 'YOUTUBE_API_KEY=laam-youtube-api-key:latest' "$GCLOUD_LOG"
 grep -Fq 'CUSTOMER_WEB_BASE_URL=https://www.barlaam.store' "$GCLOUD_LOG"
+# The POS plugin's Realtime socket needs the PUBLIC anon key (plain env var,
+# the same value laam-web/admin get at build time) — never a secret.
+grep -Fq -- '--set-env-vars=ALLOWED_ORIGIN=*,CUSTOMER_WEB_BASE_URL=https://www.barlaam.store,POS_ORDER_PROVIDER=' "$GCLOUD_LOG"
+grep -Eq -- '--set-env-vars=[^ ]*,SUPABASE_ANON_KEY=eyJ[^,: ]+( |$)' "$GCLOUD_LOG"
 grep -Fq 'POS_ORDER_PROVIDER=open-api' "$GCLOUD_LOG"
 
 : >"$GCLOUD_LOG"

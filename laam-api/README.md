@@ -32,6 +32,7 @@ laam-api
 - `POST /api/v1/payments/orders`
 - `GET /api/v1/payments/orders/{orderId}`
 - `POST /api/v1/payments/confirm`
+- `GET /api/v1/pos-plugin/realtime-config`
 - `POST /api/v1/pos-plugin/orders/claim`
 - `POST /api/v1/pos-plugin/orders/{orderId}/complete`
 - `POST /api/v1/pos-plugin/orders/{orderId}/fail`

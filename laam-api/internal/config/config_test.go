@@ -94,6 +94,7 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("ADMIN_API_TOKEN", "")
 	t.Setenv("SUPABASE_URL", "")
 	t.Setenv("SUPABASE_BROADCAST_KEY", "")
+	t.Setenv("SUPABASE_ANON_KEY", "")
 	t.Setenv("PAYMENT_API_TOKEN", "")
 	t.Setenv("TOSS_PAYMENTS_SECRET_KEY", "")
 	t.Setenv("TOSS_PAYMENTS_API_BASE_URL", "")
@@ -183,6 +184,7 @@ func TestLoad_ReadsOverridesFromEnv(t *testing.T) {
 	t.Setenv("ADMIN_API_TOKEN", "custom-token")
 	t.Setenv("SUPABASE_URL", "https://project-ref.supabase.co")
 	t.Setenv("SUPABASE_BROADCAST_KEY", "sb_secret_example")
+	t.Setenv("SUPABASE_ANON_KEY", "sb_publishable_example")
 	t.Setenv("PAYMENT_API_TOKEN", "payment-token")
 	t.Setenv("TOSS_PAYMENTS_SECRET_KEY", "live-sk")
 	t.Setenv("TOSS_PAYMENTS_API_BASE_URL", "https://payments.example.com")
@@ -214,6 +216,9 @@ func TestLoad_ReadsOverridesFromEnv(t *testing.T) {
 	}
 	if cfg.SupabaseBroadcastKey != "sb_secret_example" {
 		t.Errorf("SupabaseBroadcastKey = %q, want overridden value", cfg.SupabaseBroadcastKey)
+	}
+	if cfg.SupabaseAnonKey != "sb_publishable_example" {
+		t.Errorf("SupabaseAnonKey = %q, want overridden value", cfg.SupabaseAnonKey)
 	}
 	if cfg.PaymentAPIToken != "payment-token" || cfg.TossPaymentsSecretKey != "live-sk" {
 		t.Error("payment environment overrides were not loaded")
