@@ -29,6 +29,14 @@ export function HomeScreen({ store, canEditTable }: HomeScreenProps) {
             >
               Instagram
             </a>
+            <a
+              className="hero-link-badge hero-link-badge--naver"
+              href="https://map.naver.com/p/entry/place/2042961708?lng=126.908354&lat=37.5567325&placePath=%2Freview%3FadditionalHeight%3D76%26fromPanelNum%3D1%26locale%3Dko%26svcName%3Dmap_pcv5%26timestamp%3D202609280819&searchType=place&c=15.00,0,0,0,dh"
+              target="_blank"
+              rel="noreferrer"
+            >
+              NAVER
+            </a>
           </div>
           <p className="hero-meta">{store.address}</p>
         </header>
