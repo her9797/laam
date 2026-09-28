@@ -4,10 +4,10 @@ export const dynamic = "force-dynamic";
 
 export default function AccessRequiredPage() {
   const testEntryEnabled = Boolean(process.env.CUSTOMER_TEST_ENTRY_TOKEN);
-  const tableOptions = [
-    ...Array.from({ length: 12 }, (_, index) => `T-${String(index + 1).padStart(2, "0")}`),
-    ...Array.from({ length: 5 }, (_, index) => `B-${String(index + 1).padStart(2, "0")}`),
-  ];
+  const tableOptions = Array.from(
+    { length: 15 },
+    (_, index) => `N-${String(index + 1).padStart(2, "0")}`,
+  );
 
   return (
     <main className="page-shell">
@@ -34,7 +34,7 @@ export default function AccessRequiredPage() {
               </label>
               <label className="request-compose-field">
                 <span>테이블</span>
-                <select name="table" defaultValue="T-01">
+                <select name="table" defaultValue="N-01">
                   {tableOptions.map((table) => (
                     <option key={table} value={table}>
                       {table}

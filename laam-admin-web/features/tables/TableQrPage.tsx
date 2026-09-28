@@ -19,6 +19,7 @@ import { useAdminTablesQuery } from "./queries";
 // POS sync introduces are not in here and fall back to `areaLabelOther`.
 const AREA_LABEL_KEY: Record<TableArea, string> = {
   B: "areaLabelB",
+  N: "areaLabelN",
   T: "areaLabelT",
 };
 

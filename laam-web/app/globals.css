@@ -302,6 +302,10 @@ a {
   white-space: nowrap;
 }
 
+.hero-link-badge--naver {
+  color: #03c75a;
+}
+
 .hero-meta {
   margin: 10px 0 0;
   color: var(--muted);

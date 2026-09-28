@@ -132,6 +132,24 @@ describe("TableQrPage", () => {
     expect(screen.getAllByRole("button", { name: "SVG" })).toHaveLength(15);
   });
 
+  it("gives the N area its own heading instead of the generic fallback", () => {
+    useAdminTablesQueryMock.mockReturnValue({
+      data: buildData(
+        Array.from({ length: 15 }, (_, i) =>
+          buildTable(`N-${String(i + 1).padStart(2, "0")}`, "N", i + 1),
+        ),
+      ),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: refetchMock,
+    });
+
+    render(<TableQrPage />);
+
+    expect(screen.getByRole("heading", { level: 2, name: "테이블" })).toBeInTheDocument();
+  });
+
   it("renders each table's generated QR image", async () => {
     render(<TableQrPage />);
 
