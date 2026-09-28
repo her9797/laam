@@ -122,9 +122,9 @@ func TestRouter_AdminTables_ReturnsQrTablesWithSignatureAndLinkState(t *testing.
 	}
 
 	wantIDs := []string{
-		"B-01", "B-02", "B-03", "B-04", "B-05",
-		"T-01", "T-02", "T-03", "T-04", "T-05",
-		"T-06", "T-07", "T-08", "T-09", "T-10",
+		"N-01", "N-02", "N-03", "N-04", "N-05",
+		"N-06", "N-07", "N-08", "N-09", "N-10",
+		"N-11", "N-12", "N-13", "N-14", "N-15",
 	}
 	if len(body.Tables) != len(wantIDs) {
 		t.Fatalf("got %d tables, want %d", len(body.Tables), len(wantIDs))

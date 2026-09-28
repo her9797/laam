@@ -909,6 +909,7 @@ func createQrTablesForPOSTables(ctx context.Context, tx pgx.Tx) error {
 		qrTableID  string
 	}
 	var candidates []candidate
+	claims := make(map[string]int)
 	for rows.Next() {
 		var posTableID int64
 		var title string
@@ -918,6 +919,7 @@ func createQrTablesForPOSTables(ctx context.Context, tx pgx.Tx) error {
 		}
 		if qrTableID, ok := qrTableIDFromPOSTitle(title); ok {
 			candidates = append(candidates, candidate{posTableID: posTableID, qrTableID: qrTableID})
+			claims[qrTableID]++
 		}
 	}
 	rows.Close()
@@ -926,6 +928,11 @@ func createQrTablesForPOSTables(ctx context.Context, tx pgx.Tx) error {
 	}
 
 	for _, entry := range candidates {
+		// Two POS tables converting to the same code: which one gets it would
+		// be decided by POS id alone, so neither does and an operator names them.
+		if claims[entry.qrTableID] != 1 {
+			continue
+		}
 		area, number, ok := parseQrTableID(entry.qrTableID)
 		if !ok {
 			continue

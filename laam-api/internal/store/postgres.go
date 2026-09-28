@@ -511,28 +511,28 @@ CREATE INDEX IF NOT EXISTS idx_payment_orders_pos_move_candidates ON payment_ord
 }
 
 // qrTableSeedSQL inserts the fixed QR table layout the store uses today
-// (B-01..B-05, T-01..T-10 — the same set laam-web's /qr/enter accepts). It
-// only runs while qr_tables is empty, so operator edits, links and tables
-// added later are never reset or duplicated.
+// (N-01..N-15 — the same set laam-web's /qr/enter accepts). It only runs
+// while qr_tables is empty, so operator edits, links and tables added later
+// are never reset or duplicated.
 const qrTableSeedSQL = `
 INSERT INTO qr_tables (id, area, number, sort_order)
 SELECT seed.id, seed.area, seed.number, seed.sort_order
 FROM (VALUES
-  ('B-01', 'B', 1, 1),
-  ('B-02', 'B', 2, 2),
-  ('B-03', 'B', 3, 3),
-  ('B-04', 'B', 4, 4),
-  ('B-05', 'B', 5, 5),
-  ('T-01', 'T', 1, 6),
-  ('T-02', 'T', 2, 7),
-  ('T-03', 'T', 3, 8),
-  ('T-04', 'T', 4, 9),
-  ('T-05', 'T', 5, 10),
-  ('T-06', 'T', 6, 11),
-  ('T-07', 'T', 7, 12),
-  ('T-08', 'T', 8, 13),
-  ('T-09', 'T', 9, 14),
-  ('T-10', 'T', 10, 15)
+  ('N-01', 'N', 1, 1),
+  ('N-02', 'N', 2, 2),
+  ('N-03', 'N', 3, 3),
+  ('N-04', 'N', 4, 4),
+  ('N-05', 'N', 5, 5),
+  ('N-06', 'N', 6, 6),
+  ('N-07', 'N', 7, 7),
+  ('N-08', 'N', 8, 8),
+  ('N-09', 'N', 9, 9),
+  ('N-10', 'N', 10, 10),
+  ('N-11', 'N', 11, 11),
+  ('N-12', 'N', 12, 12),
+  ('N-13', 'N', 13, 13),
+  ('N-14', 'N', 14, 14),
+  ('N-15', 'N', 15, 15)
 ) AS seed(id, area, number, sort_order)
 WHERE NOT EXISTS (SELECT 1 FROM qr_tables);
 `

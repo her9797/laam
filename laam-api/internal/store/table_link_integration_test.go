@@ -54,9 +54,9 @@ func TestEnsureSchema_SeedsFixedQrTableLayoutOnlyWhenEmpty(t *testing.T) {
 	rows.Close()
 
 	want := []string{
-		"B-01", "B-02", "B-03", "B-04", "B-05",
-		"T-01", "T-02", "T-03", "T-04", "T-05",
-		"T-06", "T-07", "T-08", "T-09", "T-10",
+		"N-01", "N-02", "N-03", "N-04", "N-05",
+		"N-06", "N-07", "N-08", "N-09", "N-10",
+		"N-11", "N-12", "N-13", "N-14", "N-15",
 	}
 	if len(ids) != len(want) {
 		t.Fatalf("seeded ids = %v, want %v", ids, want)
@@ -69,8 +69,8 @@ func TestEnsureSchema_SeedsFixedQrTableLayoutOnlyWhenEmpty(t *testing.T) {
 
 	// A second EnsureSchema must neither duplicate nor reset existing rows.
 	seedPOSSnapshot(t, ctx, POSTableInput{ID: 4001, Title: "테이블1"})
-	if _, err := testPool.Exec(ctx, `UPDATE qr_tables SET pos_table_id = 4001, linked_at = NOW() WHERE id = 'T-01'`); err != nil {
-		t.Fatalf("link T-01: %v", err)
+	if _, err := testPool.Exec(ctx, `UPDATE qr_tables SET pos_table_id = 4001, linked_at = NOW() WHERE id = 'N-01'`); err != nil {
+		t.Fatalf("link N-01: %v", err)
 	}
 	if err := testRepo.EnsureSchema(ctx); err != nil {
 		t.Fatalf("EnsureSchema() second run error = %v", err)
@@ -84,11 +84,11 @@ func TestEnsureSchema_SeedsFixedQrTableLayoutOnlyWhenEmpty(t *testing.T) {
 		t.Fatalf("qr_tables count after re-running EnsureSchema = %d, want %d", count, len(want))
 	}
 	var linked *int64
-	if err := testPool.QueryRow(ctx, `SELECT pos_table_id FROM qr_tables WHERE id = 'T-01'`).Scan(&linked); err != nil {
-		t.Fatalf("read T-01: %v", err)
+	if err := testPool.QueryRow(ctx, `SELECT pos_table_id FROM qr_tables WHERE id = 'N-01'`).Scan(&linked); err != nil {
+		t.Fatalf("read N-01: %v", err)
 	}
 	if linked == nil || *linked != 4001 {
-		t.Fatalf("T-01 pos_table_id = %v, want 4001", linked)
+		t.Fatalf("N-01 pos_table_id = %v, want 4001", linked)
 	}
 }
 
@@ -103,11 +103,11 @@ func TestRepository_GetTableLinkOverview_ReturnsSeededTablesWithoutLinks(t *test
 	if len(overview.Tables) != 15 {
 		t.Fatalf("len(Tables) = %d, want 15", len(overview.Tables))
 	}
-	if overview.Tables[0].ID != "B-01" || overview.Tables[14].ID != "T-10" {
-		t.Fatalf("Tables order = %q..%q, want B-01..T-10", overview.Tables[0].ID, overview.Tables[14].ID)
+	if overview.Tables[0].ID != "N-01" || overview.Tables[14].ID != "N-15" {
+		t.Fatalf("Tables order = %q..%q, want N-01..N-15", overview.Tables[0].ID, overview.Tables[14].ID)
 	}
 	if overview.Tables[0].POSTableID != nil || overview.Tables[0].POSTableTitle != nil {
-		t.Fatalf("B-01 = %+v, want no link", overview.Tables[0])
+		t.Fatalf("N-01 = %+v, want no link", overview.Tables[0])
 	}
 	if len(overview.POSOnlyTables) != 0 {
 		t.Fatalf("len(POSOnlyTables) = %d, want 0", len(overview.POSOnlyTables))
@@ -444,7 +444,7 @@ func TestRepository_LinkQrTablePOSTable_ManualLinkAndUnlink(t *testing.T) {
 		POSTableInput{ID: 202, Title: "테라스"},
 	)
 
-	linked, err := repo.LinkQrTablePOSTable(ctx, "T-07", ptrInt64(201))
+	linked, err := repo.LinkQrTablePOSTable(ctx, "N-07", ptrInt64(201))
 	if err != nil {
 		t.Fatalf("LinkQrTablePOSTable() error = %v", err)
 	}
@@ -455,10 +455,10 @@ func TestRepository_LinkQrTablePOSTable_ManualLinkAndUnlink(t *testing.T) {
 		t.Fatalf("pos title = %v, want the snapshot title", linked.POSTableTitle)
 	}
 
-	if _, err := repo.LinkQrTablePOSTable(ctx, "T-08", ptrInt64(201)); !errors.Is(err, ErrAlreadyExists) {
+	if _, err := repo.LinkQrTablePOSTable(ctx, "N-08", ptrInt64(201)); !errors.Is(err, ErrAlreadyExists) {
 		t.Fatalf("linking an already linked POS table error = %v, want ErrAlreadyExists", err)
 	}
-	if _, err := repo.LinkQrTablePOSTable(ctx, "T-08", ptrInt64(999)); !errors.Is(err, ErrNotFound) {
+	if _, err := repo.LinkQrTablePOSTable(ctx, "N-08", ptrInt64(999)); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("linking a POS table outside the snapshot error = %v, want ErrNotFound", err)
 	}
 	if _, err := repo.LinkQrTablePOSTable(ctx, "Z-99", ptrInt64(202)); !errors.Is(err, ErrNotFound) {
@@ -466,11 +466,11 @@ func TestRepository_LinkQrTablePOSTable_ManualLinkAndUnlink(t *testing.T) {
 	}
 
 	// Re-linking the same pair is not a conflict.
-	if _, err := repo.LinkQrTablePOSTable(ctx, "T-07", ptrInt64(201)); err != nil {
+	if _, err := repo.LinkQrTablePOSTable(ctx, "N-07", ptrInt64(201)); err != nil {
 		t.Fatalf("re-linking the same pair error = %v", err)
 	}
 
-	unlinked, err := repo.LinkQrTablePOSTable(ctx, "T-07", nil)
+	unlinked, err := repo.LinkQrTablePOSTable(ctx, "N-07", nil)
 	if err != nil {
 		t.Fatalf("unlink error = %v", err)
 	}
@@ -519,7 +519,7 @@ func TestRepository_CreateQrTable_GeneratesIDFromPOSTitle(t *testing.T) {
 			t.Fatalf("CreateQrTable(%q) error = %v, want ErrInvalidInput", badID, err)
 		}
 	}
-	if _, err := repo.CreateQrTable(ctx, "T-01", 303); !errors.Is(err, ErrAlreadyExists) {
+	if _, err := repo.CreateQrTable(ctx, "N-01", 303); !errors.Is(err, ErrAlreadyExists) {
 		t.Fatalf("duplicate id error = %v, want ErrAlreadyExists", err)
 	}
 	if _, err := repo.CreateQrTable(ctx, "T-12", 301); !errors.Is(err, ErrAlreadyExists) {
@@ -554,7 +554,7 @@ func TestRepository_GetPOSTableMappings(t *testing.T) {
 	}
 
 	seedPOSSnapshot(t, ctx, POSTableInput{ID: 401, Title: "룸 A"}, POSTableInput{ID: 402, Title: "테라스"})
-	if _, err := repo.LinkQrTablePOSTable(ctx, "T-03", ptrInt64(401)); err != nil {
+	if _, err := repo.LinkQrTablePOSTable(ctx, "N-03", ptrInt64(401)); err != nil {
 		t.Fatalf("link: %v", err)
 	}
 
@@ -562,8 +562,8 @@ func TestRepository_GetPOSTableMappings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPOSTableMappings() error = %v", err)
 	}
-	if len(mappings.Mappings) != 1 || mappings.Mappings["T-03"] != 401 {
-		t.Fatalf("mappings = %+v, want a single T-03 entry", mappings.Mappings)
+	if len(mappings.Mappings) != 1 || mappings.Mappings["N-03"] != 401 {
+		t.Fatalf("mappings = %+v, want a single N-03 entry", mappings.Mappings)
 	}
 	if mappings.UpdatedAt == nil {
 		t.Fatal("UpdatedAt = nil, want the last link time")
@@ -588,19 +588,19 @@ func TestRepository_CreatePaymentOrder_BlocksUnlinkedTableOnlyWhenLinksExist(t *
 	menuItemID := seedOrderableMenuItem(t, ctx)
 
 	// No QR table is linked yet: ordering keeps working exactly as before.
-	if _, err := repo.CreatePaymentOrder(ctx, menuItemID, "T-02", "", nil); err != nil {
+	if _, err := repo.CreatePaymentOrder(ctx, menuItemID, "N-02", "", nil); err != nil {
 		t.Fatalf("CreatePaymentOrder() with no links error = %v, want nil", err)
 	}
 
 	seedPOSSnapshot(t, ctx, POSTableInput{ID: 501, Title: "테이블 1"})
-	if _, err := repo.LinkQrTablePOSTable(ctx, "T-01", ptrInt64(501)); err != nil {
-		t.Fatalf("link T-01: %v", err)
+	if _, err := repo.LinkQrTablePOSTable(ctx, "N-01", ptrInt64(501)); err != nil {
+		t.Fatalf("link N-01: %v", err)
 	}
 
-	if _, err := repo.CreatePaymentOrder(ctx, menuItemID, "T-01", "", nil); err != nil {
+	if _, err := repo.CreatePaymentOrder(ctx, menuItemID, "N-01", "", nil); err != nil {
 		t.Fatalf("CreatePaymentOrder() for the linked table error = %v, want nil", err)
 	}
-	if _, err := repo.CreatePaymentOrder(ctx, menuItemID, "T-02", "", nil); !errors.Is(err, ErrTableNotLinked) {
+	if _, err := repo.CreatePaymentOrder(ctx, menuItemID, "N-02", "", nil); !errors.Is(err, ErrTableNotLinked) {
 		t.Fatalf("CreatePaymentOrder() for an unlinked table error = %v, want ErrTableNotLinked", err)
 	}
 	if _, err := repo.CreatePaymentOrder(ctx, menuItemID, "없는 테이블", "", nil); !errors.Is(err, ErrTableNotLinked) {
@@ -616,11 +616,11 @@ func TestRepository_RenameQrTable_KeepsPOSLink(t *testing.T) {
 	repo := resetDB(t)
 	seedPOSSnapshot(t, ctx, POSTableInput{ID: 401, Title: "바6"})
 
-	if _, err := repo.LinkQrTablePOSTable(ctx, "T-10", ptrInt64(401)); err != nil {
+	if _, err := repo.LinkQrTablePOSTable(ctx, "N-10", ptrInt64(401)); err != nil {
 		t.Fatalf("LinkQrTablePOSTable() error = %v", err)
 	}
 
-	renamed, err := repo.RenameQrTable(ctx, "T-10", "B-06")
+	renamed, err := repo.RenameQrTable(ctx, "N-10", "B-06")
 	if err != nil {
 		t.Fatalf("RenameQrTable() error = %v", err)
 	}
@@ -637,7 +637,7 @@ func TestRepository_RenameQrTable_KeepsPOSLink(t *testing.T) {
 		t.Fatalf("linkedAt = nil, want the original link timestamp")
 	}
 
-	if _, err := repo.LinkQrTablePOSTable(ctx, "T-10", nil); !errors.Is(err, ErrNotFound) {
+	if _, err := repo.LinkQrTablePOSTable(ctx, "N-10", nil); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("old id lookup error = %v, want ErrNotFound", err)
 	}
 }
@@ -646,10 +646,10 @@ func TestRepository_RenameQrTable_RejectsBadAndDuplicateIDs(t *testing.T) {
 	ctx := context.Background()
 	repo := resetDB(t)
 
-	if _, err := repo.RenameQrTable(ctx, "T-01", "t1"); !errors.Is(err, ErrInvalidInput) {
+	if _, err := repo.RenameQrTable(ctx, "N-01", "t1"); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("malformed id error = %v, want ErrInvalidInput", err)
 	}
-	if _, err := repo.RenameQrTable(ctx, "T-01", "T-02"); !errors.Is(err, ErrAlreadyExists) {
+	if _, err := repo.RenameQrTable(ctx, "N-01", "N-02"); !errors.Is(err, ErrAlreadyExists) {
 		t.Fatalf("duplicate id error = %v, want ErrAlreadyExists", err)
 	}
 	if _, err := repo.RenameQrTable(ctx, "Z-99", "T-20"); !errors.Is(err, ErrNotFound) {
@@ -657,12 +657,12 @@ func TestRepository_RenameQrTable_RejectsBadAndDuplicateIDs(t *testing.T) {
 	}
 
 	// Renaming to its own id is a no-op, not a conflict.
-	same, err := repo.RenameQrTable(ctx, "T-01", "T-01")
+	same, err := repo.RenameQrTable(ctx, "N-01", "N-01")
 	if err != nil {
 		t.Fatalf("self rename error = %v", err)
 	}
-	if same.ID != "T-01" {
-		t.Fatalf("same = %+v, want T-01", same)
+	if same.ID != "N-01" {
+		t.Fatalf("same = %+v, want N-01", same)
 	}
 }
 
@@ -673,7 +673,7 @@ func TestRepository_CompletePOSTableSync_MirrorsPOSTables(t *testing.T) {
 	ctx := context.Background()
 	repo := resetDB(t)
 
-	// The seeded layout has B-01..B-05 and T-01..T-10; the POS only has three
+	// The seeded layout has N-01..N-15; the POS only has three
 	// of them plus a room whose name follows no rule.
 	request, _, err := repo.RequestPOSTableSync(ctx)
 	if err != nil {
