@@ -55,6 +55,12 @@ describe("parseOrderListQuery", () => {
     expect(query.status).toBe("CANCELLED");
   });
 
+  it("accepts status=UNPAID as a valid status filter and serializes it back", () => {
+    const query = parseOrderListQuery(new URLSearchParams("status=UNPAID"));
+    expect(query.status).toBe("UNPAID");
+    expect(buildOrderListSearchParams(query).get("status")).toBe("UNPAID");
+  });
+
   it("accepts status=ACKNOWLEDGED as a valid status filter", () => {
     const query = parseOrderListQuery(new URLSearchParams("status=ACKNOWLEDGED"));
     expect(query.status).toBe("ACKNOWLEDGED");

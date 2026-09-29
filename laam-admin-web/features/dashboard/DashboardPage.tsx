@@ -94,7 +94,7 @@ function buildCards(summary: DashboardSummary): ShortcutCard[] {
     },
     {
       key: "orders",
-      href: "/orders?status=READY",
+      href: "/orders?status=UNPAID",
       titleKey: "cardOrdersTitle",
       descriptionKey: "cardOrdersDescription",
       value: summary.orderCount,

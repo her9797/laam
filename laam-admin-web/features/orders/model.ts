@@ -8,6 +8,13 @@
  */
 export type PaymentOrderStatus = "READY" | "ACKNOWLEDGED" | "DONE" | "CANCELLED";
 
+/**
+ * List-filter values: every real status plus `UNPAID`, which `laam-api`
+ * expands to READY or ACKNOWLEDGED. Kept apart from `PaymentOrderStatus`
+ * because `UNPAID` is never the status of an actual order.
+ */
+export type PaymentOrderStatusFilter = PaymentOrderStatus | "UNPAID";
+
 export type PaymentOrderPosSyncStatus = "PENDING" | "SUCCEEDED" | "FAILED" | "NOT_CONFIGURED";
 
 export type PaymentOrder = {
@@ -46,7 +53,7 @@ export type SortOrder = "asc" | "desc";
 export type OrderListQuery = {
   page: number;
   pageSize: number;
-  status?: PaymentOrderStatus;
+  status?: PaymentOrderStatusFilter;
   posSyncStatus?: PaymentOrderPosSyncStatus;
   search: string;
   dateFrom: string;

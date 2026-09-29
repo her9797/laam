@@ -284,6 +284,22 @@ func TestParsePaymentOrderListQuery_AcceptsCancelledStatus(t *testing.T) {
 	}
 }
 
+func TestParsePaymentOrderListQuery_AcceptsUnpaidPseudoStatus(t *testing.T) {
+	q, err := parsePaymentOrderListQuery(url.Values{"status": {"UNPAID"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if q.Status != "UNPAID" {
+		t.Errorf("Status = %q, want UNPAID", q.Status)
+	}
+}
+
+func TestParsePaymentOrderListQuery_RejectsLowercaseUnpaid(t *testing.T) {
+	if _, err := parsePaymentOrderListQuery(url.Values{"status": {"unpaid"}}); err == nil {
+		t.Error("status=unpaid returned nil error, want invalid status")
+	}
+}
+
 func TestParsePaymentOrderListQuery_InvalidValuesRejected(t *testing.T) {
 	cases := []struct {
 		name  string

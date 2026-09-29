@@ -727,7 +727,7 @@ func (r *Repository) AcknowledgePaymentOrder(ctx context.Context, orderID string
 // ListPaymentOrdersPage, mirroring CustomerRequestFilter/SpecialRequestFilter's
 // shape and validation style.
 type PaymentOrderFilter struct {
-	Status        string // "" = all | "READY" | "ACKNOWLEDGED" | "DONE" | "CANCELLED"
+	Status        string // "" = all | "READY" | "ACKNOWLEDGED" | "DONE" | "CANCELLED" | "UNPAID" (pseudo: READY or ACKNOWLEDGED)
 	PosSyncStatus string // "" = all | "PENDING" | "SUCCEEDED" | "FAILED" | "NOT_CONFIGURED"
 	Search        string
 	From          *time.Time // inclusive
@@ -746,7 +746,9 @@ type PaymentOrderFilter struct {
 
 func paymentOrderFilterWhereClause(filter PaymentOrderFilter) (string, []any) {
 	var b listWhereBuilder
-	if filter.Status != "" {
+	if filter.Status == "UNPAID" {
+		b.add("status IN (" + b.bind("READY") + ", " + b.bind("ACKNOWLEDGED") + ")")
+	} else if filter.Status != "" {
 		b.add("status = " + b.bind(filter.Status))
 	}
 	if filter.PosSyncStatus != "" {

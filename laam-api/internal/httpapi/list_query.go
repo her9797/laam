@@ -294,7 +294,8 @@ func parsePaymentOrderListQuery(query url.Values) (paymentOrderListQuery, error)
 
 	if status := query.Get("status"); status != "" {
 		switch status {
-		case "READY", "ACKNOWLEDGED", "DONE", "CANCELLED":
+		// "UNPAID" is a pseudo status meaning READY or ACKNOWLEDGED.
+		case "READY", "ACKNOWLEDGED", "DONE", "CANCELLED", "UNPAID":
 			q.Status = status
 		default:
 			return q, fmt.Errorf("invalid status: %q", status)

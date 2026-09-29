@@ -51,6 +51,7 @@ import type {
   PaymentOrderPosSyncStatus,
   PaymentOrderSort,
   PaymentOrderStatus,
+  PaymentOrderStatusFilter,
 } from "./model";
 import { defaultOrderDateRange, resolveOrderDateRange } from "./order-date-range";
 import { paymentMethodLabel } from "./payment-method";
@@ -221,6 +222,7 @@ export function OrderListPage() {
 
   const STATUS_FILTER_LABELS: Record<string, string> = {
     all: t("common:filterAll"),
+    UNPAID: t("statusUnpaid"),
     READY: t("statusReady"),
     ACKNOWLEDGED: t("statusAcknowledged"),
     DONE: t("statusDone"),
@@ -368,7 +370,7 @@ export function OrderListPage() {
                 value={query.status ?? "all"}
                 onValueChange={(value) =>
                   updateQuery({
-                    status: value === "all" ? undefined : (value as PaymentOrderStatus),
+                    status: value === "all" ? undefined : (value as PaymentOrderStatusFilter),
                     page: 1,
                   })
                 }
@@ -380,6 +382,7 @@ export function OrderListPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t("common:filterAll")}</SelectItem>
+                  <SelectItem value="UNPAID">{t("statusUnpaid")}</SelectItem>
                   <SelectItem value="READY">{t("statusReady")}</SelectItem>
                   <SelectItem value="ACKNOWLEDGED">{t("statusAcknowledged")}</SelectItem>
                   <SelectItem value="DONE">{t("statusDone")}</SelectItem>

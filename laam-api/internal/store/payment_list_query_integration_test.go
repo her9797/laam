@@ -80,6 +80,31 @@ func TestRepository_ListPaymentOrdersPage_FiltersByStatus(t *testing.T) {
 	}
 }
 
+func TestRepository_ListPaymentOrdersPage_FiltersByUnpaidPseudoStatus(t *testing.T) {
+	repo := resetDB(t)
+	ctx := context.Background()
+	createPaymentOrdersForListing(t, ctx)
+	seedPaymentOrder(t, ctx, seedOrder{
+		ID: "order-6", TableNumber: "T-06", MenuItemName: "Tea", CategoryName: "Drinks", Amount: 4000,
+		Status: "ACKNOWLEDGED", PosSyncStatus: "PENDING", CreatedAt: time.Date(2026, 1, 13, 12, 0, 0, 0, time.UTC),
+	})
+
+	items, total, err := repo.ListPaymentOrdersPage(ctx, PaymentOrderFilter{
+		Status: "UNPAID", Sort: "createdAt", Order: "asc", Page: 1, PageSize: 20,
+	})
+	if err != nil {
+		t.Fatalf("ListPaymentOrdersPage() error = %v", err)
+	}
+	if total != 3 || len(items) != 3 {
+		t.Fatalf("total = %d, len(items) = %d, want 3 READY/ACKNOWLEDGED rows", total, len(items))
+	}
+	for _, item := range items {
+		if item.Status != "READY" && item.Status != "ACKNOWLEDGED" {
+			t.Errorf("unexpected status leaked into status=UNPAID result: %+v", item)
+		}
+	}
+}
+
 func TestRepository_ListPaymentOrdersPage_FiltersByPosSyncStatus(t *testing.T) {
 	repo := resetDB(t)
 	ctx := context.Background()

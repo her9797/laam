@@ -126,3 +126,16 @@ func TestPaymentOrderFilterWhereClause(t *testing.T) {
 		t.Errorf("args = %#v", args)
 	}
 }
+
+func TestPaymentOrderFilterWhereClause_UnpaidPseudoStatus(t *testing.T) {
+	where, args := paymentOrderFilterWhereClause(PaymentOrderFilter{Status: "UNPAID", PosSyncStatus: "PENDING"})
+	assertNoCatchAllPredicate(t, where)
+	for _, want := range []string{"status IN ($1, $2)", "pos_sync_status = $3"} {
+		if !strings.Contains(where, want) {
+			t.Errorf("where = %q, want it to contain %q", where, want)
+		}
+	}
+	if !reflect.DeepEqual(args, []any{"READY", "ACKNOWLEDGED", "PENDING"}) {
+		t.Errorf("args = %#v", args)
+	}
+}
