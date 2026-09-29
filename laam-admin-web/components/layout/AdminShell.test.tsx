@@ -123,11 +123,11 @@ describe("AdminShell", () => {
     );
 
     const header = getSidebarHeader();
-    // The mark stands on its own — the service name is carried by the logo's
-    // alt text, so screen readers still get it without the header repeating
-    // what the browser tab title already says.
-    const logo = within(header).getByRole("img", { name: "LAM 관리자" });
-    expect(logo.getAttribute("src")).toContain("logo.png");
+    // The mark stands on its own — the service name is carried by the home
+    // link's aria-label, so screen readers still get it without the header
+    // repeating what the browser tab title already says.
+    const logoLink = within(header).getByRole("link", { name: "LAM 관리자" });
+    expect(logoLink.querySelector("img")?.getAttribute("src")).toContain("logo.png");
     expect(within(header).queryByText("LAM 관리자")).not.toBeInTheDocument();
   });
 

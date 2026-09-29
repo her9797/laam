@@ -12,10 +12,12 @@ import {
   RiArchive2Line,
   RiArrowDownSLine,
   RiBarChart2Line,
+  RiCheckLine,
   RiDashboardLine,
   RiFileTextLine,
   RiFolderLine,
   RiListCheck2,
+  RiLogoutBoxRLine,
   RiMegaphoneLine,
   RiMusic2Line,
   RiPlayCircleLine,
@@ -29,7 +31,12 @@ import {
   RiWallet3Line,
 } from "@remixicon/react";
 
-import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Sidebar,
   SidebarContent,
@@ -170,24 +177,27 @@ function findActiveItem(pathname: string | null): NavItem | undefined {
   )[0];
 }
 
-function findGroupKey(item: NavItem | undefined): string | null {
+function findGroup(item: NavItem | undefined): NavGroup | undefined {
   if (!item) {
-    return null;
+    return undefined;
   }
-  const group = NAV_GROUPS.find((navGroup) =>
+  return NAV_GROUPS.find((navGroup) =>
     navGroup.items.some((groupItem) => groupItem.href === item.href),
   );
-  return group?.labelKey ?? null;
 }
 
 function AdminShellContent({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const pathname = usePathname();
   const router = useRouter();
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpenMobile, state } = useSidebar();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const activeItem = findActiveItem(pathname);
-  const activeGroupKey = findGroupKey(activeItem);
+  const activeGroup = findGroup(activeItem);
+  const activeGroupKey = activeGroup?.labelKey ?? null;
+  // Icon-only desktop rail: the inline sub-list is hidden by the sidebar's own
+  // CSS there, so a group opens a flyout menu beside the rail instead.
+  const isRailCollapsed = state === "collapsed" && !isMobile;
   // The one expanded dropdown (by group labelKey), if any — opening another
   // collapses it. It starts as the group holding the current route, so
   // landing directly on one of its routes (e.g. from the dashboard's shortcut
@@ -256,10 +266,93 @@ function AdminShellContent({ children }: { children: ReactNode }) {
           isActive={isActive}
           render={<Link href={item.href} />}
           onClick={() => handleNavLinkClick(null)}
+          tooltip={t(item.labelKey)}
         >
           <Icon className="size-4" />
           <span>{t(item.labelKey)}</span>
         </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
+  }
+
+  function renderNavGroup(group: NavGroup) {
+    const label = t(group.labelKey);
+
+    if (isRailCollapsed) {
+      return (
+        <SidebarMenuItem key={group.labelKey}>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <SidebarMenuButton
+                  type="button"
+                  isActive={activeGroupKey === group.labelKey}
+                  tooltip={label}
+                />
+              }
+            >
+              <group.icon className="size-4" />
+              <span>{label}</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="start">
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeItem?.href === item.href;
+                return (
+                  <DropdownMenuItem
+                    key={item.href}
+                    render={<Link href={item.href} />}
+                    aria-current={isActive ? "page" : undefined}
+                    onClick={() => handleNavLinkClick(group.labelKey)}
+                  >
+                    <Icon className="size-4" />
+                    <span className="flex-1">{t(item.labelKey)}</span>
+                    {isActive ? <RiCheckLine className="size-4" aria-hidden="true" /> : null}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SidebarMenuItem>
+      );
+    }
+
+    const isOpen = isGroupOpen(group);
+    return (
+      <SidebarMenuItem key={group.labelKey}>
+        <SidebarMenuButton
+          type="button"
+          aria-expanded={isOpen}
+          onClick={() => toggleGroup(group)}
+          tooltip={label}
+        >
+          <group.icon className="size-4" />
+          <span>{label}</span>
+          <RiArrowDownSLine
+            aria-hidden="true"
+            className={`ml-auto size-4 transition-transform ${isOpen ? "" : "-rotate-90"}`}
+          />
+        </SidebarMenuButton>
+        {isOpen ? (
+          <SidebarMenuSub>
+            {group.items.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeItem?.href === item.href;
+              return (
+                <SidebarMenuSubItem key={item.href}>
+                  <SidebarMenuSubButton
+                    isActive={isActive}
+                    render={<Link href={item.href} />}
+                    onClick={() => handleNavLinkClick(group.labelKey)}
+                  >
+                    <Icon className="size-4" />
+                    <span>{t(item.labelKey)}</span>
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+              );
+            })}
+          </SidebarMenuSub>
+        ) : null}
       </SidebarMenuItem>
     );
   }
@@ -277,15 +370,28 @@ function AdminShellContent({ children }: { children: ReactNode }) {
                 `unoptimized` because /_next/image needs `sharp` at runtime,
                 which the standalone runtime image doesn't install, and a
                 fixed 28px mark has nothing to gain from resizing. */}
-            <Image
-              src="/logo.png"
-              alt={t("appName")}
-              width={256}
-              height={256}
-              unoptimized
-              priority
-              className="size-7 shrink-0 dark:invert"
-            />
+            {/* The link's `aria-label` is its single accessible name, so the
+                image inside is decorative (`alt=""`) rather than repeating it. */}
+            <Link
+              href="/dashboard"
+              aria-label={t("appName")}
+              onClick={() => {
+                if (isMobile) {
+                  setOpenMobile(false);
+                }
+              }}
+              className="flex items-center justify-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+            >
+              <Image
+                src="/logo.png"
+                alt=""
+                width={256}
+                height={256}
+                unoptimized
+                priority
+                className="size-7 shrink-0 dark:invert"
+              />
+            </Link>
           </div>
         </SidebarHeader>
         <SidebarContent>
@@ -294,45 +400,7 @@ function AdminShellContent({ children }: { children: ReactNode }) {
               <SidebarGroupContent>
                 <SidebarMenu>
                   {TOP_NAV_ITEMS.map(renderNavItem)}
-                  {NAV_GROUPS.map((group) => {
-                    const isOpen = isGroupOpen(group);
-                    return (
-                      <SidebarMenuItem key={group.labelKey}>
-                        <SidebarMenuButton
-                          type="button"
-                          aria-expanded={isOpen}
-                          onClick={() => toggleGroup(group)}
-                        >
-                          <group.icon className="size-4" />
-                          <span>{t(group.labelKey)}</span>
-                          <RiArrowDownSLine
-                            aria-hidden="true"
-                            className={`ml-auto size-4 transition-transform ${isOpen ? "" : "-rotate-90"}`}
-                          />
-                        </SidebarMenuButton>
-                        {isOpen ? (
-                          <SidebarMenuSub>
-                            {group.items.map((item) => {
-                              const Icon = item.icon;
-                              const isActive = activeItem?.href === item.href;
-                              return (
-                                <SidebarMenuSubItem key={item.href}>
-                                  <SidebarMenuSubButton
-                                    isActive={isActive}
-                                    render={<Link href={item.href} />}
-                                    onClick={() => handleNavLinkClick(group.labelKey)}
-                                  >
-                                    <Icon className="size-4" />
-                                    <span>{t(item.labelKey)}</span>
-                                  </SidebarMenuSubButton>
-                                </SidebarMenuSubItem>
-                              );
-                            })}
-                          </SidebarMenuSub>
-                        ) : null}
-                      </SidebarMenuItem>
-                    );
-                  })}
+                  {NAV_GROUPS.map(renderNavGroup)}
                   {BOTTOM_NAV_ITEMS.map(renderNavItem)}
                 </SidebarMenu>
               </SidebarGroupContent>
@@ -340,16 +408,18 @@ function AdminShellContent({ children }: { children: ReactNode }) {
           </nav>
         </SidebarContent>
         <SidebarFooter>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full justify-center"
-            onClick={handleLogout}
-            disabled={isLoggingOut}
-          >
-            {isLoggingOut ? t("loggingOut") : t("logout")}
-          </Button>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip={t("logout")}
+                onClick={handleLogout}
+                render={<button type="button" disabled={isLoggingOut} />}
+              >
+                <RiLogoutBoxRLine className="size-4" />
+                <span>{isLoggingOut ? t("loggingOut") : t("logout")}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
@@ -364,6 +434,12 @@ function AdminShellContent({ children }: { children: ReactNode }) {
               </li>
               {activeItem ? (
                 <>
+                  {activeGroup ? (
+                    <>
+                      <li aria-hidden="true">/</li>
+                      <li>{t(activeGroup.labelKey)}</li>
+                    </>
+                  ) : null}
                   <li aria-hidden="true">/</li>
                   <li className="truncate font-medium text-foreground" aria-current="page">
                     {t(activeItem.labelKey)}
