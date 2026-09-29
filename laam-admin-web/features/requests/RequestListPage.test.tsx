@@ -511,7 +511,9 @@ describe("RequestListPage", () => {
     expect(screen.getByLabelText("종료일")).toHaveValue("2026-01-10");
   });
 
-  it("shows a loading state and seeds a default 7-day range when the URL has no date bound", () => {
+  it("shows a loading state and seeds a default one-month range when the URL has no date bound", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 2, 31, 12, 0, 0));
     currentSearchParams = new URLSearchParams();
     mockQuery({ data: undefined, isLoading: true });
 
@@ -520,6 +522,8 @@ describe("RequestListPage", () => {
     expect(screen.getByRole("status")).toBeInTheDocument();
     expect(replaceMock).toHaveBeenCalledTimes(1);
     const [calledUrl] = replaceMock.mock.calls[0] as [string];
-    expect(calledUrl).toMatch(/^\/requests\?dateFrom=\d{4}-\d{2}-\d{2}&dateTo=\d{4}-\d{2}-\d{2}$/);
+    // 3/31 -> previous month clamped to 2/28.
+    expect(calledUrl).toBe("/requests?dateFrom=2026-02-28&dateTo=2026-03-31");
+    vi.useRealTimers();
   });
 });

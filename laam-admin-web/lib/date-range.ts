@@ -56,10 +56,23 @@ export function resolveCalendarDateRange(fromDateStr: string, toDateStr: string)
   return { ok: true, from: fromDate, to };
 }
 
-/** The last `days` days up to and including `reference`'s calendar date. */
-export function defaultDateRangeDays(days: number, reference: Date = new Date()): { from: string; to: string } {
+/**
+ * The same day of the previous calendar month, clamped to that month's
+ * last day when it has no such day (3/31 → 2/28). The admin date filters'
+ * shared "한 달" default span is built on this, so every screen agrees on
+ * what "one month back" means.
+ */
+export function oneMonthBefore(date: Date): Date {
+  const lastDayOfPreviousMonth = new Date(date.getFullYear(), date.getMonth(), 0).getDate();
+  return new Date(
+    date.getFullYear(),
+    date.getMonth() - 1,
+    Math.min(date.getDate(), lastDayOfPreviousMonth),
+  );
+}
+
+/** One month up to and including `reference`'s calendar date. */
+export function defaultDateRangeOneMonth(reference: Date = new Date()): { from: string; to: string } {
   const today = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate());
-  const from = new Date(today);
-  from.setDate(from.getDate() - days);
-  return { from: formatDateOnly(from), to: formatDateOnly(today) };
+  return { from: formatDateOnly(oneMonthBefore(today)), to: formatDateOnly(today) };
 }

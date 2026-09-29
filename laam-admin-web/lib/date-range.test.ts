@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { defaultDateRangeDays, formatDateOnly, parseDateOnly, resolveCalendarDateRange } from "./date-range";
+import {
+  defaultDateRangeOneMonth,
+  formatDateOnly,
+  oneMonthBefore,
+  parseDateOnly,
+  resolveCalendarDateRange,
+} from "./date-range";
 
 describe("parseDateOnly", () => {
   it("parses a well-formed YYYY-MM-DD string", () => {
@@ -56,14 +62,24 @@ describe("resolveCalendarDateRange", () => {
   });
 });
 
-describe("defaultDateRangeDays", () => {
-  it("returns the last N days up to and including the reference date", () => {
-    const reference = new Date(2026, 0, 15);
-    expect(defaultDateRangeDays(7, reference)).toEqual({ from: "2026-01-08", to: "2026-01-15" });
+describe("oneMonthBefore", () => {
+  it("returns the same day of the previous month", () => {
+    expect(formatDateOnly(oneMonthBefore(new Date(2026, 8, 29)))).toBe("2026-08-29");
   });
 
-  it("only reads the reference's calendar date, not its time-of-day", () => {
-    const reference = new Date(2026, 0, 15, 23, 59, 59);
-    expect(defaultDateRangeDays(7, reference).to).toBe("2026-01-15");
+  it("clamps to the previous month's last day when that day doesn't exist", () => {
+    expect(formatDateOnly(oneMonthBefore(new Date(2026, 2, 31)))).toBe("2026-02-28");
+    expect(formatDateOnly(oneMonthBefore(new Date(2028, 2, 31)))).toBe("2028-02-29");
+  });
+
+  it("crosses a year boundary", () => {
+    expect(formatDateOnly(oneMonthBefore(new Date(2026, 0, 15)))).toBe("2025-12-15");
+  });
+});
+
+describe("defaultDateRangeOneMonth", () => {
+  it("returns one month up to and including the reference's calendar date", () => {
+    const reference = new Date(2026, 8, 29, 23, 30);
+    expect(defaultDateRangeOneMonth(reference)).toEqual({ from: "2026-08-29", to: "2026-09-29" });
   });
 });

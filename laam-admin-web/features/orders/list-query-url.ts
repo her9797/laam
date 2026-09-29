@@ -20,7 +20,7 @@ import type {
  * instant range — are what's stored in the URL. They're resolved to an
  * absolute business-day-bounded range at fetch time
  * (`features/orders/api.ts`/`./order-date-range.ts`). There is no fixed
- * "default" value for these two (the screen's own 7-day default shifts
+ * "default" value for these two (the screen's own one-month default shifts
  * with the clock), so unlike every other field here they're written to the
  * URL whenever set rather than omitted at a hardcoded default.
  */

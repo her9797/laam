@@ -158,7 +158,7 @@ export function OrderListPage() {
   }, [debouncedSearch]);
 
   // The URL starts with no date bound (see `list-query-url.ts` — there is
-  // no fixed default to omit-and-imply, since "last 7 days" shifts with
+  // no fixed default to omit-and-imply, since "the last month" shifts with
   // the clock). This effect applies the real default client-side only,
   // after mount — same hydration-safety reasoning as `SalesStatsPage`'s
   // mount effect, since a `new Date()` read during render could disagree
