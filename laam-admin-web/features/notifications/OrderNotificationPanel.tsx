@@ -2,8 +2,10 @@
 
 import "@/i18n/client";
 
+import { RiCheckDoubleLine } from "@remixicon/react";
 import { useTranslation } from "react-i18next";
 
+import { Button } from "@/components/ui/button";
 import { formatCurrencyKRW, formatDateTime } from "@/lib/utils";
 
 import type { OrderNotification } from "./model";
@@ -11,15 +13,26 @@ import type { OrderNotification } from "./model";
 export type OrderNotificationPanelProps = {
   notifications: OrderNotification[];
   onItemClick: (order: OrderNotification) => void;
+  onMarkAllClick: () => void;
 };
 
-export function OrderNotificationPanel({ notifications, onItemClick }: OrderNotificationPanelProps) {
+export function OrderNotificationPanel({
+  notifications,
+  onItemClick,
+  onMarkAllClick,
+}: OrderNotificationPanelProps) {
   const { t, i18n } = useTranslation("notifications");
 
   return (
     <div className="flex max-h-[28rem] flex-col">
       <div className="flex items-center justify-between gap-2 border-b border-foreground/5 px-4 py-3">
         <span className="font-heading text-sm font-medium">{t("ordersPanelTitle")}</span>
+        {notifications.length > 0 ? (
+          <Button type="button" variant="ghost" size="sm" onClick={onMarkAllClick}>
+            <RiCheckDoubleLine className="size-4" aria-hidden="true" />
+            {t("markAllChecked")}
+          </Button>
+        ) : null}
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">

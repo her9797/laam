@@ -1,7 +1,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { acknowledgeOrder, fetchOrder, fetchOrdersPage } from "./api";
-import type { OrderListQuery, PaymentOrderStatus } from "./model";
+import type { OrderListQuery } from "./model";
 
 /**
  * Cache keys for `payment_orders`. Kept separate from every other
@@ -101,43 +101,33 @@ export function useOrderNotificationsQuery() {
 /**
  * Dashboard's order-history aggregate: every order still awaiting payment,
  * all-time — unlike `/orders`'s own default filter (see `list-query-url.ts`'s
- * `DEFAULT_STATUS`), which shows every status. `pageSize: 1` keeps each
+ * `DEFAULT_STATUS`), which shows every status. `pageSize: 1` keeps the
  * request cheap; only `total` from the paginated envelope is read, never
  * `items`.
  *
  * "Unpaid" spans two statuses, not one: an order stays unpaid after a staff
  * member acknowledges it (READY → ACKNOWLEDGED), and only leaves that state
- * on a POS webhook (→ DONE/CANCELLED). Counting READY alone would silently
- * drop an order from this card the moment someone pressed 주문확인, while it
- * was still sitting unpaid on the table. The list endpoint's `status` filter
- * takes a single value, so the two are fetched separately and summed here
- * rather than widening that API contract for one dashboard card.
+ * on a POS webhook (→ DONE/CANCELLED). The list endpoint's `UNPAID` status
+ * filter covers both, so the card's count and the `/orders?status=UNPAID`
+ * list it links to are the same set.
  */
-const DASHBOARD_UNPAID_STATUSES = ["READY", "ACKNOWLEDGED"] as const;
-
-function buildDashboardOrderCountQuery(status: PaymentOrderStatus): OrderListQuery {
-  return {
-    page: 1,
-    pageSize: 1,
-    status,
-    search: "",
-    dateFrom: "",
-    dateTo: "",
-    sort: "createdAt",
-    order: "desc",
-  };
-}
+const DASHBOARD_UNPAID_QUERY: OrderListQuery = {
+  page: 1,
+  pageSize: 1,
+  status: "UNPAID",
+  search: "",
+  dateFrom: "",
+  dateTo: "",
+  sort: "createdAt",
+  order: "desc",
+};
 
 export function useOrderCountQuery() {
   return useQuery({
     queryKey: orderKeys.count,
     queryFn: async () => {
-      const pages = await Promise.all(
-        DASHBOARD_UNPAID_STATUSES.map((status) =>
-          fetchOrdersPage(buildDashboardOrderCountQuery(status), { include: "total" }),
-        ),
-      );
-      return { total: pages.reduce((sum, page) => sum + page.total, 0) };
+      const page = await fetchOrdersPage(DASHBOARD_UNPAID_QUERY, { include: "total" });
+      return { total: page.total };
     },
   });
 }

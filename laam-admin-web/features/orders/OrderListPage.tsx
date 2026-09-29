@@ -51,6 +51,7 @@ import type {
   PaymentOrderPosSyncStatus,
   PaymentOrderSort,
   PaymentOrderStatus,
+  PaymentOrderStatusFilter,
 } from "./model";
 import { defaultOrderDateRange, resolveOrderDateRange } from "./order-date-range";
 import { paymentMethodLabel } from "./payment-method";
@@ -157,7 +158,7 @@ export function OrderListPage() {
   }, [debouncedSearch]);
 
   // The URL starts with no date bound (see `list-query-url.ts` — there is
-  // no fixed default to omit-and-imply, since "last 7 days" shifts with
+  // no fixed default to omit-and-imply, since "the last month" shifts with
   // the clock). This effect applies the real default client-side only,
   // after mount — same hydration-safety reasoning as `SalesStatsPage`'s
   // mount effect, since a `new Date()` read during render could disagree
@@ -221,6 +222,7 @@ export function OrderListPage() {
 
   const STATUS_FILTER_LABELS: Record<string, string> = {
     all: t("common:filterAll"),
+    UNPAID: t("statusUnpaid"),
     READY: t("statusReady"),
     ACKNOWLEDGED: t("statusAcknowledged"),
     DONE: t("statusDone"),
@@ -368,7 +370,7 @@ export function OrderListPage() {
                 value={query.status ?? "all"}
                 onValueChange={(value) =>
                   updateQuery({
-                    status: value === "all" ? undefined : (value as PaymentOrderStatus),
+                    status: value === "all" ? undefined : (value as PaymentOrderStatusFilter),
                     page: 1,
                   })
                 }
@@ -380,6 +382,7 @@ export function OrderListPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">{t("common:filterAll")}</SelectItem>
+                  <SelectItem value="UNPAID">{t("statusUnpaid")}</SelectItem>
                   <SelectItem value="READY">{t("statusReady")}</SelectItem>
                   <SelectItem value="ACKNOWLEDGED">{t("statusAcknowledged")}</SelectItem>
                   <SelectItem value="DONE">{t("statusDone")}</SelectItem>

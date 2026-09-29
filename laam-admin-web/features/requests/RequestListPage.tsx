@@ -32,7 +32,7 @@ import {
 import { stripSongRequestPrefix } from "@/features/dashboard/summary";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { useRetainedListQuery } from "@/hooks/use-retained-list-query";
-import { defaultDateRangeDays, resolveCalendarDateRange } from "@/lib/date-range";
+import { defaultDateRangeOneMonth, resolveCalendarDateRange } from "@/lib/date-range";
 import { formatDateTime } from "@/lib/utils";
 
 import { buildRequestListSearchParams, parseRequestListQuery } from "./list-query-url";
@@ -89,11 +89,6 @@ const COPY_KEYS: Record<
 
 const SEARCH_DEBOUNCE_MS = 300;
 
-// Default date-filter span for this screen, per this feature's plan —
-// unlike the sales-stats screen (30 days), request lists default to the
-// last 7 days.
-const DEFAULT_DATE_RANGE_SPAN_DAYS = 7;
-
 export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
   const { t, i18n } = useTranslation("requests");
   const router = useRouter();
@@ -139,7 +134,7 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
   }, [debouncedSearch]);
 
   // The URL starts with no date bound (see `list-query-url.ts` — there is
-  // no fixed default to omit-and-imply, since "last 7 days" shifts with
+  // no fixed default to omit-and-imply, since "the last month" shifts with
   // the clock). This effect applies the real default client-side only,
   // after mount — same hydration-safety reasoning as `SalesStatsPage`'s
   // mount effect. It depends on `dateFrom`/`dateTo` rather than running
@@ -151,7 +146,7 @@ export function RequestListPage({ kind }: { kind: RequestListPageKind }) {
   // this idempotent once a range is present.
   useEffect(() => {
     if (!query.dateFrom || !query.dateTo) {
-      const defaults = defaultDateRangeDays(DEFAULT_DATE_RANGE_SPAN_DAYS);
+      const defaults = defaultDateRangeOneMonth();
       updateQuery({ dateFrom: defaults.from, dateTo: defaults.to, page: 1 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

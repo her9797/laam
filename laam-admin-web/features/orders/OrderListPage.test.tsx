@@ -504,6 +504,17 @@ describe("OrderListPage", () => {
     );
   });
 
+  it("accepts UNPAID as a status filter from the URL", () => {
+    currentSearchParams = new URLSearchParams("dateFrom=2026-01-01&dateTo=2026-01-10&status=UNPAID");
+
+    render(<OrderListPage />);
+
+    expect(useOrdersPageQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "UNPAID" }),
+      true,
+    );
+  });
+
   it("accepts ACKNOWLEDGED as a status filter from the URL", () => {
     currentSearchParams = new URLSearchParams("dateFrom=2026-01-01&dateTo=2026-01-10&status=ACKNOWLEDGED");
 

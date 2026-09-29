@@ -8,6 +8,13 @@
  */
 export type PaymentOrderStatus = "READY" | "ACKNOWLEDGED" | "DONE" | "CANCELLED";
 
+/**
+ * List-filter values: every real status plus `UNPAID`, which `laam-api`
+ * expands to READY or ACKNOWLEDGED. Kept apart from `PaymentOrderStatus`
+ * because `UNPAID` is never the status of an actual order.
+ */
+export type PaymentOrderStatusFilter = PaymentOrderStatus | "UNPAID";
+
 export type PaymentOrderPosSyncStatus = "PENDING" | "SUCCEEDED" | "FAILED" | "NOT_CONFIGURED";
 
 export type PaymentOrder = {
@@ -41,12 +48,12 @@ export type SortOrder = "asc" | "desc";
  * `./order-date-range.ts`. Both empty means "no date bound" (used only by
  * the fixed internal queries in `./queries.ts`; the user-facing screen
  * always has both populated once its mount effect resolves the default
- * 7-day range).
+ * one-month range).
  */
 export type OrderListQuery = {
   page: number;
   pageSize: number;
-  status?: PaymentOrderStatus;
+  status?: PaymentOrderStatusFilter;
   posSyncStatus?: PaymentOrderPosSyncStatus;
   search: string;
   dateFrom: string;

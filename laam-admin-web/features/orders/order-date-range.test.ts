@@ -32,11 +32,17 @@ describe("resolveOrderDateRange", () => {
 });
 
 describe("defaultOrderDateRange", () => {
-  it("spans the last 7 business days up to and including today's business-day label", () => {
+  it("spans one month back up to and including today's business-day label", () => {
     // 03:00 is before the 06:00 close, so "today"'s business day is the
     // one that opened the previous calendar day (the 14th) — same
     // convention as `getDatePresetRange("today")`.
     const reference = new Date(2026, 0, 15, 3, 0, 0, 0);
-    expect(defaultOrderDateRange(reference)).toEqual({ from: "2026-01-07", to: "2026-01-14" });
+    expect(defaultOrderDateRange(reference)).toEqual({ from: "2025-12-14", to: "2026-01-14" });
+  });
+
+  it("clamps the start to the previous month's end when that day does not exist", () => {
+    // 12:00 on Mar 31 -> label Mar 31 -> one month back clamps to Feb 28.
+    const reference = new Date(2026, 2, 31, 12, 0, 0, 0);
+    expect(defaultOrderDateRange(reference)).toEqual({ from: "2026-02-28", to: "2026-03-31" });
   });
 });

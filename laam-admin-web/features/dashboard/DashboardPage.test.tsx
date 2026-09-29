@@ -253,6 +253,12 @@ describe("DashboardPage", () => {
     ]);
   });
 
+  it("links the order card to the unpaid-filtered order list", () => {
+    render(<DashboardPage />);
+
+    expect(screen.getByText("미결제 주문 건수").closest("a")).toHaveAttribute("href", "/orders?status=UNPAID");
+  });
+
   it("shows a sales card linking to the sales stats page with today's revenue", () => {
     useTodaySalesQueryMock.mockReturnValue({ data: { totalRevenue: 125000 }, isLoading: false, isError: false });
 

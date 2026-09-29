@@ -60,10 +60,27 @@ export function useOrderNotifications() {
     });
   }, []);
 
+  // Dismisses everything currently shown in one state update, so
+  // localStorage is written once rather than once per order.
+  const dismissAll = useCallback(() => {
+    setDismissedIds((previous) => {
+      const next = new Set(previous);
+      for (const order of notifications) {
+        next.add(order.id);
+      }
+      if (next.size === previous.size) {
+        return previous;
+      }
+      writeDismissedOrderIds(next);
+      return next;
+    });
+  }, [notifications]);
+
   return {
     notifications,
     count: notifications.length,
     isLoading: ordersQuery.isLoading,
     dismiss,
+    dismissAll,
   };
 }

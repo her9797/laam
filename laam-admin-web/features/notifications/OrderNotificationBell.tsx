@@ -4,9 +4,19 @@ import "@/i18n/client";
 
 import { RiShoppingCart2Line } from "@remixicon/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -28,15 +38,17 @@ import { useOrderNotifications } from "./useOrderNotifications";
  * badge count and panel instead of one combined total that mixes "a
  * request is waiting" with "a sale just happened". An order's "read" state
  * is client-only (`useOrderNotifications`'s `dismiss`, kept in
- * `localStorage`), not the server-owned status requests use, so there is
- * no mark-all action here. `playChime` comes from the one
- * `useNotificationSound()` instance `NotificationBells` owns.
+ * `localStorage`), not the server-owned status requests use, so the
+ * panel's mark-all action (behind a confirm dialog) is `dismissAll()` — a
+ * this-device-only dismissal, not a server bulk mutation. `playChime` comes
+ * from the one `useNotificationSound()` instance `NotificationBells` owns.
  */
 export function OrderNotificationBell({ playChime }: { playChime: () => void }) {
   const { t, i18n } = useTranslation("notifications");
   const router = useRouter();
   useOrderBroadcast();
-  const { notifications, count, isLoading, dismiss } = useOrderNotifications();
+  const { notifications, count, isLoading, dismiss, dismissAll } = useOrderNotifications();
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const arrivals = useNewArrivals(notifications, isLoading);
 
   // `t`, the active language, and `playChime` are read through this ref
@@ -73,25 +85,51 @@ export function OrderNotificationBell({ playChime }: { playChime: () => void }) 
     router.push("/orders");
   }
 
+  function handleConfirmMarkAll() {
+    dismissAll();
+    setIsConfirmOpen(false);
+  }
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        className={cn(buttonVariants({ variant: "outline", size: "icon-sm" }), "relative")}
-        aria-label={count > 0 ? t("orderBellLabel", { count }) : t("orderBellLabelEmpty")}
-      >
-        <RiShoppingCart2Line className="size-4" aria-hidden="true" />
-        {count > 0 ? (
-          <span
-            aria-hidden="true"
-            className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-400 px-1 text-[10px] font-medium text-white"
-          >
-            {count > 99 ? "99+" : count}
-          </span>
-        ) : null}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80 p-0">
-        <OrderNotificationPanel notifications={notifications} onItemClick={handleItemClick} />
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          className={cn(buttonVariants({ variant: "outline", size: "icon-sm" }), "relative")}
+          aria-label={count > 0 ? t("orderBellLabel", { count }) : t("orderBellLabelEmpty")}
+        >
+          <RiShoppingCart2Line className="size-4" aria-hidden="true" />
+          {count > 0 ? (
+            <span
+              aria-hidden="true"
+              className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-400 px-1 text-[10px] font-medium text-white"
+            >
+              {count > 99 ? "99+" : count}
+            </span>
+          ) : null}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-80 p-0">
+          <OrderNotificationPanel
+            notifications={notifications}
+            onItemClick={handleItemClick}
+            onMarkAllClick={() => setIsConfirmOpen(true)}
+          />
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("ordersMarkAllConfirmTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("ordersMarkAllConfirmBody", { count })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common:cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmMarkAll}>{t("common:confirm")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

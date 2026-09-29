@@ -16,6 +16,7 @@
  * for the same reason `business-day.ts` does: it keeps `laam-api` free of
  * any server-side timezone policy for filtering.
  */
+import { oneMonthBefore } from "@/lib/date-range";
 import { getBusinessDayBoundsForDate, getDatePresetRange } from "../business-day";
 
 export type DayBasis = "business" | "calendar";
@@ -77,10 +78,8 @@ function formatDateOnly(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-const DEFAULT_RANGE_SPAN_DAYS = 30;
-
 /**
- * The screen's initial range on first load: the 30 days up to and
+ * The screen's initial range on first load: one month up to and
  * including "today" under `basis` — under "business", that's the date
  * label `getDatePresetRange("today")` resolves to (which may be
  * yesterday's date before the buffered close), not necessarily the
@@ -92,7 +91,5 @@ export function defaultDateRange(basis: DayBasis, reference: Date = new Date()):
       ? (getDatePresetRange("today", reference).from ?? reference)
       : new Date(reference.getFullYear(), reference.getMonth(), reference.getDate());
 
-  const from = new Date(todayLabel);
-  from.setDate(from.getDate() - DEFAULT_RANGE_SPAN_DAYS);
-  return { from: formatDateOnly(from), to: formatDateOnly(todayLabel) };
+  return { from: formatDateOnly(oneMonthBefore(todayLabel)), to: formatDateOnly(todayLabel) };
 }

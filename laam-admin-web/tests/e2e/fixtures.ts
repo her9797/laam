@@ -297,11 +297,9 @@ export async function mockSpecialRequestsPage(
  * Mocks the paginated order list route (`GET /api/admin/payment-orders`).
  *
  * The dashboard's unpaid-order card reads only `total` from this envelope,
- * and it issues one request per unpaid status (`READY`, `ACKNOWLEDGED` — see
+ * and it issues a single `status=UNPAID` request (see
  * `features/orders/queries.ts`'s `useOrderCountQuery`), so this matches the
- * path regardless of query string and answers every one of them. `total` is
- * therefore counted once per status: the card shows `total` × the number of
- * unpaid statuses.
+ * path regardless of query string; the card shows `total` as is.
  */
 export async function mockPaymentOrdersList(page: Page, total = 0): Promise<void> {
   await page.route("**/api/admin/payment-orders?**", async (route) => {

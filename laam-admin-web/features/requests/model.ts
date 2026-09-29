@@ -34,7 +34,7 @@ export type SortOrder = "asc" | "desc";
  * `dateFrom`/`dateTo` are date-only (`YYYY-MM-DD`) strings, resolved to
  * absolute calendar-day-bounded instants at fetch time — see
  * `@/lib/date-range.ts`. Both blank means "no date bound"; the screen's
- * own mount effect fills in the default 7-day range once, client-side
+ * own mount effect fills in the default one-month range once, client-side
  * (see `RequestListPage`), so in practice both are populated after first
  * render.
  */

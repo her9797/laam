@@ -57,12 +57,14 @@ const O2: OrderNotification = {
 };
 
 const dismissOrderMock = vi.fn();
+const dismissAllOrdersMock = vi.fn();
 function mockOrderNotifications(notifications: OrderNotification[]) {
   useOrderNotificationsMock.mockReturnValue({
     notifications,
     count: notifications.length,
     isLoading: false,
     dismiss: dismissOrderMock,
+    dismissAll: dismissAllOrdersMock,
   });
 }
 
@@ -131,5 +133,29 @@ describe("OrderNotificationBell", () => {
 
     expect(dismissOrderMock).toHaveBeenCalledWith("o1");
     expect(pushMock).toHaveBeenCalledWith("/orders");
+  });
+
+  it("does not show the mark-all button when there are no orders", () => {
+    mockOrderNotifications([]);
+    render(<OrderNotificationBell playChime={playChimeMock} />);
+
+    expect(screen.queryByRole("button", { name: "모두 확인" })).not.toBeInTheDocument();
+  });
+
+  it("asks for confirmation before dismissing all orders, then dismisses without navigating", async () => {
+    mockOrderNotifications([O1, O2]);
+    render(<OrderNotificationBell playChime={playChimeMock} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "모두 확인" }));
+    expect(dismissAllOrdersMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("새 주문 알림을 모두 확인 처리할까요?")).toBeInTheDocument();
+    expect(
+      screen.getByText("표시된 새 주문 알림 2건을 이 기기에서 모두 확인 처리합니다."),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "확인" }));
+
+    expect(dismissAllOrdersMock).toHaveBeenCalledTimes(1);
+    expect(pushMock).not.toHaveBeenCalled();
   });
 });

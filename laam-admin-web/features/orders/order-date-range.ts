@@ -7,7 +7,7 @@
  * been business-day scoped, so this keeps that behavior fixed rather than
  * exposing a basis toggle like the sales-stats screen's.
  */
-import { formatDateOnly, parseDateOnly, type DateRangeResult } from "@/lib/date-range";
+import { formatDateOnly, oneMonthBefore, parseDateOnly, type DateRangeResult } from "@/lib/date-range";
 
 import { getBusinessDayBoundsForDate, getDatePresetRange } from "./business-day";
 
@@ -31,18 +31,14 @@ export function resolveOrderDateRange(fromDateStr: string, toDateStr: string): D
   return { ok: true, from, to };
 }
 
-const DEFAULT_RANGE_SPAN_DAYS = 7;
-
 /**
- * The screen's initial range on first load: the 7 business days up to and
- * including "today" — under the buffered close-hour rule, that's the date
+ * The screen's initial range on first load: one month (same day of the
+ * previous month, clamped to month end) up to and including "today" — under the buffered close-hour rule, that's the date
  * label `getDatePresetRange("today")` resolves to (which may be
  * yesterday's date before the buffer), not necessarily the calendar date
  * the operator's clock currently shows.
  */
 export function defaultOrderDateRange(reference: Date = new Date()): { from: string; to: string } {
   const todayLabel = getDatePresetRange("today", reference).from ?? reference;
-  const from = new Date(todayLabel);
-  from.setDate(from.getDate() - DEFAULT_RANGE_SPAN_DAYS);
-  return { from: formatDateOnly(from), to: formatDateOnly(todayLabel) };
+  return { from: formatDateOnly(oneMonthBefore(todayLabel)), to: formatDateOnly(todayLabel) };
 }

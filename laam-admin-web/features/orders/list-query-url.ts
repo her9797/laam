@@ -5,7 +5,7 @@ import type {
   OrderListQuery,
   PaymentOrderPosSyncStatus,
   PaymentOrderSort,
-  PaymentOrderStatus,
+  PaymentOrderStatusFilter,
   SortOrder,
 } from "./model";
 
@@ -20,16 +20,16 @@ import type {
  * instant range — are what's stored in the URL. They're resolved to an
  * absolute business-day-bounded range at fetch time
  * (`features/orders/api.ts`/`./order-date-range.ts`). There is no fixed
- * "default" value for these two (the screen's own 7-day default shifts
+ * "default" value for these two (the screen's own one-month default shifts
  * with the clock), so unlike every other field here they're written to the
  * URL whenever set rather than omitted at a hardcoded default.
  */
 const DEFAULT_PAGE_SIZE = 10;
 // No status filter (all statuses) is the default view of `/orders`.
-const DEFAULT_STATUS: PaymentOrderStatus | undefined = undefined;
+const DEFAULT_STATUS: PaymentOrderStatusFilter | undefined = undefined;
 const DEFAULT_SORT: PaymentOrderSort = "createdAt";
 
-const VALID_STATUSES: PaymentOrderStatus[] = ["READY", "ACKNOWLEDGED", "DONE", "CANCELLED"];
+const VALID_STATUSES: PaymentOrderStatusFilter[] = ["UNPAID", "READY", "ACKNOWLEDGED", "DONE", "CANCELLED"];
 const VALID_POS_SYNC_STATUSES: PaymentOrderPosSyncStatus[] = [
   "PENDING",
   "SUCCEEDED",
@@ -39,8 +39,8 @@ const VALID_POS_SYNC_STATUSES: PaymentOrderPosSyncStatus[] = [
 const VALID_SORTS: PaymentOrderSort[] = ["createdAt", "amount"];
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-function isValidStatus(value: string | null): value is PaymentOrderStatus {
-  return VALID_STATUSES.includes(value as PaymentOrderStatus);
+function isValidStatus(value: string | null): value is PaymentOrderStatusFilter {
+  return VALID_STATUSES.includes(value as PaymentOrderStatusFilter);
 }
 
 function isValidPosSyncStatus(value: string | null): value is PaymentOrderPosSyncStatus {

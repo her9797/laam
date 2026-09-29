@@ -37,6 +37,14 @@ describe("fetchOrdersPage", () => {
     expect(url.searchParams.get("status")).toBe("DONE");
   });
 
+  it("sends status=UNPAID for the unpaid filter", async () => {
+    await fetchOrdersPage({ ...BASE_QUERY, status: "UNPAID" });
+
+    const [path] = vi.mocked(fetchJson).mock.calls[0];
+    const url = new URL(path as string, "http://localhost");
+    expect(url.searchParams.get("status")).toBe("UNPAID");
+  });
+
   it("omits status when there is no status filter", async () => {
     await fetchOrdersPage({ ...BASE_QUERY, status: undefined });
 

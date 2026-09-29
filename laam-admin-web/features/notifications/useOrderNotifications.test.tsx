@@ -138,4 +138,35 @@ describe("useOrderNotifications", () => {
 
     expect(second.result.current.notifications.map((item) => item.id)).toEqual(["o2"]);
   });
+
+  it("dismissAll() clears the list and count and writes localStorage once", async () => {
+    vi.mocked(fetchOrdersPage).mockResolvedValue(twoOrderFixture);
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+
+    const { result } = renderHook(() => useOrderNotifications(), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.dismissAll();
+    });
+
+    expect(result.current.notifications).toEqual([]);
+    expect(result.current.count).toBe(0);
+    expect(setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps dismissAll() dismissals across a reload", async () => {
+    vi.mocked(fetchOrdersPage).mockResolvedValue(twoOrderFixture);
+
+    const first = renderHook(() => useOrderNotifications(), { wrapper: createWrapper() });
+    await waitFor(() => expect(first.result.current.isLoading).toBe(false));
+    act(() => {
+      first.result.current.dismissAll();
+    });
+
+    const second = renderHook(() => useOrderNotifications(), { wrapper: createWrapper() });
+    await waitFor(() => expect(second.result.current.isLoading).toBe(false));
+
+    expect(second.result.current.notifications).toEqual([]);
+  });
 });

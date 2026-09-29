@@ -43,18 +43,18 @@ describe("resolveDateRange", () => {
 });
 
 describe("defaultDateRange", () => {
-  it("under the 'calendar' basis, spans the 30 days up to and including today's calendar date", () => {
+  it("under the 'calendar' basis, spans one month up to and including today's calendar date", () => {
     const range = defaultDateRange("calendar", new Date(2026, 0, 31, 15, 0, 0, 0));
-    expect(range.from).toBe("2026-01-01");
+    expect(range.from).toBe("2025-12-31");
     expect(range.to).toBe("2026-01-31");
   });
 
-  it("under the 'business' basis, spans the 30 days up to and including today's business-day label", () => {
+  it("under the 'business' basis, spans one month up to and including today's business-day label", () => {
     // 20:00 is after the day opened at 16:00, so today's business day is
     // labeled by today's own calendar date (2026-01-31) — see
     // business-day.test.ts for the underlying boundary rules this defers to.
     const range = defaultDateRange("business", new Date(2026, 0, 31, 20, 0, 0, 0));
-    expect(range.from).toBe("2026-01-01");
+    expect(range.from).toBe("2025-12-31");
     expect(range.to).toBe("2026-01-31");
   });
 
@@ -62,7 +62,7 @@ describe("defaultDateRange", () => {
     // 03:00 is before the 06:00 close buffer, so "today" is still the
     // business day that opened yesterday evening.
     const range = defaultDateRange("business", new Date(2026, 0, 31, 3, 0, 0, 0));
-    expect(range.from).toBe("2025-12-31");
+    expect(range.from).toBe("2025-12-30");
     expect(range.to).toBe("2026-01-30");
   });
 });
