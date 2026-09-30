@@ -256,34 +256,39 @@ describe("PosTableLinkSection", () => {
     });
   });
 
-  it("adds a POS-only table as a QR table, letting the server name it", () => {
+  it("opens the QR code input instead of adding right away", () => {
     render(<PosTableLinkSection data={buildData()} />);
 
     const row = screen.getByRole("listitem", { name: "룸1" });
     fireEvent.click(within(row).getByRole("button", { name: "QR 테이블로 추가" }));
 
-    expect(createMutate).toHaveBeenCalledWith({ posTableId: 22 }, expect.anything());
+    expect(within(row).getByLabelText("QR 테이블 이름")).toBeInTheDocument();
+    expect(within(row).getByText("N-16처럼 구역 문자와 두 자리 번호")).toBeInTheDocument();
+    expect(createMutate).not.toHaveBeenCalled();
   });
 
-  it("asks for a QR table name and retries when the server cannot derive one", async () => {
+  it("adds a POS-only table with the code the operator typed", () => {
     render(<PosTableLinkSection data={buildData()} />);
 
     const row = screen.getByRole("listitem", { name: "룸1" });
     fireEvent.click(within(row).getByRole("button", { name: "QR 테이블로 추가" }));
-    rejectMutation(createMutate, new FetchJsonError(400, "cannot derive id"));
-
-    const nameInput = await within(row).findByLabelText("QR 테이블 이름");
-    expect(within(row).getByText("T-11처럼 구역 문자와 두 자리 번호")).toBeInTheDocument();
-
-    fireEvent.change(nameInput, { target: { value: "T-11" } });
+    fireEvent.change(within(row).getByLabelText("QR 테이블 이름"), { target: { value: "n-16" } });
     fireEvent.click(within(row).getByRole("button", { name: "추가" }));
 
-    await waitFor(() => {
-      expect(createMutate).toHaveBeenLastCalledWith(
-        { posTableId: 22, id: "T-11" },
-        expect.anything(),
-      );
-    });
+    expect(createMutate).toHaveBeenCalledWith({ posTableId: 22, id: "N-16" }, expect.anything());
+  });
+
+  it("keeps the code input open without retrying when the server rejects the code", () => {
+    render(<PosTableLinkSection data={buildData()} />);
+
+    const row = screen.getByRole("listitem", { name: "룸1" });
+    fireEvent.click(within(row).getByRole("button", { name: "QR 테이블로 추가" }));
+    fireEvent.change(within(row).getByLabelText("QR 테이블 이름"), { target: { value: "N-16" } });
+    fireEvent.click(within(row).getByRole("button", { name: "추가" }));
+    rejectMutation(createMutate, new FetchJsonError(400, "invalid id"));
+
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    expect(within(row).getByLabelText("QR 테이블 이름")).toBeInTheDocument();
   });
 
   // Operations hit rows whose QR code was typed onto the wrong POS table
@@ -399,13 +404,17 @@ describe("PosTableLinkSection", () => {
     expect(await within(row).findByLabelText("테이블 코드")).toHaveValue("T-02");
   });
 
-  it("keeps the POS-only row closed when the first add succeeds", () => {
+  it("closes the POS-only row's code input when the add succeeds", async () => {
     render(<PosTableLinkSection data={buildData()} />);
 
     const row = screen.getByRole("listitem", { name: "룸1" });
     fireEvent.click(within(row).getByRole("button", { name: "QR 테이블로 추가" }));
+    fireEvent.change(within(row).getByLabelText("QR 테이블 이름"), { target: { value: "T-11" } });
+    fireEvent.click(within(row).getByRole("button", { name: "추가" }));
     resolveMutation(createMutate, buildTable({ id: "T-11", area: "T", number: 11, posTableId: 22 }));
 
-    expect(within(row).queryByLabelText("QR 테이블 이름")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(within(row).queryByLabelText("QR 테이블 이름")).not.toBeInTheDocument();
+    });
   });
 });

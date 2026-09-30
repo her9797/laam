@@ -66,8 +66,8 @@ export function updateTableCode(currentId: string, nextId: string): Promise<Admi
 
 export type CreateQrTableInput = {
   posTableId: number;
-  /** Omitted on the first try: the server derives the id from the POS name, and answers 400 when it can't. */
-  id?: string;
+  /** The operator-typed QR table code; the server no longer derives it from the POS name and answers 400 without it. */
+  id: string;
 };
 
 export function createQrTable(input: CreateQrTableInput): Promise<AdminTable> {

@@ -120,19 +120,13 @@ func TestRepository_GetTableLinkOverview_ReturnsSeededTablesWithoutLinks(t *test
 	}
 }
 
-func TestRepository_CompletePOSTableSync_ReplacesSnapshotAndAutoLinks(t *testing.T) {
-	ctx := context.Background()
-	repo := resetDB(t)
-
-	// A stale snapshot row plus a link that must not survive the replacement.
-	seedPOSSnapshot(t, ctx, POSTableInput{ID: 9001, Title: "사라질 테이블"})
-	if _, err := testPool.Exec(ctx, `UPDATE qr_tables SET pos_table_id = 9001, linked_at = NOW() WHERE id = 'B-05'`); err != nil {
-		t.Fatalf("seed stale link: %v", err)
-	}
-
-	request, created, err := repo.RequestPOSTableSync(ctx)
-	if err != nil || !created {
-		t.Fatalf("RequestPOSTableSync() = (%+v, %v, %v), want a new request", request, created, err)
+// runPOSTableSync drives one full request → claim → complete cycle and
+// returns the finished sync request id.
+func runPOSTableSync(t *testing.T, ctx context.Context, repo *Repository, snapshot POSTableSnapshotInput) string {
+	t.Helper()
+	request, _, err := repo.RequestPOSTableSync(ctx)
+	if err != nil {
+		t.Fatalf("RequestPOSTableSync() error = %v", err)
 	}
 	syncID, err := repo.ClaimPOSTableSync(ctx)
 	if err != nil {
@@ -141,69 +135,37 @@ func TestRepository_CompletePOSTableSync_ReplacesSnapshotAndAutoLinks(t *testing
 	if syncID != request.ID {
 		t.Fatalf("claimed %q, want %q", syncID, request.ID)
 	}
+	if err := repo.CompletePOSTableSync(ctx, syncID, snapshot); err != nil {
+		t.Fatalf("CompletePOSTableSync() error = %v", err)
+	}
+	return syncID
+}
 
-	err = repo.CompletePOSTableSync(ctx, syncID, POSTableSnapshotInput{
-		Halls: []POSHallInput{{ID: 1, Name: "1층"}, {ID: 2, Name: "2층"}},
+func TestRepository_CompletePOSTableSync_ReplacesSnapshotAndKeepsManualLinks(t *testing.T) {
+	ctx := context.Background()
+	repo := resetDB(t)
+
+	// A stale snapshot row plus a link that must not survive the replacement.
+	seedPOSSnapshot(t, ctx, POSTableInput{ID: 9001, Title: "사라질 테이블"})
+	if _, err := testPool.Exec(ctx, `UPDATE qr_tables SET pos_table_id = 9001, linked_at = NOW() WHERE id = 'N-05'`); err != nil {
+		t.Fatalf("seed stale link: %v", err)
+	}
+
+	runPOSTableSync(t, ctx, repo, POSTableSnapshotInput{
+		Halls: []POSHallInput{{ID: 1, Name: "1층"}},
 		Tables: []POSTableInput{
 			{ID: 101, Title: "테이블 1", HallID: ptrInt64(1), Capacity: ptrInt(4)},
 			{ID: 102, Title: "t2", HallID: ptrInt64(1)},
-			{ID: 103, Title: "바자리3", HallID: ptrInt64(2)},
-			// Two POS tables claim B-01, so neither may be auto-linked.
-			{ID: 104, Title: "b1", HallID: ptrInt64(2)},
-			{ID: 105, Title: "바 1", HallID: ptrInt64(2)},
-			{ID: 106, Title: "룸", HallID: ptrInt64(2)},
 		},
 	})
-	if err != nil {
-		t.Fatalf("CompletePOSTableSync() error = %v", err)
-	}
 
 	overview, err := repo.GetTableLinkOverview(ctx)
 	if err != nil {
 		t.Fatalf("GetTableLinkOverview() error = %v", err)
 	}
-
-	t01, _ := qrTableByID(overview.Tables, "T-01")
-	if t01.POSTableID == nil || *t01.POSTableID != 101 {
-		t.Fatalf("T-01 pos table = %v, want 101", t01.POSTableID)
-	}
-	if t01.POSTableTitle == nil || *t01.POSTableTitle != "테이블 1" {
-		t.Fatalf("T-01 pos title = %v, want the snapshot title", t01.POSTableTitle)
-	}
-	if t01.HallName == nil || *t01.HallName != "1층" {
-		t.Fatalf("T-01 hall = %v, want the hall name", t01.HallName)
-	}
-	if t01.LinkedAt == nil {
-		t.Fatal("T-01 linkedAt = nil, want a timestamp")
-	}
-	t02, _ := qrTableByID(overview.Tables, "T-02")
-	if t02.POSTableID == nil || *t02.POSTableID != 102 {
-		t.Fatalf("T-02 pos table = %v, want 102", t02.POSTableID)
-	}
-	b03, _ := qrTableByID(overview.Tables, "B-03")
-	if b03.POSTableID == nil || *b03.POSTableID != 103 {
-		t.Fatalf("B-03 pos table = %v, want 103", b03.POSTableID)
-	}
-	b01, _ := qrTableByID(overview.Tables, "B-01")
-	if b01.POSTableID != nil {
-		t.Fatalf("B-01 pos table = %v, want nil (two candidates)", b01.POSTableID)
-	}
-	b05, _ := qrTableByID(overview.Tables, "B-05")
-	if b05.POSTableID != nil {
-		t.Fatalf("B-05 pos table = %v, want nil (POS table disappeared)", b05.POSTableID)
-	}
-
-	wantPOSOnly := map[int64]bool{104: true, 105: true, 106: true}
-	if len(overview.POSOnlyTables) != len(wantPOSOnly) {
-		t.Fatalf("POSOnlyTables = %+v, want %d entries", overview.POSOnlyTables, len(wantPOSOnly))
-	}
-	for _, table := range overview.POSOnlyTables {
-		if !wantPOSOnly[table.POSTableID] {
-			t.Fatalf("unexpected POS-only table %+v", table)
-		}
-		if table.QrTableID != nil {
-			t.Fatalf("POS-only table %d qrTableId = %v, want nil", table.POSTableID, table.QrTableID)
-		}
+	n05, _ := qrTableByID(overview.Tables, "N-05")
+	if n05.POSTableID != nil {
+		t.Fatalf("N-05 pos table = %v, want nil (POS table disappeared)", n05.POSTableID)
 	}
 	if overview.LastSyncedAt == nil {
 		t.Fatal("LastSyncedAt = nil, want the snapshot time")
@@ -212,43 +174,58 @@ func TestRepository_CompletePOSTableSync_ReplacesSnapshotAndAutoLinks(t *testing
 		t.Fatalf("PendingSync = %+v, want nil after completion", overview.PendingSync)
 	}
 
-	done, err := repo.GetPOSTableSync(ctx, syncID)
-	if err != nil {
-		t.Fatalf("GetPOSTableSync() error = %v", err)
+	// Links are set by an operator, never by the sync.
+	if _, err := repo.LinkQrTablePOSTable(ctx, "N-01", ptrInt64(101)); err != nil {
+		t.Fatalf("link N-01: %v", err)
 	}
-	if done.Status != "DONE" {
-		t.Fatalf("Status = %q, want DONE", done.Status)
-	}
-	if done.LinkedCount != 3 || done.UnlinkedCount != 0 || done.POSOnlyCount != 3 {
-		t.Fatalf("counts = (%d, %d, %d), want (3, 0, 3)", done.LinkedCount, done.UnlinkedCount, done.POSOnlyCount)
-	}
-	if done.CompletedAt == nil {
-		t.Fatal("CompletedAt = nil, want a timestamp")
-	}
-
-	// A second sync replaces the snapshot wholesale.
-	second, _, err := repo.RequestPOSTableSync(ctx)
-	if err != nil {
-		t.Fatalf("RequestPOSTableSync() error = %v", err)
-	}
-	if _, err := repo.ClaimPOSTableSync(ctx); err != nil {
-		t.Fatalf("ClaimPOSTableSync() error = %v", err)
-	}
-	if err := repo.CompletePOSTableSync(ctx, second.ID, POSTableSnapshotInput{
-		Tables: []POSTableInput{{ID: 101, Title: "테이블 1"}},
-	}); err != nil {
-		t.Fatalf("CompletePOSTableSync() second error = %v", err)
+	if _, err := repo.LinkQrTablePOSTable(ctx, "N-02", ptrInt64(102)); err != nil {
+		t.Fatalf("link N-02: %v", err)
 	}
 	overview, err = repo.GetTableLinkOverview(ctx)
 	if err != nil {
 		t.Fatalf("GetTableLinkOverview() error = %v", err)
 	}
+	n01, _ := qrTableByID(overview.Tables, "N-01")
+	if n01.POSTableTitle == nil || *n01.POSTableTitle != "테이블 1" {
+		t.Fatalf("N-01 pos title = %v, want the snapshot title", n01.POSTableTitle)
+	}
+	if n01.HallName == nil || *n01.HallName != "1층" {
+		t.Fatalf("N-01 hall = %v, want the hall name", n01.HallName)
+	}
+
+	// A second sync replaces the snapshot wholesale: the surviving POS table
+	// keeps its manual link, the vanished one loses it.
+	second := runPOSTableSync(t, ctx, repo, POSTableSnapshotInput{
+		Tables: []POSTableInput{{ID: 101, Title: "테이블 1"}},
+	})
+	overview, err = repo.GetTableLinkOverview(ctx)
+	if err != nil {
+		t.Fatalf("GetTableLinkOverview() error = %v", err)
+	}
+	if len(overview.Tables) != 15 {
+		t.Fatalf("len(Tables) = %d, want 15 (sync never deletes QR tables)", len(overview.Tables))
+	}
 	if len(overview.POSOnlyTables) != 0 {
 		t.Fatalf("POSOnlyTables = %+v, want empty", overview.POSOnlyTables)
 	}
-	t02, _ = qrTableByID(overview.Tables, "T-02")
-	if t02.POSTableID != nil {
-		t.Fatalf("T-02 pos table = %v, want nil after the POS table disappeared", t02.POSTableID)
+	n01, _ = qrTableByID(overview.Tables, "N-01")
+	if n01.POSTableID == nil || *n01.POSTableID != 101 {
+		t.Fatalf("N-01 pos table = %v, want the manual link 101", n01.POSTableID)
+	}
+	n02, _ := qrTableByID(overview.Tables, "N-02")
+	if n02.POSTableID != nil {
+		t.Fatalf("N-02 pos table = %v, want nil after the POS table disappeared", n02.POSTableID)
+	}
+
+	done, err := repo.GetPOSTableSync(ctx, second)
+	if err != nil {
+		t.Fatalf("GetPOSTableSync() error = %v", err)
+	}
+	if done.Status != "DONE" || done.CompletedAt == nil {
+		t.Fatalf("sync = %+v, want DONE with a completion time", done)
+	}
+	if done.LinkedCount != 1 || done.UnlinkedCount != 14 || done.POSOnlyCount != 0 {
+		t.Fatalf("counts = (%d, %d, %d), want (1, 14, 0)", done.LinkedCount, done.UnlinkedCount, done.POSOnlyCount)
 	}
 }
 
@@ -482,17 +459,21 @@ func TestRepository_LinkQrTablePOSTable_ManualLinkAndUnlink(t *testing.T) {
 	}
 }
 
-func TestRepository_CreateQrTable_GeneratesIDFromPOSTitle(t *testing.T) {
+func TestRepository_CreateQrTable_RequiresExplicitID(t *testing.T) {
 	ctx := context.Background()
 	repo := resetDB(t)
 	seedPOSSnapshot(t, ctx,
-		POSTableInput{ID: 301, Title: "테이블 11"},
+		POSTableInput{ID: 301, Title: "테이블 1"},
 		POSTableInput{ID: 302, Title: "룸 A"},
 		POSTableInput{ID: 303, Title: "바자리 7"},
-		POSTableInput{ID: 304, Title: "테이블 12"},
 	)
 
-	created, err := repo.CreateQrTable(ctx, "", 301)
+	// The POS name never becomes a code, even when it looks like one.
+	if _, err := repo.CreateQrTable(ctx, "", 301); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf(`CreateQrTable("", 301) error = %v, want ErrInvalidInput`, err)
+	}
+
+	created, err := repo.CreateQrTable(ctx, "T-11", 301)
 	if err != nil {
 		t.Fatalf("CreateQrTable() error = %v", err)
 	}
@@ -501,10 +482,6 @@ func TestRepository_CreateQrTable_GeneratesIDFromPOSTitle(t *testing.T) {
 	}
 	if created.POSTableID == nil || *created.POSTableID != 301 {
 		t.Fatalf("pos table = %v, want 301", created.POSTableID)
-	}
-
-	if _, err := repo.CreateQrTable(ctx, "", 302); !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("auto id from a room name error = %v, want ErrInvalidInput", err)
 	}
 	manual, err := repo.CreateQrTable(ctx, "R-01", 302)
 	if err != nil {
@@ -669,52 +646,51 @@ func TestRepository_RenameQrTable_RejectsBadAndDuplicateIDs(t *testing.T) {
 // The POS is the source of truth for which tables exist: a sync creates a QR
 // table for every POS table whose name converts, and drops QR tables the POS
 // no longer has. Our side only owns the code.
-func TestRepository_CompletePOSTableSync_MirrorsPOSTables(t *testing.T) {
+func TestRepository_CompletePOSTableSync_LeavesQrTablesUnlinked(t *testing.T) {
 	ctx := context.Background()
 	repo := resetDB(t)
 
-	// The seeded layout has N-01..N-15; the POS only has three
-	// of them plus a room whose name follows no rule.
-	request, _, err := repo.RequestPOSTableSync(ctx)
-	if err != nil {
-		t.Fatalf("RequestPOSTableSync() error = %v", err)
-	}
-	if _, err := repo.ClaimPOSTableSync(ctx); err != nil {
-		t.Fatalf("ClaimPOSTableSync() error = %v", err)
-	}
-	if err := repo.CompletePOSTableSync(ctx, request.ID, POSTableSnapshotInput{
+	syncID := runPOSTableSync(t, ctx, repo, POSTableSnapshotInput{
 		Halls: []POSHallInput{{ID: 1, Name: "1층 홀"}},
 		Tables: []POSTableInput{
-			{ID: 601, Title: "테이블 1", HallID: ptrInt64(1)},
-			{ID: 602, Title: "테이블 2", HallID: ptrInt64(1)},
-			{ID: 611, Title: "바1", HallID: ptrInt64(1)},
-			{ID: 621, Title: "룸 A", HallID: ptrInt64(1)},
+			{ID: 601, Title: "1", HallID: ptrInt64(1)},
+			{ID: 602, Title: "2", HallID: ptrInt64(1)},
+			{ID: 603, Title: "테이블 3", HallID: ptrInt64(1)},
 		},
-	}); err != nil {
-		t.Fatalf("CompletePOSTableSync() error = %v", err)
-	}
+	})
 
 	overview, err := repo.GetTableLinkOverview(ctx)
 	if err != nil {
 		t.Fatalf("GetTableLinkOverview() error = %v", err)
 	}
-
 	gotIDs := make([]string, 0, len(overview.Tables))
 	for _, table := range overview.Tables {
 		gotIDs = append(gotIDs, table.ID)
-		if table.POSTableID == nil {
-			t.Fatalf("%s has no POS table; unlinked QR tables must be dropped", table.ID)
+		if table.POSTableID != nil {
+			t.Fatalf("%s linked to POS table %d; sync must not link tables", table.ID, *table.POSTableID)
 		}
 	}
-	want := "B-01,T-01,T-02"
+	want := "N-01,N-02,N-03,N-04,N-05,N-06,N-07,N-08,N-09,N-10,N-11,N-12,N-13,N-14,N-15"
 	if strings.Join(gotIDs, ",") != want {
 		t.Fatalf("tables = %v, want %v", gotIDs, want)
 	}
 
-	// A POS table whose name follows no rule still needs an operator to pick
-	// the code, so it stays in the POS-only list.
-	if len(overview.POSOnlyTables) != 1 || overview.POSOnlyTables[0].Title != "룸 A" {
-		t.Fatalf("posOnlyTables = %+v, want just 룸 A", overview.POSOnlyTables)
+	wantPOSOnly := map[int64]bool{601: true, 602: true, 603: true}
+	if len(overview.POSOnlyTables) != len(wantPOSOnly) {
+		t.Fatalf("POSOnlyTables = %+v, want %d entries", overview.POSOnlyTables, len(wantPOSOnly))
+	}
+	for _, table := range overview.POSOnlyTables {
+		if !wantPOSOnly[table.POSTableID] {
+			t.Fatalf("unexpected POS-only table %+v", table)
+		}
+	}
+
+	done, err := repo.GetPOSTableSync(ctx, syncID)
+	if err != nil {
+		t.Fatalf("GetPOSTableSync() error = %v", err)
+	}
+	if done.LinkedCount != 0 || done.UnlinkedCount != 15 || done.POSOnlyCount != 3 {
+		t.Fatalf("counts = (%d, %d, %d), want (0, 15, 3)", done.LinkedCount, done.UnlinkedCount, done.POSOnlyCount)
 	}
 }
 
@@ -728,22 +704,12 @@ func TestRepository_CompletePOSTableSync_KeepsOperatorCodes(t *testing.T) {
 		Halls:  []POSHallInput{{ID: 1, Name: "1층 홀"}},
 		Tables: []POSTableInput{{ID: 701, Title: "바6", HallID: ptrInt64(1)}},
 	}
-	syncOnce := func() {
-		t.Helper()
-		request, _, err := repo.RequestPOSTableSync(ctx)
-		if err != nil {
-			t.Fatalf("RequestPOSTableSync() error = %v", err)
-		}
-		if _, err := repo.ClaimPOSTableSync(ctx); err != nil {
-			t.Fatalf("ClaimPOSTableSync() error = %v", err)
-		}
-		if err := repo.CompletePOSTableSync(ctx, request.ID, snapshot); err != nil {
-			t.Fatalf("CompletePOSTableSync() error = %v", err)
-		}
-	}
 
-	syncOnce()
-	renamed, err := repo.RenameQrTable(ctx, "B-06", "R-01")
+	runPOSTableSync(t, ctx, repo, snapshot)
+	if _, err := repo.LinkQrTablePOSTable(ctx, "N-06", ptrInt64(701)); err != nil {
+		t.Fatalf("LinkQrTablePOSTable() error = %v", err)
+	}
+	renamed, err := repo.RenameQrTable(ctx, "N-06", "R-01")
 	if err != nil {
 		t.Fatalf("RenameQrTable() error = %v", err)
 	}
@@ -751,12 +717,16 @@ func TestRepository_CompletePOSTableSync_KeepsOperatorCodes(t *testing.T) {
 		t.Fatalf("renamed = %+v, want R-01", renamed)
 	}
 
-	syncOnce()
+	runPOSTableSync(t, ctx, repo, snapshot)
 	overview, err := repo.GetTableLinkOverview(ctx)
 	if err != nil {
 		t.Fatalf("GetTableLinkOverview() error = %v", err)
 	}
-	if len(overview.Tables) != 1 || overview.Tables[0].ID != "R-01" {
-		t.Fatalf("tables = %+v, want the operator code R-01 to survive", overview.Tables)
+	r01, ok := qrTableByID(overview.Tables, "R-01")
+	if !ok || r01.POSTableID == nil || *r01.POSTableID != 701 {
+		t.Fatalf("R-01 = %+v (found %v), want the operator code linked to 701", r01, ok)
+	}
+	if len(overview.Tables) != 15 {
+		t.Fatalf("len(Tables) = %d, want 15", len(overview.Tables))
 	}
 }

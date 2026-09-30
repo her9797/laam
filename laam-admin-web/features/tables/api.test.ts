@@ -171,14 +171,17 @@ describe("tables api", () => {
     await expect(updateTablePosLink("T-01", 11)).rejects.toMatchObject({ status: 409 });
   });
 
-  it("creates a QR table from a POS table, letting the server name it", async () => {
-    const created = buildTable({ id: "T-11", area: "T", number: 11, posTableId: 11 });
+  it("creates a QR table from a POS table with the operator-typed code", async () => {
+    const created = buildTable({ id: "N-16", area: "N", number: 16, posTableId: 11 });
     const fetchMock = mockFetch(jsonResponse(created, 201));
 
-    await expect(createQrTable({ posTableId: 11 })).resolves.toEqual(created);
+    await expect(createQrTable({ posTableId: 11, id: "N-16" })).resolves.toEqual(created);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/admin/tables",
-      expect.objectContaining({ method: "POST", body: JSON.stringify({ posTableId: 11 }) }),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ posTableId: 11, id: "N-16" }),
+      }),
     );
   });
 

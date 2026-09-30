@@ -234,7 +234,7 @@ test.describe("POS 테이블 연결", () => {
     await expect(page.getByText("POS 연결", { exact: true })).toHaveCount(0);
   });
 
-  test("POS에만 있는 테이블은 자동 이름 실패 시 이름을 받아 다시 보낸다", async ({ page }) => {
+  test("POS에만 있는 테이블은 운영자가 입력한 코드로만 추가한다", async ({ page }) => {
     const bodies: unknown[] = [];
     await page.route("**/api/admin/tables", async (route) => {
       if (route.request().method() !== "POST") {
@@ -242,10 +242,6 @@ test.describe("POS 테이블 연결", () => {
         return;
       }
       bodies.push(route.request().postDataJSON());
-      if (bodies.length === 1) {
-        await route.fulfill({ status: 400, json: { error: "cannot derive id" } });
-        return;
-      }
       await route.fulfill({
         status: 201,
         json: buildTable({ id: "T-11", area: "T", number: 11, posTableId: 900 }),
@@ -259,15 +255,18 @@ test.describe("POS 테이블 연결", () => {
     const row = page.getByRole("listitem", { name: "룸1" });
     await row.getByRole("button", { name: "QR 테이블로 추가" }).click();
 
+    // The add button only opens the code input; nothing is sent until the
+    // operator submits a code.
     const nameInput = row.getByLabel("QR 테이블 이름");
     await expect(nameInput).toBeVisible();
-    await expect(row.getByText("T-11처럼 구역 문자와 두 자리 번호")).toBeVisible();
+    await expect(row.getByText("N-16처럼 구역 문자와 두 자리 번호")).toBeVisible();
+    expect(bodies).toEqual([]);
 
     await nameInput.fill("T-11");
     await row.getByRole("button", { name: "추가" }).click();
 
     await expect(page.getByText("QR 테이블을 추가했어요.")).toBeVisible();
-    expect(bodies).toEqual([{ posTableId: 900 }, { posTableId: 900, id: "T-11" }]);
+    expect(bodies).toEqual([{ posTableId: 900, id: "T-11" }]);
   });
 
 });

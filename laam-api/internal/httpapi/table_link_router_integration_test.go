@@ -153,7 +153,18 @@ func TestRouter_AdminTables_ReturnsQrTablesWithSignatureAndLinkState(t *testing.
 	}
 }
 
-func TestRouter_AdminTables_ReflectsPOSSnapshotAndAutoLinks(t *testing.T) {
+// linkQrTable links a QR table to a POS table the way an operator does on
+// the admin tables screen.
+func linkQrTable(t *testing.T, handler http.Handler, qrTableID string, posTableID int64) {
+	t.Helper()
+	rec := doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/"+qrTableID+"/pos-link",
+		[]byte(fmt.Sprintf(`{"posTableId": %d}`, posTableID)), adminHeaders())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("link %s status = %d, want %d, body = %s", qrTableID, rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestRouter_AdminTables_ReflectsPOSSnapshotAndManualLinks(t *testing.T) {
 	handler := tableLinkServer(t)
 
 	completePluginSnapshot(t, handler, `{
@@ -172,49 +183,55 @@ func TestRouter_AdminTables_ReflectsPOSSnapshotAndAutoLinks(t *testing.T) {
 	var body adminTablesBody
 	decodeTableJSON(t, rec.Body.Bytes(), &body)
 
-	var linked int
+	// The sync only refreshes the POS table list; nothing is linked by name.
+	if len(body.Tables) != 15 {
+		t.Fatalf("got %d tables, want the 15 seeded tables", len(body.Tables))
+	}
 	for _, table := range body.Tables {
-		if table.POSTableID == nil {
-			continue
-		}
-		linked++
-		switch table.ID {
-		case "T-01":
-			if *table.POSTableID != 101 || table.POSTableTitle == nil || *table.POSTableTitle != "테이블 1" {
-				t.Errorf("T-01 = %+v, want POS table 101", table)
-			}
-			if table.HallName == nil || *table.HallName != "1층" {
-				t.Errorf("T-01 hallName = %v, want the hall name", table.HallName)
-			}
-			if table.LinkedAt == nil {
-				t.Error("T-01 linkedAt = null, want a timestamp")
-			}
-		case "B-03":
-			if *table.POSTableID != 102 {
-				t.Errorf("B-03 = %+v, want POS table 102", table)
-			}
-		default:
-			t.Errorf("unexpected linked table %+v", table)
+		if table.POSTableID != nil {
+			t.Fatalf("table %+v is linked, want no link after sync", table)
 		}
 	}
-	if linked != 2 {
-		t.Errorf("linked tables = %d, want 2", linked)
-	}
-
-	if len(body.POSOnlyTables) != 1 || body.POSOnlyTables[0].POSTableID != 103 {
-		t.Fatalf("posOnlyTables = %+v, want only POS table 103", body.POSOnlyTables)
-	}
-	if body.POSOnlyTables[0].QrTableID != nil {
-		t.Errorf("posOnlyTables[0].qrTableId = %v, want null", body.POSOnlyTables[0].QrTableID)
-	}
-	if body.POSOnlyTables[0].Capacity == nil || *body.POSOnlyTables[0].Capacity != 6 {
-		t.Errorf("posOnlyTables[0].capacity = %v, want 6", body.POSOnlyTables[0].Capacity)
+	if len(body.POSOnlyTables) != 3 {
+		t.Fatalf("posOnlyTables = %+v, want all three POS tables", body.POSOnlyTables)
 	}
 	if body.LastSyncedAt == nil {
 		t.Error("lastSyncedAt = null, want the snapshot time")
 	}
 	if body.PendingSync != nil {
 		t.Errorf("pendingSync = %+v, want null", body.PendingSync)
+	}
+
+	linkQrTable(t, handler, "N-01", 101)
+
+	rec = doRequest(t, handler, http.MethodGet, "/api/v1/admin/tables", nil, adminHeaders())
+	body = adminTablesBody{}
+	decodeTableJSON(t, rec.Body.Bytes(), &body)
+	n01 := body.Tables[0]
+	if n01.ID != "N-01" || n01.POSTableID == nil || *n01.POSTableID != 101 || n01.POSTableTitle == nil || *n01.POSTableTitle != "테이블 1" {
+		t.Fatalf("N-01 = %+v, want POS table 101", n01)
+	}
+	if n01.HallName == nil || *n01.HallName != "1층" {
+		t.Errorf("N-01 hallName = %v, want the hall name", n01.HallName)
+	}
+	if n01.LinkedAt == nil {
+		t.Error("N-01 linkedAt = null, want a timestamp")
+	}
+
+	var room *posTableBody
+	for i := range body.POSOnlyTables {
+		if body.POSOnlyTables[i].POSTableID == 103 {
+			room = &body.POSOnlyTables[i]
+		}
+	}
+	if len(body.POSOnlyTables) != 2 || room == nil {
+		t.Fatalf("posOnlyTables = %+v, want 102 and 103", body.POSOnlyTables)
+	}
+	if room.QrTableID != nil {
+		t.Errorf("posOnlyTables 103 qrTableId = %v, want null", room.QrTableID)
+	}
+	if room.Capacity == nil || *room.Capacity != 6 {
+		t.Errorf("posOnlyTables 103 capacity = %v, want 6", room.Capacity)
 	}
 }
 
@@ -292,34 +309,27 @@ func TestRouter_AdminTablesPOSSync_TimesOutAfterThirtySeconds(t *testing.T) {
 
 func TestRouter_AdminTablesPOSLink_LinksUnlinksAndReportsConflicts(t *testing.T) {
 	handler := tableLinkServer(t)
-	// "테이블 7" converts, so the sync creates T-07 itself; 룸 A and 테라스
-	// follow no rule and stay POS-only for an operator to link by hand.
 	completePluginSnapshot(t, handler, `{"halls": [], "tables": [{"id": 207, "title": "테이블 7"}, {"id": 208, "title": "테이블 8"}, {"id": 201, "title": "룸 A"}, {"id": 202, "title": "테라스"}]}`)
 
-	// 동기화가 T-07을 테이블 7에 묶어 두었으니 먼저 풀고 룸 A로 옮긴다.
-	rec := doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/T-07/pos-link", []byte(`{"posTableId": null}`), adminHeaders())
-	if rec.Code != http.StatusOK {
-		t.Fatalf("unlink status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-	rec = doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/T-07/pos-link", []byte(`{"posTableId": 201}`), adminHeaders())
+	rec := doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/N-07/pos-link", []byte(`{"posTableId": 201}`), adminHeaders())
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 	var table qrTableBody
 	decodeTableJSON(t, rec.Body.Bytes(), &table)
-	if table.ID != "T-07" || table.POSTableID == nil || *table.POSTableID != 201 {
-		t.Fatalf("table = %+v, want T-07 linked to 201", table)
+	if table.ID != "N-07" || table.POSTableID == nil || *table.POSTableID != 201 {
+		t.Fatalf("table = %+v, want N-07 linked to 201", table)
 	}
 	if table.QrURL == "" {
 		t.Error("qrUrl is empty")
 	}
 
-	rec = doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/T-08/pos-link", []byte(`{"posTableId": 201}`), adminHeaders())
+	rec = doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/N-08/pos-link", []byte(`{"posTableId": 201}`), adminHeaders())
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("conflict status = %d, want %d, body = %s", rec.Code, http.StatusConflict, rec.Body.String())
 	}
 
-	rec = doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/T-08/pos-link", []byte(`{"posTableId": 999}`), adminHeaders())
+	rec = doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/N-08/pos-link", []byte(`{"posTableId": 999}`), adminHeaders())
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown POS table status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
@@ -329,7 +339,7 @@ func TestRouter_AdminTablesPOSLink_LinksUnlinksAndReportsConflicts(t *testing.T)
 		t.Fatalf("unknown QR table status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 
-	rec = doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/T-07/pos-link", []byte(`{"posTableId": null}`), adminHeaders())
+	rec = doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/N-07/pos-link", []byte(`{"posTableId": null}`), adminHeaders())
 	if rec.Code != http.StatusOK {
 		t.Fatalf("unlink status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
@@ -339,7 +349,7 @@ func TestRouter_AdminTablesPOSLink_LinksUnlinksAndReportsConflicts(t *testing.T)
 	}
 }
 
-func TestRouter_AdminTablesCreate_GeneratesIDAndValidates(t *testing.T) {
+func TestRouter_AdminTablesCreate_RequiresIDAndValidates(t *testing.T) {
 	handler := tableLinkServer(t)
 	cfg := tableLinkConfig()
 	completePluginSnapshot(t, handler, `{"halls": [{"id": 9, "name": "2층"}], "tables": [
@@ -348,26 +358,25 @@ func TestRouter_AdminTablesCreate_GeneratesIDAndValidates(t *testing.T) {
 		{"id": 303, "title": "테라스", "hallId": 9}
 	]}`)
 
-	// The POS owns which tables exist, so the sync already created T-11 for
-	// the one name that converts. Only the names that follow no rule are left
-	// for an operator to name.
+	// The sync creates no QR table: every POS table waits for an operator.
 	rec := doRequest(t, handler, http.MethodGet, "/api/v1/admin/tables", nil, adminHeaders())
 	var afterSync adminTablesBody
 	decodeTableJSON(t, rec.Body.Bytes(), &afterSync)
-	if len(afterSync.Tables) != 1 || afterSync.Tables[0].ID != "T-11" {
-		t.Fatalf("tables = %+v, want just the auto-created T-11", afterSync.Tables)
+	if len(afterSync.Tables) != 15 {
+		t.Fatalf("tables = %+v, want just the 15 seeded tables", afterSync.Tables)
 	}
-	if afterSync.Tables[0].POSTableID == nil || *afterSync.Tables[0].POSTableID != 301 {
-		t.Fatalf("T-11 pos table = %v, want 301", afterSync.Tables[0].POSTableID)
-	}
-	if len(afterSync.POSOnlyTables) != 2 {
-		t.Fatalf("posOnlyTables = %+v, want 룸 A and 테라스", afterSync.POSOnlyTables)
+	if len(afterSync.POSOnlyTables) != 3 {
+		t.Fatalf("posOnlyTables = %+v, want all three POS tables", afterSync.POSOnlyTables)
 	}
 
-	// A POS name that follows none of the rules needs an operator-chosen id.
-	rec = doRequest(t, handler, http.MethodPost, "/api/v1/admin/tables", []byte(`{"posTableId": 302}`), adminHeaders())
+	// The id is never derived from the POS name, even one that looks like a code.
+	rec = doRequest(t, handler, http.MethodPost, "/api/v1/admin/tables", []byte(`{"posTableId": 301}`), adminHeaders())
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("auto id status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+		t.Fatalf("missing id status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	rec = doRequest(t, handler, http.MethodPost, "/api/v1/admin/tables", []byte(`{"posTableId": 301, "id": "T-11"}`), adminHeaders())
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("T-11 status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
 	}
 	rec = doRequest(t, handler, http.MethodPost, "/api/v1/admin/tables", []byte(`{"posTableId": 302, "id": "R-01"}`), adminHeaders())
 	if rec.Code != http.StatusCreated {
@@ -478,8 +487,16 @@ func TestRouter_POSPluginTables_ClaimCompleteFailAndMappings(t *testing.T) {
 		UpdatedAt *string          `json:"updatedAt"`
 	}
 	decodeTableJSON(t, rec.Body.Bytes(), &mappings)
-	if len(mappings.Mappings) != 1 || mappings.Mappings["T-02"] != 401 {
-		t.Fatalf("mappings = %+v, want a single T-02 entry", mappings.Mappings)
+	if len(mappings.Mappings) != 0 {
+		t.Fatalf("mappings after sync = %+v, want empty until an operator links", mappings.Mappings)
+	}
+
+	linkQrTable(t, handler, "N-02", 401)
+	rec = doRequest(t, handler, http.MethodGet, "/api/v1/pos-plugin/table-mappings", nil, pluginHeaders())
+	mappings.Mappings = nil
+	decodeTableJSON(t, rec.Body.Bytes(), &mappings)
+	if len(mappings.Mappings) != 1 || mappings.Mappings["N-02"] != 401 {
+		t.Fatalf("mappings = %+v, want a single N-02 entry", mappings.Mappings)
 	}
 	if mappings.UpdatedAt == nil {
 		t.Fatal("updatedAt = null, want the last link time")
@@ -570,21 +587,22 @@ func TestRouter_CreateOrder_BlocksUnlinkedTableOnlyWhenLinksExist(t *testing.T) 
 	}
 
 	for _, path := range []string{"/api/v1/orders", "/api/v1/payments/orders"} {
-		rec := doRequest(t, handler, http.MethodPost, path, orderBody("T-02"), headers)
+		rec := doRequest(t, handler, http.MethodPost, path, orderBody("N-02"), headers)
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("%s with no links status = %d, want %d, body = %s", path, rec.Code, http.StatusCreated, rec.Body.String())
 		}
 	}
 
 	completePluginSnapshot(t, handler, `{"halls": [], "tables": [{"id": 501, "title": "테이블 1"}]}`)
+	linkQrTable(t, handler, "N-01", 501)
 
 	for _, path := range []string{"/api/v1/orders", "/api/v1/payments/orders"} {
-		rec := doRequest(t, handler, http.MethodPost, path, orderBody("T-01"), headers)
+		rec := doRequest(t, handler, http.MethodPost, path, orderBody("N-01"), headers)
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("%s for the linked table status = %d, want %d, body = %s", path, rec.Code, http.StatusCreated, rec.Body.String())
 		}
 
-		rec = doRequest(t, handler, http.MethodPost, path, orderBody("T-02"), headers)
+		rec = doRequest(t, handler, http.MethodPost, path, orderBody("N-02"), headers)
 		if rec.Code != http.StatusBadRequest {
 			t.Fatalf("%s for an unlinked table status = %d, want %d, body = %s", path, rec.Code, http.StatusBadRequest, rec.Body.String())
 		}
@@ -600,7 +618,7 @@ func TestRouter_CreateOrder_BlocksUnlinkedTableOnlyWhenLinksExist(t *testing.T) 
 
 	// Customer requests must keep working for an unlinked table.
 	rec := doRequest(t, handler, http.MethodPost, "/api/v1/customer-requests",
-		[]byte(`{"tableNumber": "T-02", "text": "물 주세요"}`), requestHeaders())
+		[]byte(`{"tableNumber": "N-02", "text": "물 주세요"}`), requestHeaders())
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("customer request status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
 	}
@@ -612,11 +630,12 @@ func TestRouter_CreateOrder_BlocksUnlinkedTableOnlyWhenLinksExist(t *testing.T) 
 func TestRouter_AdminTables_RenamesQrTableCode(t *testing.T) {
 	handler := tableLinkServer(t)
 	cfg := tableLinkConfig()
-	// The sync names this one B-06 after "바6". The operator knows the table
-	// actually sits in the room area and corrects the code.
+	// The operator links N-06 to "바6", then corrects the code because the
+	// table actually sits in the room area.
 	completePluginSnapshot(t, handler, `{"halls":[{"id":1,"name":"1층 홀"}],"tables":[{"id":501,"title":"바6","hallId":1,"capacity":2},{"id":502,"title":"테이블 1","hallId":1}]}`)
+	linkQrTable(t, handler, "N-06", 501)
 
-	rec := doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/B-06/code", []byte(`{"id":"R-02"}`), adminHeaders())
+	rec := doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/N-06/code", []byte(`{"id":"R-02"}`), adminHeaders())
 	if rec.Code != http.StatusOK {
 		t.Fatalf("rename status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -633,7 +652,7 @@ func TestRouter_AdminTables_RenamesQrTableCode(t *testing.T) {
 		t.Fatalf("qrUrl = %q, want %q", renamed.QrURL, wantURL)
 	}
 
-	rec = doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/R-02/code", []byte(`{"id":"T-01"}`), adminHeaders())
+	rec = doRequest(t, handler, http.MethodPatch, "/api/v1/admin/tables/R-02/code", []byte(`{"id":"N-01"}`), adminHeaders())
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("duplicate rename status = %d, want 409, body = %s", rec.Code, rec.Body.String())
 	}
