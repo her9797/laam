@@ -113,8 +113,9 @@ export function normalizeAppDataImages(appData: AppData): AppData {
 }
 
 export function getFeaturedCategoryFromData(appData: AppData) {
-  const visibleCategories = appData.categories.filter((category) => category.isVisible !== false);
-  return visibleCategories.find((category) => category.id === "signature") ?? visibleCategories[0];
+  // The POS sends its own order, and its first category is the one the store
+  // leads with, so there is no fixed id to prefer here.
+  return appData.categories.find((category) => category.isVisible !== false);
 }
 
 export function getCategoryByIdFromData(appData: AppData, categoryId: string) {

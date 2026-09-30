@@ -14,6 +14,24 @@ type CatalogCategory struct {
 	Title string `json:"title"`
 }
 
+// CatalogCategoryDetail is the catalog/categories entry. The catalog item
+// endpoint only carries a category's id and title, so the tab order the POS
+// screen shows is only available here.
+type CatalogCategoryDetail struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Enabled bool   `json:"enabled"`
+	Order   int    `json:"order"`
+}
+
+func (c *Client) ListCatalogCategories(ctx context.Context) ([]CatalogCategoryDetail, error) {
+	categories := make([]CatalogCategoryDetail, 0)
+	if err := c.getSuccess(ctx, "/catalog/categories", &categories); err != nil {
+		return nil, err
+	}
+	return categories, nil
+}
+
 type CatalogPrice struct {
 	Title string `json:"title"`
 	Type  string `json:"priceType"`

@@ -213,12 +213,13 @@ func TestRepository_SyncTossCatalog_BatchesOptionWritesAndSkipsIDLookup(t *testi
 	}
 	// First sync creates the item; the second takes the "already linked"
 	// UPDATE path whose follow-up id lookup this test pins away.
-	if _, err := repo.SyncTossCatalog(ctx, items); err != nil {
+	categories := []TossCatalogCategory{{ID: "highball", Label: "하이볼", SortOrder: 1, IsVisible: true}}
+	if _, err := repo.SyncTossCatalog(ctx, categories, items); err != nil {
 		t.Fatalf("first SyncTossCatalog() error = %v", err)
 	}
 	recorder.reset()
 
-	result, err := repo.SyncTossCatalog(ctx, items)
+	result, err := repo.SyncTossCatalog(ctx, categories, items)
 	if err != nil {
 		t.Fatalf("second SyncTossCatalog() error = %v", err)
 	}

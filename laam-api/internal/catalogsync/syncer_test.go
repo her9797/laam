@@ -11,54 +11,71 @@ import (
 )
 
 type fakeCatalogClient struct {
-	items []tossplace.CatalogItem
+	items      []tossplace.CatalogItem
+	categories []tossplace.CatalogCategoryDetail
 }
 
 func (f fakeCatalogClient) ListCatalogItems(context.Context) ([]tossplace.CatalogItem, error) {
 	return f.items, nil
 }
 
-type fakeCatalogRepository struct {
-	items []store.TossCatalogItem
+func (f fakeCatalogClient) ListCatalogCategories(context.Context) ([]tossplace.CatalogCategoryDetail, error) {
+	return f.categories, nil
 }
 
-func (f *fakeCatalogRepository) SyncTossCatalog(_ context.Context, items []store.TossCatalogItem) (store.TossCatalogSyncResult, error) {
+type fakeCatalogRepository struct {
+	items      []store.TossCatalogItem
+	categories []store.TossCatalogCategory
+}
+
+func (f *fakeCatalogRepository) SyncTossCatalog(_ context.Context, categories []store.TossCatalogCategory, items []store.TossCatalogItem) (store.TossCatalogSyncResult, error) {
+	f.categories = categories
 	f.items = items
 	return store.TossCatalogSyncResult{Created: len(items)}, nil
 }
 
-func TestSyncMapsPOSCategoriesToCustomerCategories(t *testing.T) {
+// The POS owns the category list, so a sync carries its ids, titles, order
+// and enabled flag through untouched. An item goes where the POS filed it
+// even when its name hints at something else: 얼그레이하이볼 below sits in
+// "1%~7%", not in a 하이볼 bucket guessed from the name.
+func TestSyncUsesPOSCategoriesDirectly(t *testing.T) {
 	repository := &fakeCatalogRepository{}
-	syncer := New(fakeCatalogClient{items: []tossplace.CatalogItem{
-		{ID: "1", Title: "얼그레이하이볼", ImageURL: "https://cdn.example.com/item.png", Category: tossplace.CatalogCategory{Title: "1%~7%"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 10000}, State: "ON_SALE", Enabled: true, Options: []tossplace.CatalogOption{{ID: "option-1", Title: "샷", Enabled: true, Choices: []tossplace.CatalogOptionChoice{{ID: "choice-1", Title: "추가", Enabled: true, State: "ON_SALE", PriceValue: 500}}}}},
-		{ID: "2", Title: "제임슨", Category: tossplace.CatalogCategory{Title: "블렌디드 위스키"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 9000}, State: "ON_SALE", Enabled: true},
-		{ID: "3", Title: "셜리템플", Category: tossplace.CatalogCategory{Title: "논알콜"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 0}, State: "ON_SALE", Enabled: true},
-		{ID: "4", Title: "진토닉", Category: tossplace.CatalogCategory{Title: "8%~19%"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 10000}, State: "SOLD_OUT", Enabled: true},
-		{ID: "5", Title: "라암 스페셜", Labels: []string{"추천", "신규"}, Category: tossplace.CatalogCategory{Title: "시그니처"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 15000}, State: "ON_SALE", Enabled: true},
-	}}, repository)
+	syncer := New(fakeCatalogClient{
+		categories: []tossplace.CatalogCategoryDetail{
+			{ID: "1567463", Title: "시그니처", Enabled: true, Order: 1},
+			{ID: "1567288", Title: "1%~7%", Enabled: true, Order: 2},
+			{ID: "1659122", Title: "인기", Enabled: false, Order: 10},
+		},
+		items: []tossplace.CatalogItem{
+			{ID: "1", Title: "얼그레이하이볼", ImageURL: "https://cdn.example.com/item.png", Category: tossplace.CatalogCategory{ID: "1567288", Title: "1%~7%"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 10000}, State: "ON_SALE", Enabled: true, Options: []tossplace.CatalogOption{{ID: "option-1", Title: "샷", Enabled: true, Choices: []tossplace.CatalogOptionChoice{{ID: "choice-1", Title: "추가", Enabled: true, State: "ON_SALE", PriceValue: 500}}}}},
+			{ID: "5", Title: "라암 스페셜", Labels: []string{"추천", "신규"}, Category: tossplace.CatalogCategory{ID: "1567463", Title: "시그니처"}, Price: tossplace.CatalogPrice{Type: "FIXED", Value: 15000}, State: "ON_SALE", Enabled: true},
+		},
+	}, repository)
 
 	if _, err := syncer.Sync(context.Background()); err != nil {
 		t.Fatalf("Sync() error = %v", err)
 	}
-	if got := repository.items[0].CategoryID; got != "highball" {
-		t.Fatalf("highball category = %q", got)
+
+	if len(repository.categories) != 3 {
+		t.Fatalf("categories = %+v, want 3", repository.categories)
+	}
+	if got := repository.categories[0]; got.ID != "1567463" || got.Label != "시그니처" || got.SortOrder != 1 || !got.IsVisible {
+		t.Fatalf("categories[0] = %+v, want the POS category verbatim", got)
+	}
+	if got := repository.categories[2]; got.ID != "1659122" || got.SortOrder != 10 || got.IsVisible {
+		t.Fatalf("categories[2] = %+v, want a hidden 인기 at order 10", got)
+	}
+
+	if got := repository.items[0].CategoryID; got != "1567288" {
+		t.Fatalf("얼그레이하이볼 category = %q, want the POS category id 1567288", got)
 	}
 	if repository.items[0].ImageURL != "https://cdn.example.com/item.png" || len(repository.items[0].Options) != 1 || repository.items[0].Options[0].Choices[0].PriceValue != 500 {
 		t.Fatalf("catalog media/options = %+v", repository.items[0])
 	}
-	if got := repository.items[1].CategoryID; got != "whisky" {
-		t.Fatalf("whisky category = %q", got)
+	if got := repository.items[1].CategoryID; got != "1567463" {
+		t.Fatalf("라암 스페셜 category = %q, want 1567463", got)
 	}
-	if got := repository.items[2].CategoryID; got != "non-alcohol" || repository.items[2].IsVisible {
-		t.Fatalf("non-alcohol mapping = %+v", repository.items[2])
-	}
-	if got := repository.items[3].CategoryID; got != "cocktail" || repository.items[3].IsVisible {
-		t.Fatalf("cocktail mapping = %+v", repository.items[3])
-	}
-	if got := repository.items[4].CategoryID; got != "signature" || repository.items[4].Badge != "추천" {
-		t.Fatalf("signature label mapping = %+v", repository.items[4])
-	}
-	if got := repository.items[4].Labels; len(got) != 2 || got[0] != "추천" || got[1] != "신규" {
+	if got := repository.items[1].Labels; len(got) != 2 || got[0] != "추천" || got[1] != "신규" {
 		t.Fatalf("signature labels = %+v, want [추천 신규]", got)
 	}
 }
@@ -102,6 +119,10 @@ type blockingCatalogClient struct {
 	release chan struct{}
 	blocked bool
 	blockMu sync.Mutex
+}
+
+func (b *blockingCatalogClient) ListCatalogCategories(context.Context) ([]tossplace.CatalogCategoryDetail, error) {
+	return nil, nil
 }
 
 func (b *blockingCatalogClient) ListCatalogItems(context.Context) ([]tossplace.CatalogItem, error) {

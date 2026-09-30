@@ -24,7 +24,11 @@ func TestRepositorySyncTossCatalogUpdatesDescriptionsAndHidesUnavailableItems(t 
 		t.Fatalf("seed label colors: %v", err)
 	}
 
-	result, err := repo.SyncTossCatalog(ctx, []TossCatalogItem{
+	result, err := repo.SyncTossCatalog(ctx, []TossCatalogCategory{
+		{ID: "highball", Label: "하이볼", SortOrder: 1, IsVisible: true},
+		{ID: "whisky", Label: "위스키", SortOrder: 2, IsVisible: true},
+		{ID: "non-alcohol", Label: "논알콜", SortOrder: 4, IsVisible: true},
+	}, []TossCatalogItem{
 		{ID: "pos-earlgrey", Name: "얼그레이하이볼", Description: "토스 설명", ImageURL: "https://cdn.example.com/earlgrey.png", Badge: "추천", Labels: []string{"추천", "인기"}, CategoryID: "highball", Price: 10000, IsVisible: true, SortOrder: 3, Options: []TossCatalogOption{{ID: "option-shot", Title: "샷", Enabled: true, Required: false, MinChoices: 1, MaxChoices: 1, Choices: []TossCatalogOptionChoice{{ID: "choice-shot", Title: "샷 추가", PriceValue: 500, Enabled: true, State: "ON_SALE", MinQuantity: 1, MaxQuantity: 1}}}}},
 		{ID: "pos-whisky", Name: "제임슨", CategoryID: "whisky", Price: 9000, IsVisible: true, SortOrder: 4},
 		{ID: "pos-zero", Name: "신데렐라", CategoryID: "non-alcohol", Price: 0, IsVisible: false, SortOrder: 5},
@@ -77,7 +81,9 @@ func TestRepositorySyncTossCatalogUpdatesDescriptionsAndHidesUnavailableItems(t 
 		t.Fatalf("zero-price visible=%v err=%v, want false", visible, err)
 	}
 
-	_, err = repo.SyncTossCatalog(ctx, []TossCatalogItem{
+	_, err = repo.SyncTossCatalog(ctx, []TossCatalogCategory{
+		{ID: "highball", Label: "하이볼", SortOrder: 1, IsVisible: true},
+	}, []TossCatalogItem{
 		{ID: "pos-earlgrey", Name: "얼그레이하이볼", Description: "새 토스 설명", CategoryID: "highball", Price: 12000, IsVisible: true, SortOrder: 1},
 	})
 	if err != nil {
@@ -91,5 +97,59 @@ func TestRepositorySyncTossCatalogUpdatesDescriptionsAndHidesUnavailableItems(t 
 	}
 	if err := testPool.QueryRow(ctx, `SELECT is_visible FROM menu_items WHERE toss_catalog_item_id = 'pos-whisky'`).Scan(&visible); err != nil || visible {
 		t.Fatalf("missing POS item visible=%v err=%v, want false", visible, err)
+	}
+}
+
+// The POS owns the category list: a sync writes its title, order and enabled
+// flag verbatim, and a category the POS dropped leaves the customer menu
+// without taking the menu items still filed under it down with it.
+func TestRepositorySyncTossCatalogMirrorsPOSCategories(t *testing.T) {
+	repo := resetDB(t)
+	ctx := context.Background()
+	if _, err := testPool.Exec(ctx, `
+		INSERT INTO menu_categories (id, label, is_visible, sort_order) VALUES
+			('legacy', '옛 카테고리', TRUE, 1);
+		INSERT INTO menu_items (id, category_id, name, description, price, is_visible, sort_order) VALUES
+			('hand-made', 'legacy', '수기 메뉴', '직접 만든 메뉴', '8,000원', TRUE, 1);
+	`); err != nil {
+		t.Fatalf("seed legacy category: %v", err)
+	}
+
+	if _, err := repo.SyncTossCatalog(ctx, []TossCatalogCategory{
+		{ID: "1567463", Label: "시그니처", SortOrder: 1, IsVisible: true},
+		{ID: "1659122", Label: "인기", SortOrder: 10, IsVisible: false},
+	}, []TossCatalogItem{
+		{ID: "pos-special", Name: "라암 스페셜", CategoryID: "1567463", Price: 15000, IsVisible: true, SortOrder: 1},
+	}); err != nil {
+		t.Fatalf("SyncTossCatalog() error = %v", err)
+	}
+
+	var label string
+	var sortOrder int
+	var visible bool
+	if err := testPool.QueryRow(ctx, `SELECT label, sort_order, is_visible FROM menu_categories WHERE id = '1567463'`).Scan(&label, &sortOrder, &visible); err != nil {
+		t.Fatalf("read synced category: %v", err)
+	}
+	if label != "시그니처" || sortOrder != 1 || !visible {
+		t.Fatalf("category 1567463 = label:%q order:%d visible:%v", label, sortOrder, visible)
+	}
+	if err := testPool.QueryRow(ctx, `SELECT sort_order, is_visible FROM menu_categories WHERE id = '1659122'`).Scan(&sortOrder, &visible); err != nil {
+		t.Fatalf("read disabled category: %v", err)
+	}
+	if sortOrder != 10 || visible {
+		t.Fatalf("category 1659122 = order:%d visible:%v, want order 10 and hidden", sortOrder, visible)
+	}
+
+	// The POS never listed 'legacy', so it goes off the menu — but its row and
+	// the hand-made item under it must survive the cascade.
+	if err := testPool.QueryRow(ctx, `SELECT is_visible FROM menu_categories WHERE id = 'legacy'`).Scan(&visible); err != nil {
+		t.Fatalf("read legacy category: %v", err)
+	}
+	if visible {
+		t.Fatal("legacy category is still visible, want hidden")
+	}
+	var name string
+	if err := testPool.QueryRow(ctx, `SELECT name FROM menu_items WHERE id = 'hand-made'`).Scan(&name); err != nil {
+		t.Fatalf("hand-made item was lost: %v", err)
 	}
 }

@@ -26,7 +26,7 @@ export default async function CategoryPage({ params }: CategoryPageProps) {
 
   const { category } = await params;
   const appData = await getAppData();
-  const categories = getCustomerMenuCategories(appData.categories);
+  const categories = getCustomerMenuCategories(appData.categories, appData.items);
   const selectedCategory = categories.find((candidate) => candidate.id === category);
 
   if (!selectedCategory) {

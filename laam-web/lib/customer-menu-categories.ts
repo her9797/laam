@@ -1,25 +1,16 @@
-import type { MenuCategory } from "@/data/menu-data";
+import type { MenuCategory, MenuItem } from "@/data/menu-data";
 
-const customerMenuCategoryDefinitions = [
-  { ids: ["signature"], label: "시그니처" },
-  { ids: ["highball"], label: "하이볼" },
-  { ids: ["whisky"], label: "위스키" },
-  { ids: ["cocktail", "wine"], label: "칵테일" },
-  { ids: ["non-alcohol"], label: "논알콜" },
-] as const;
+/**
+ * The POS owns the category list, so its titles and order are used as they
+ * arrive. A category with no visible item would render as an empty tab, so
+ * it is left out until the POS files something under it.
+ */
+export function getCustomerMenuCategories(categories: MenuCategory[], items: MenuItem[]) {
+  const categoryIdsWithItems = new Set(
+    items.filter((item) => item.isVisible !== false).map((item) => item.categoryId),
+  );
 
-export function getCustomerMenuCategories(categories: MenuCategory[]) {
-  const customerCategories: MenuCategory[] = [];
-
-  for (const definition of customerMenuCategoryDefinitions) {
-    const category = definition.ids
-      .map((id) => categories.find((candidate) => candidate.id === id && candidate.isVisible !== false))
-      .find(Boolean);
-
-    if (category) {
-      customerCategories.push({ ...category, label: definition.label });
-    }
-  }
-
-  return customerCategories;
+  return categories.filter(
+    (category) => category.isVisible !== false && categoryIdsWithItems.has(category.id),
+  );
 }
