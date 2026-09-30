@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createQrSessionValue, getQrCookieMaxAge, getQrCookieName } from "@/lib/auth";
 import {
   isCustomerTestEntryTokenValid,
-  normalizeCustomerTestTable,
+  resolveCustomerTestTable,
 } from "@/lib/customer-test-entry";
 
 function createEntryResponse(request: NextRequest, entryKey: string | null, tableValue: string | null) {
-  const table = normalizeCustomerTestTable(tableValue ?? "T-01");
+  const table = resolveCustomerTestTable(tableValue);
   const configuredToken = process.env.CUSTOMER_TEST_ENTRY_TOKEN ?? "";
   const forwardedHost = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   const forwardedProtocol = request.headers.get("x-forwarded-proto") ?? "https";
