@@ -11,6 +11,15 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// TossCatalogCategory is one POS category. The POS owns the category list,
+// so its id, title, order and enabled flag land in menu_categories as-is.
+type TossCatalogCategory struct {
+	ID        string
+	Label     string
+	SortOrder int
+	IsVisible bool
+}
+
 type TossCatalogItem struct {
 	ID          string
 	Name        string
@@ -55,8 +64,8 @@ type TossCatalogSyncResult struct {
 	Updated int
 }
 
-func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogItem) (TossCatalogSyncResult, error) {
-	if len(items) == 0 {
+func (r *Repository) SyncTossCatalog(ctx context.Context, categories []TossCatalogCategory, items []TossCatalogItem) (TossCatalogSyncResult, error) {
+	if len(categories) == 0 || len(items) == 0 {
 		return TossCatalogSyncResult{}, ErrInvalidInput
 	}
 
@@ -66,26 +75,31 @@ func (r *Repository) SyncTossCatalog(ctx context.Context, items []TossCatalogIte
 	}
 	defer tx.Rollback(ctx)
 
-	categories := []struct {
-		id    string
-		label string
-		order int
-	}{
-		{id: "signature", label: "시그니처", order: 1},
-		{id: "highball", label: "하이볼", order: 2},
-		{id: "whisky", label: "위스키", order: 3},
-		{id: "cocktail", label: "칵테일", order: 4},
-		{id: "non-alcohol", label: "논알콜", order: 5},
-	}
+	posCategoryIDs := make([]string, 0, len(categories))
 	for _, category := range categories {
+		id := strings.TrimSpace(category.ID)
+		label := strings.TrimSpace(category.Label)
+		if id == "" || label == "" {
+			return TossCatalogSyncResult{}, ErrInvalidInput
+		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO menu_categories (id, label, is_visible, sort_order)
-			VALUES ($1, $2, TRUE, $3)
+			VALUES ($1, $2, $3, $4)
 			ON CONFLICT (id) DO UPDATE
-			SET label = EXCLUDED.label, is_visible = TRUE, sort_order = EXCLUDED.sort_order
-		`, category.id, category.label, category.order); err != nil {
+			SET label = EXCLUDED.label, is_visible = EXCLUDED.is_visible, sort_order = EXCLUDED.sort_order
+		`, id, label, category.IsVisible, category.SortOrder); err != nil {
 			return TossCatalogSyncResult{}, classifyError(err)
 		}
+		posCategoryIDs = append(posCategoryIDs, id)
+	}
+	// Categories the POS no longer lists — including the fixed set earlier
+	// syncs created — keep their rows, because menu_items added by hand may
+	// still reference them and the foreign key cascades on delete. Hiding
+	// them takes them off the customer menu without dropping those items.
+	if _, err := tx.Exec(ctx, `
+		UPDATE menu_categories SET is_visible = FALSE WHERE id <> ALL($1)
+	`, posCategoryIDs); err != nil {
+		return TossCatalogSyncResult{}, classifyError(err)
 	}
 	rows, err := tx.Query(ctx, `
 		SELECT id, name

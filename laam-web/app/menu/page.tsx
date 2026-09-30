@@ -19,7 +19,7 @@ export default async function MenuPage() {
   }
 
   const appData = await getAppData();
-  const categories = getCustomerMenuCategories(appData.categories);
+  const categories = getCustomerMenuCategories(appData.categories, appData.items);
   const category = categories[0];
 
   if (!category) {

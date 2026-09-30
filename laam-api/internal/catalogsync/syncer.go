@@ -23,10 +23,11 @@ var ErrSyncInProgress = errors.New("catalog sync already in progress")
 
 type catalogClient interface {
 	ListCatalogItems(context.Context) ([]tossplace.CatalogItem, error)
+	ListCatalogCategories(context.Context) ([]tossplace.CatalogCategoryDetail, error)
 }
 
 type catalogRepository interface {
-	SyncTossCatalog(context.Context, []store.TossCatalogItem) (store.TossCatalogSyncResult, error)
+	SyncTossCatalog(context.Context, []store.TossCatalogCategory, []store.TossCatalogItem) (store.TossCatalogSyncResult, error)
 }
 
 type Syncer struct {
@@ -44,6 +45,20 @@ func (s *Syncer) Sync(ctx context.Context) (store.TossCatalogSyncResult, error) 
 		return store.TossCatalogSyncResult{}, ErrSyncInProgress
 	}
 	defer s.mu.Unlock()
+
+	posCategories, err := s.client.ListCatalogCategories(ctx)
+	if err != nil {
+		return store.TossCatalogSyncResult{}, err
+	}
+	categories := make([]store.TossCatalogCategory, 0, len(posCategories))
+	for _, category := range posCategories {
+		categories = append(categories, store.TossCatalogCategory{
+			ID:        category.ID,
+			Label:     category.Title,
+			SortOrder: category.Order,
+			IsVisible: category.Enabled,
+		})
+	}
 
 	items, err := s.client.ListCatalogItems(ctx)
 	if err != nil {
@@ -81,7 +96,7 @@ func (s *Syncer) Sync(ctx context.Context) (store.TossCatalogSyncResult, error) 
 			ImageURL:    item.ImageURL,
 			Badge:       firstCatalogLabel(item.Labels),
 			Labels:      labels,
-			CategoryID:  customerCategoryID(item),
+			CategoryID:  item.Category.ID,
 			Price:       item.Price.Value,
 			IsVisible:   item.Enabled && item.State == "ON_SALE" && item.Price.Type == "FIXED" && item.Price.Value > 0,
 			SortOrder:   item.Order,
@@ -89,7 +104,7 @@ func (s *Syncer) Sync(ctx context.Context) (store.TossCatalogSyncResult, error) 
 		})
 	}
 
-	return s.repository.SyncTossCatalog(ctx, mapped)
+	return s.repository.SyncTossCatalog(ctx, categories, mapped)
 }
 
 var catalogABVLine = regexp.MustCompile(`(?i)^ABV\s*:\s*((?:\d+(?:\.\d+)?|\?\?)%)$`)
@@ -114,22 +129,6 @@ func splitCatalogDescriptionABV(description string) (string, string) {
 		kept = append(kept, line)
 	}
 	return strings.TrimSpace(strings.Join(kept, "\n")), abvLabel
-}
-
-func customerCategoryID(item tossplace.CatalogItem) string {
-	category := strings.TrimSpace(item.Category.Title)
-	switch {
-	case strings.Contains(category, "시그니처"), strings.Contains(strings.ToLower(category), "signature"):
-		return "signature"
-	case strings.Contains(category, "위스키"):
-		return "whisky"
-	case strings.Contains(category, "논알콜"):
-		return "non-alcohol"
-	case strings.Contains(item.Title, "하이볼"):
-		return "highball"
-	default:
-		return "cocktail"
-	}
 }
 
 func firstCatalogLabel(labels []string) string {
