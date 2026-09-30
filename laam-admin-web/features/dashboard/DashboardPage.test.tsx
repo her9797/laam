@@ -256,7 +256,7 @@ describe("DashboardPage", () => {
   it("links the order card to the unpaid-filtered order list", () => {
     render(<DashboardPage />);
 
-    expect(screen.getByText("미결제 주문 건수").closest("a")).toHaveAttribute("href", "/orders?status=UNPAID");
+    expect(screen.getByText("최근 한 달 미결제 주문").closest("a")).toHaveAttribute("href", "/orders?status=UNPAID");
   });
 
   it("shows a sales card linking to the sales stats page with today's revenue", () => {

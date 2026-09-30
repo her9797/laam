@@ -104,6 +104,27 @@ describe("useOrderCountQuery", () => {
     expect(result.current.data?.total).toBe(5);
   });
 
+  // The card counts the same one-month default range the `/orders` list
+  // fills in on mount, so the linked list shows the same set.
+  it("bounds the unpaid count to the default one-month order date range", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 2, 31, 20, 0, 0));
+    try {
+      vi.mocked(fetchOrdersPage).mockClear().mockResolvedValue(fixture);
+      const { Wrapper } = createWrapper();
+
+      const { result } = renderHook(() => useOrderCountQuery(), { wrapper: Wrapper });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      expect(fetchOrdersPage).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "UNPAID", dateFrom: "2026-02-28", dateTo: "2026-03-31" }),
+        expect.anything(),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // The card reads only `total`, so the server can skip the list query.
   it("asks the server for the total only", async () => {
     vi.mocked(fetchOrdersPage).mockClear().mockResolvedValue(fixture);

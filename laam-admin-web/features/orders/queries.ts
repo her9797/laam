@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 
 import { acknowledgeOrder, fetchOrder, fetchOrdersPage } from "./api";
 import type { OrderListQuery } from "./model";
+import { defaultOrderDateRange } from "./order-date-range";
 
 /**
  * Cache keys for `payment_orders`. Kept separate from every other
@@ -99,25 +100,25 @@ export function useOrderNotificationsQuery() {
 }
 
 /**
- * Dashboard's order-history aggregate: every order still awaiting payment,
- * all-time — unlike `/orders`'s own default filter (see `list-query-url.ts`'s
- * `DEFAULT_STATUS`), which shows every status. `pageSize: 1` keeps the
- * request cheap; only `total` from the paginated envelope is read, never
- * `items`.
+ * Dashboard's order-history aggregate: orders still awaiting payment within
+ * the one-month default range `/orders` fills in on mount
+ * (`defaultOrderDateRange`) — unlike `/orders`'s own default status filter
+ * (see `list-query-url.ts`'s `DEFAULT_STATUS`), which shows every status.
+ * `pageSize: 1` keeps the request cheap; only `total` from the paginated
+ * envelope is read, never `items`.
  *
  * "Unpaid" spans two statuses, not one: an order stays unpaid after a staff
  * member acknowledges it (READY → ACKNOWLEDGED), and only leaves that state
  * on a POS webhook (→ DONE/CANCELLED). The list endpoint's `UNPAID` status
- * filter covers both, so the card's count and the `/orders?status=UNPAID`
- * list it links to are the same set.
+ * filter covers both. The date range is computed inside `queryFn` (never
+ * during render), so the count matches what `/orders?status=UNPAID` shows
+ * under its default range when both are loaded at the same time.
  */
-const DASHBOARD_UNPAID_QUERY: OrderListQuery = {
+const DASHBOARD_UNPAID_QUERY: Omit<OrderListQuery, "dateFrom" | "dateTo"> = {
   page: 1,
   pageSize: 1,
   status: "UNPAID",
   search: "",
-  dateFrom: "",
-  dateTo: "",
   sort: "createdAt",
   order: "desc",
 };
@@ -126,7 +127,11 @@ export function useOrderCountQuery() {
   return useQuery({
     queryKey: orderKeys.count,
     queryFn: async () => {
-      const page = await fetchOrdersPage(DASHBOARD_UNPAID_QUERY, { include: "total" });
+      const { from, to } = defaultOrderDateRange();
+      const page = await fetchOrdersPage(
+        { ...DASHBOARD_UNPAID_QUERY, dateFrom: from, dateTo: to },
+        { include: "total" },
+      );
       return { total: page.total };
     },
   });
