@@ -13,11 +13,12 @@ import (
 
 // fakeSyncCatalogClient is a minimal catalogsync client stub — it only
 // needs to satisfy catalogsync's unexported catalogClient interface
-// (ListCatalogItems), which Go's structural typing allows from any
-// package.
+// (ListCatalogItems, ListCatalogCategories), which Go's structural typing
+// allows from any package.
 type fakeSyncCatalogClient struct {
-	items []tossplace.CatalogItem
-	err   error
+	items      []tossplace.CatalogItem
+	categories []tossplace.CatalogCategoryDetail
+	err        error
 }
 
 func (f *fakeSyncCatalogClient) ListCatalogItems(context.Context) ([]tossplace.CatalogItem, error) {
@@ -25,6 +26,13 @@ func (f *fakeSyncCatalogClient) ListCatalogItems(context.Context) ([]tossplace.C
 		return nil, f.err
 	}
 	return f.items, nil
+}
+
+func (f *fakeSyncCatalogClient) ListCatalogCategories(context.Context) ([]tossplace.CatalogCategoryDetail, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.categories, nil
 }
 
 func resetServerWithSyncer(t *testing.T, syncer *catalogsync.Syncer) http.Handler {
@@ -65,16 +73,21 @@ func TestRouter_AdminCatalogSync_ReturnsServiceUnavailableWhenNotConfigured(t *t
 }
 
 func TestRouter_AdminCatalogSync_ReturnsCountsAndBootstrapDataOnSuccess(t *testing.T) {
-	client := &fakeSyncCatalogClient{items: []tossplace.CatalogItem{
-		{
-			ID:       "item-1",
-			Title:    "테스트 하이볼",
-			Category: tossplace.CatalogCategory{Title: "1%~7%"},
-			Price:    tossplace.CatalogPrice{Type: "FIXED", Value: 9000},
-			State:    "ON_SALE",
-			Enabled:  true,
+	client := &fakeSyncCatalogClient{
+		categories: []tossplace.CatalogCategoryDetail{
+			{ID: "1567288", Title: "1%~7%", Enabled: true, Order: 2},
 		},
-	}}
+		items: []tossplace.CatalogItem{
+			{
+				ID:       "item-1",
+				Title:    "테스트 하이볼",
+				Category: tossplace.CatalogCategory{ID: "1567288", Title: "1%~7%"},
+				Price:    tossplace.CatalogPrice{Type: "FIXED", Value: 9000},
+				State:    "ON_SALE",
+				Enabled:  true,
+			},
+		},
+	}
 	syncer := catalogsync.New(client, testRepo)
 	handler := resetServerWithSyncer(t, syncer)
 
@@ -137,6 +150,10 @@ func TestRouter_AdminCatalogSync_ReturnsConflictWhenAlreadyRunning(t *testing.T)
 type blockingSyncCatalogClient struct {
 	entered chan struct{}
 	release chan struct{}
+}
+
+func (b *blockingSyncCatalogClient) ListCatalogCategories(context.Context) ([]tossplace.CatalogCategoryDetail, error) {
+	return nil, nil
 }
 
 func (b *blockingSyncCatalogClient) ListCatalogItems(context.Context) ([]tossplace.CatalogItem, error) {

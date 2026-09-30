@@ -50,3 +50,39 @@ func TestClientListCatalogItems(t *testing.T) {
 		t.Fatalf("catalog media/options = %+v", items[0])
 	}
 }
+
+func TestClientListCatalogCategories(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api-public/openapi/v1/merchants/merchant-123/catalog/categories" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("x-access-key") != "access" || r.Header.Get("x-secret-key") != "secret" {
+			t.Fatal("missing Toss Place authentication headers")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"resultType":"SUCCESS",
+			"success":[
+				{"id":"1567463","merchantId":607604,"title":"시그니처","code":null,"enabled":true,"order":1},
+				{"id":"1567288","merchantId":607604,"title":"1%~7%","code":null,"enabled":true,"order":2},
+				{"id":"1659122","merchantId":607604,"title":"인기","code":null,"enabled":false,"order":10}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "access", "secret", "merchant-123", server.Client())
+	categories, err := client.ListCatalogCategories(context.Background())
+	if err != nil {
+		t.Fatalf("ListCatalogCategories() error = %v", err)
+	}
+	if len(categories) != 3 {
+		t.Fatalf("categories = %+v, want 3", categories)
+	}
+	if categories[0].ID != "1567463" || categories[0].Title != "시그니처" || categories[0].Order != 1 || !categories[0].Enabled {
+		t.Fatalf("categories[0] = %+v", categories[0])
+	}
+	if categories[2].Enabled {
+		t.Fatalf("categories[2] = %+v, want enabled=false", categories[2])
+	}
+}
