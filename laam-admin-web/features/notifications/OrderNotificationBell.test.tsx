@@ -57,14 +57,14 @@ const O2: OrderNotification = {
 };
 
 const dismissOrderMock = vi.fn();
-const dismissAllOrdersMock = vi.fn();
+const dismissManyOrdersMock = vi.fn();
 function mockOrderNotifications(notifications: OrderNotification[]) {
   useOrderNotificationsMock.mockReturnValue({
     notifications,
     count: notifications.length,
     isLoading: false,
     dismiss: dismissOrderMock,
-    dismissAll: dismissAllOrdersMock,
+    dismissMany: dismissManyOrdersMock,
   });
 }
 
@@ -147,7 +147,7 @@ describe("OrderNotificationBell", () => {
     render(<OrderNotificationBell playChime={playChimeMock} />);
 
     fireEvent.click(screen.getByRole("button", { name: "모두 확인" }));
-    expect(dismissAllOrdersMock).not.toHaveBeenCalled();
+    expect(dismissManyOrdersMock).not.toHaveBeenCalled();
     expect(await screen.findByText("새 주문 알림을 모두 확인 처리할까요?")).toBeInTheDocument();
     expect(
       screen.getByText("표시된 새 주문 알림 2건을 이 기기에서 모두 확인 처리합니다."),
@@ -155,7 +155,28 @@ describe("OrderNotificationBell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "확인" }));
 
-    expect(dismissAllOrdersMock).toHaveBeenCalledTimes(1);
+    expect(dismissManyOrdersMock).toHaveBeenCalledTimes(1);
+    expect(dismissManyOrdersMock).toHaveBeenCalledWith(["o1", "o2"]);
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("dismisses only the orders snapshotted when the dialog opened, even if new ones arrive", async () => {
+    mockOrderNotifications([O1]);
+    const { rerender } = render(<OrderNotificationBell playChime={playChimeMock} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "모두 확인" }));
+    expect(
+      await screen.findByText("표시된 새 주문 알림 1건을 이 기기에서 모두 확인 처리합니다."),
+    ).toBeInTheDocument();
+
+    mockOrderNotifications([O2, O1]);
+    rerender(<OrderNotificationBell playChime={playChimeMock} />);
+
+    expect(
+      screen.getByText("표시된 새 주문 알림 1건을 이 기기에서 모두 확인 처리합니다."),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "확인" }));
+
+    expect(dismissManyOrdersMock).toHaveBeenCalledWith(["o1"]);
   });
 });

@@ -16,28 +16,10 @@
  * for the same reason `business-day.ts` does: it keeps `laam-api` free of
  * any server-side timezone policy for filtering.
  */
-import { oneMonthBefore } from "@/lib/date-range";
+import { formatDateOnly, oneMonthBefore, parseDateOnly, type DateRangeResult } from "@/lib/date-range";
 import { getBusinessDayBoundsForDate, getDatePresetRange } from "../business-day";
 
 export type DayBasis = "business" | "calendar";
-
-export type DateRangeResult = { ok: true; from: Date; to: Date } | { ok: false };
-
-const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
-function parseDateOnly(value: string): Date | null {
-  if (!DATE_ONLY_PATTERN.test(value)) {
-    return null;
-  }
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(year, month - 1, day, 0, 0, 0, 0);
-  // Guards against e.g. "2026-02-30", which `Date` would otherwise silently
-  // roll forward into March.
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
-    return null;
-  }
-  return date;
-}
 
 function calendarDayBounds(date: Date): { start: Date; end: Date } {
   const start = new Date(date);
@@ -69,13 +51,6 @@ export function resolveDateRange(fromDateStr: string, toDateStr: string, basis: 
   const from = boundsForBasis(basis, fromDate).start;
   const to = boundsForBasis(basis, toDate).end;
   return { ok: true, from, to };
-}
-
-function formatDateOnly(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 /**

@@ -16,48 +16,6 @@ import (
 // an uppercase area letter, '-', and exactly two digits (T-01, B-03).
 var qrTableIDPattern = regexp.MustCompile(`^([A-Z])-([0-9]{2})$`)
 
-// The POS table name rules below mirror laam-pos-plugin's
-// order-sync.ts semanticTableName exactly: spaces, '-' and '_' are
-// dropped and the comparison is case-insensitive, so "t11", "T 11" and
-// "테이블-11" all resolve to the same QR table. Anything else (룸, 테라스,
-// …) has no QR counterpart and must be linked by an operator.
-var (
-	posTitleAreaPattern  = regexp.MustCompile(`^([tb])0*([0-9]+)$`)
-	posTitleTablePattern = regexp.MustCompile(`^테이블0*([0-9]+)$`)
-	posTitleBarPattern   = regexp.MustCompile(`^바(?:자리)?0*([0-9]+)$`)
-)
-
-func normalizePOSTableTitle(value string) string {
-	normalized := strings.ToLower(strings.TrimSpace(value))
-	return strings.NewReplacer(" ", "", "\t", "", "-", "", "_", "").Replace(normalized)
-}
-
-// qrTableIDFromPOSTitle converts a POS table name to the QR table id it
-// means, or reports false when the name follows none of the rules.
-func qrTableIDFromPOSTitle(title string) (string, bool) {
-	normalized := normalizePOSTableTitle(title)
-
-	area := ""
-	digits := ""
-	switch {
-	case posTitleAreaPattern.MatchString(normalized):
-		match := posTitleAreaPattern.FindStringSubmatch(normalized)
-		area, digits = strings.ToUpper(match[1]), match[2]
-	case posTitleTablePattern.MatchString(normalized):
-		area, digits = "T", posTitleTablePattern.FindStringSubmatch(normalized)[1]
-	case posTitleBarPattern.MatchString(normalized):
-		area, digits = "B", posTitleBarPattern.FindStringSubmatch(normalized)[1]
-	default:
-		return "", false
-	}
-
-	number, err := strconv.Atoi(digits)
-	if err != nil || number < 1 || number > 99 {
-		return "", false
-	}
-	return fmt.Sprintf("%s-%02d", area, number), true
-}
-
 // parseQrTableID splits a QR table id into its area and number, rejecting
 // anything that is not in the canonical 'T-01' form.
 func parseQrTableID(id string) (string, int, bool) {
@@ -433,14 +391,14 @@ func (r *Repository) RenameQrTable(ctx context.Context, qrTableID string, newID 
 }
 
 // CreateQrTable adds a QR table for a POS table that has no QR counterpart.
-// An empty id is derived from the POS table name; a name that follows none
-// of the naming rules is rejected so an operator can pick the id instead.
+// The operator always picks the id; it is never derived from the POS name.
 func (r *Repository) CreateQrTable(ctx context.Context, id string, posTableID int64) (QrTable, error) {
 	id = strings.TrimSpace(id)
-	if id != "" {
-		if _, _, ok := parseQrTableID(id); !ok {
-			return QrTable{}, fmt.Errorf("%w: QR table id %q must look like T-01", ErrInvalidInput, id)
-		}
+	if id == "" {
+		return QrTable{}, fmt.Errorf("%w: QR table id is required", ErrInvalidInput)
+	}
+	if _, _, ok := parseQrTableID(id); !ok {
+		return QrTable{}, fmt.Errorf("%w: QR table id %q must look like T-01", ErrInvalidInput, id)
 	}
 
 	tx, err := r.pool.Begin(ctx)
@@ -462,14 +420,6 @@ func (r *Repository) CreateQrTable(ctx context.Context, id string, posTableID in
 	case classifyError(err) == ErrNotFound:
 	default:
 		return QrTable{}, err
-	}
-
-	if id == "" {
-		generated, ok := qrTableIDFromPOSTitle(title)
-		if !ok {
-			return QrTable{}, fmt.Errorf("%w: cannot derive a QR table id from the POS table name", ErrInvalidInput)
-		}
-		id = generated
 	}
 
 	area, number, ok := parseQrTableID(id)
@@ -637,9 +587,11 @@ func lockUnfinishedPOSTableSync(ctx context.Context, tx pgx.Tx, id string) error
 	}
 }
 
-// CompletePOSTableSync replaces the whole POS table snapshot and re-runs
-// name based auto-linking in one transaction, so the admin screen never
-// sees a half-written snapshot.
+// CompletePOSTableSync replaces the whole POS table snapshot in one
+// transaction, so the admin screen never sees a half-written snapshot. It
+// only refreshes the POS table list: QR tables are never created, linked or
+// deleted by name here. An operator links them on the admin tables screen;
+// the sync only drops links whose POS table left the snapshot.
 func (r *Repository) CompletePOSTableSync(ctx context.Context, id string, snapshot POSTableSnapshotInput) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -703,22 +655,6 @@ func (r *Repository) CompletePOSTableSync(ctx context.Context, id string, snapsh
 		return classifyError(err)
 	}
 
-	if err := autoLinkQrTables(ctx, tx); err != nil {
-		return err
-	}
-
-	if err := createQrTablesForPOSTables(ctx, tx); err != nil {
-		return err
-	}
-
-	// The POS owns which tables exist; we own their codes. A QR table with no
-	// POS counterpart is a table the store no longer has, so it goes — its QR
-	// could not route an order anyway. Past orders keep their table_number
-	// text, so the history is unaffected.
-	if _, err := tx.Exec(ctx, `DELETE FROM qr_tables WHERE pos_table_id IS NULL`); err != nil {
-		return classifyError(err)
-	}
-
 	var linked, unlinked, posOnly int
 	if err := tx.QueryRow(ctx, `
 		SELECT
@@ -743,68 +679,6 @@ func (r *Repository) CompletePOSTableSync(ctx context.Context, id string, snapsh
 	}
 
 	return tx.Commit(ctx)
-}
-
-// autoLinkQrTables links every still unlinked QR table to the single POS
-// table whose name resolves to it. Two POS tables resolving to the same QR
-// table is ambiguous, so neither is linked and an operator decides.
-func autoLinkQrTables(ctx context.Context, tx pgx.Tx) error {
-	rows, err := tx.Query(ctx, `
-		SELECT p.pos_table_id, p.title
-		FROM pos_tables p
-		WHERE NOT EXISTS (SELECT 1 FROM qr_tables q WHERE q.pos_table_id = p.pos_table_id)
-		ORDER BY p.pos_table_id
-	`)
-	if err != nil {
-		return classifyError(err)
-	}
-	candidates := make(map[string][]int64)
-	for rows.Next() {
-		var posTableID int64
-		var title string
-		if err := rows.Scan(&posTableID, &title); err != nil {
-			rows.Close()
-			return err
-		}
-		if qrTableID, ok := qrTableIDFromPOSTitle(title); ok {
-			candidates[qrTableID] = append(candidates[qrTableID], posTableID)
-		}
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	unlinkedRows, err := tx.Query(ctx, `SELECT id FROM qr_tables WHERE pos_table_id IS NULL ORDER BY area, number, id`)
-	if err != nil {
-		return classifyError(err)
-	}
-	var unlinkedIDs []string
-	for unlinkedRows.Next() {
-		var id string
-		if err := unlinkedRows.Scan(&id); err != nil {
-			unlinkedRows.Close()
-			return err
-		}
-		unlinkedIDs = append(unlinkedIDs, id)
-	}
-	unlinkedRows.Close()
-	if err := unlinkedRows.Err(); err != nil {
-		return err
-	}
-
-	for _, qrTableID := range unlinkedIDs {
-		matches := candidates[qrTableID]
-		if len(matches) != 1 {
-			continue
-		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE qr_tables SET pos_table_id = $2, linked_at = NOW() WHERE id = $1
-		`, qrTableID, matches[0]); err != nil {
-			return classifyError(err)
-		}
-	}
-	return nil
 }
 
 // FailPOSTableSync records why the POS plugin could not produce a snapshot.
@@ -885,65 +759,6 @@ func ensureOrderTableLinked(ctx context.Context, q tableQuerier, tableNumber str
 	}
 	if anyLinked && !thisLinked {
 		return ErrTableNotLinked
-	}
-	return nil
-}
-
-// createQrTablesForPOSTables gives every still unmatched POS table a QR
-// table of its own, using the code its name converts to. A name that
-// follows none of the rules — 룸, 테라스 — has no obvious code, so it is
-// left for an operator to name; so is a name whose code another table
-// already uses, since guessing a different one would be arbitrary.
-func createQrTablesForPOSTables(ctx context.Context, tx pgx.Tx) error {
-	rows, err := tx.Query(ctx, `
-		SELECT p.pos_table_id, p.title
-		FROM pos_tables p
-		WHERE NOT EXISTS (SELECT 1 FROM qr_tables q WHERE q.pos_table_id = p.pos_table_id)
-		ORDER BY p.pos_table_id
-	`)
-	if err != nil {
-		return classifyError(err)
-	}
-	type candidate struct {
-		posTableID int64
-		qrTableID  string
-	}
-	var candidates []candidate
-	claims := make(map[string]int)
-	for rows.Next() {
-		var posTableID int64
-		var title string
-		if err := rows.Scan(&posTableID, &title); err != nil {
-			rows.Close()
-			return err
-		}
-		if qrTableID, ok := qrTableIDFromPOSTitle(title); ok {
-			candidates = append(candidates, candidate{posTableID: posTableID, qrTableID: qrTableID})
-			claims[qrTableID]++
-		}
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	for _, entry := range candidates {
-		// Two POS tables converting to the same code: which one gets it would
-		// be decided by POS id alone, so neither does and an operator names them.
-		if claims[entry.qrTableID] != 1 {
-			continue
-		}
-		area, number, ok := parseQrTableID(entry.qrTableID)
-		if !ok {
-			continue
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO qr_tables (id, area, number, sort_order, pos_table_id, linked_at)
-			VALUES ($1, $2, $3, $3, $4, NOW())
-			ON CONFLICT (id) DO NOTHING
-		`, entry.qrTableID, area, number, entry.posTableID); err != nil {
-			return classifyError(err)
-		}
 	}
 	return nil
 }

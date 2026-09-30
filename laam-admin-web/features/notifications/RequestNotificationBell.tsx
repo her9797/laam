@@ -7,16 +7,6 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -30,6 +20,7 @@ import {
 } from "@/features/requests/queries";
 import { cn } from "@/lib/utils";
 
+import { MarkAllConfirmDialog } from "./MarkAllConfirmDialog";
 import type { RequestNotification, RequestNotificationKind } from "./model";
 import { RequestNotificationPanel } from "./RequestNotificationPanel";
 import { useNewRequestArrivals } from "./useNewRequestArrivals";
@@ -140,22 +131,13 @@ export function RequestNotificationBell({ playChime }: { playChime: () => void }
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("markAllConfirmTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("markAllConfirmBody", { count: generalRequestCount })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common:cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmMarkAll}>
-              {t("common:confirm")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <MarkAllConfirmDialog
+        open={isConfirmOpen}
+        onOpenChange={setIsConfirmOpen}
+        title={t("markAllConfirmTitle")}
+        body={t("markAllConfirmBody", { count: generalRequestCount })}
+        onConfirm={handleConfirmMarkAll}
+      />
     </>
   );
 }

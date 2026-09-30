@@ -1,13 +1,14 @@
 import Link from "next/link";
 
+import {
+  CUSTOMER_TEST_TABLE_OPTIONS,
+  DEFAULT_CUSTOMER_TEST_TABLE,
+} from "@/lib/customer-test-entry";
+
 export const dynamic = "force-dynamic";
 
 export default function AccessRequiredPage() {
   const testEntryEnabled = Boolean(process.env.CUSTOMER_TEST_ENTRY_TOKEN);
-  const tableOptions = Array.from(
-    { length: 15 },
-    (_, index) => `N-${String(index + 1).padStart(2, "0")}`,
-  );
 
   return (
     <main className="page-shell">
@@ -34,8 +35,8 @@ export default function AccessRequiredPage() {
               </label>
               <label className="request-compose-field">
                 <span>테이블</span>
-                <select name="table" defaultValue="N-01">
-                  {tableOptions.map((table) => (
+                <select name="table" defaultValue={DEFAULT_CUSTOMER_TEST_TABLE}>
+                  {CUSTOMER_TEST_TABLE_OPTIONS.map((table) => (
                     <option key={table} value={table}>
                       {table}
                     </option>

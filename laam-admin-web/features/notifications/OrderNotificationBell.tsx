@@ -7,16 +7,6 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -26,6 +16,7 @@ import {
 import { toast } from "@/components/ui/toast";
 import { cn, formatCurrencyKRW } from "@/lib/utils";
 
+import { MarkAllConfirmDialog } from "./MarkAllConfirmDialog";
 import type { OrderNotification } from "./model";
 import { OrderNotificationPanel } from "./OrderNotificationPanel";
 import { useNewArrivals } from "./useNewArrivals";
@@ -39,7 +30,7 @@ import { useOrderNotifications } from "./useOrderNotifications";
  * request is waiting" with "a sale just happened". An order's "read" state
  * is client-only (`useOrderNotifications`'s `dismiss`, kept in
  * `localStorage`), not the server-owned status requests use, so the
- * panel's mark-all action (behind a confirm dialog) is `dismissAll()` — a
+ * panel's mark-all action (behind a confirm dialog) is `dismissMany(ids)` over the ids shown when it was clicked — a
  * this-device-only dismissal, not a server bulk mutation. `playChime` comes
  * from the one `useNotificationSound()` instance `NotificationBells` owns.
  */
@@ -47,8 +38,11 @@ export function OrderNotificationBell({ playChime }: { playChime: () => void }) 
   const { t, i18n } = useTranslation("notifications");
   const router = useRouter();
   useOrderBroadcast();
-  const { notifications, count, isLoading, dismiss, dismissAll } = useOrderNotifications();
-  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const { notifications, count, isLoading, dismiss, dismissMany } = useOrderNotifications();
+  // Ids shown when "모두 확인" was clicked; non-null means the confirm dialog
+  // is open. The dialog's count and the dismissal both use this snapshot so
+  // an order arriving while the dialog is open is not dismissed unseen.
+  const [markAllSnapshot, setMarkAllSnapshot] = useState<string[] | null>(null);
   const arrivals = useNewArrivals(notifications, isLoading);
 
   // `t`, the active language, and `playChime` are read through this ref
@@ -86,8 +80,10 @@ export function OrderNotificationBell({ playChime }: { playChime: () => void }) 
   }
 
   function handleConfirmMarkAll() {
-    dismissAll();
-    setIsConfirmOpen(false);
+    if (markAllSnapshot) {
+      dismissMany(markAllSnapshot);
+    }
+    setMarkAllSnapshot(null);
   }
 
   return (
@@ -111,25 +107,22 @@ export function OrderNotificationBell({ playChime }: { playChime: () => void }) 
           <OrderNotificationPanel
             notifications={notifications}
             onItemClick={handleItemClick}
-            onMarkAllClick={() => setIsConfirmOpen(true)}
+            onMarkAllClick={() => setMarkAllSnapshot(notifications.map((order) => order.id))}
           />
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("ordersMarkAllConfirmTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("ordersMarkAllConfirmBody", { count })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("common:cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmMarkAll}>{t("common:confirm")}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <MarkAllConfirmDialog
+        open={markAllSnapshot !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setMarkAllSnapshot(null);
+          }
+        }}
+        title={t("ordersMarkAllConfirmTitle")}
+        body={t("ordersMarkAllConfirmBody", { count: markAllSnapshot?.length ?? 0 })}
+        onConfirm={handleConfirmMarkAll}
+      />
     </>
   );
 }

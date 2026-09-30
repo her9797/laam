@@ -63,7 +63,7 @@ export function PosTableLinkSection({ data }: { data: AdminTablesData }) {
 
   /** POS table the operator picked in an unlinked row's select, per QR table id. */
   const [linkDrafts, setLinkDrafts] = useState<Record<string, string>>({});
-  /** POS tables whose "add as QR table" needs an operator-typed id (the server's 400). */
+  /** POS tables whose "add as QR table" code input is open — absent means closed. */
   const [nameDrafts, setNameDrafts] = useState<Record<number, string>>({});
   /** Open code editors, by the table's *current* id — absent means closed. */
   const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
@@ -140,9 +140,9 @@ export function PosTableLinkSection({ data }: { data: AdminTablesData }) {
     );
   }
 
-  function handleAddQrTable(posTableId: number, id?: string) {
+  function handleAddQrTable(posTableId: number, id: string) {
     createMutation.mutate(
-      id === undefined ? { posTableId } : { posTableId, id },
+      { posTableId, id },
       {
         onSuccess: () => {
           setNameDrafts((current) => {
@@ -153,12 +153,6 @@ export function PosTableLinkSection({ data }: { data: AdminTablesData }) {
           toast.add({ title: t("posOnlyAdded") });
         },
         onError: (error: unknown) => {
-          // The server could not derive a QR name from the POS one — ask for
-          // it instead of failing, and retry with what the operator types.
-          if (hasStatus(error, 400) && id === undefined) {
-            setNameDrafts((current) => ({ ...current, [posTableId]: "" }));
-            return;
-          }
           if (hasStatus(error, 409)) {
             toast.add({ title: t("posOnlyAddConflict") });
             return;
@@ -300,6 +294,9 @@ export function PosTableLinkSection({ data }: { data: AdminTablesData }) {
                   isPending={createMutation.isPending}
                   onNameDraftChange={(value) =>
                     setNameDrafts((current) => ({ ...current, [posTable.posTableId]: value }))
+                  }
+                  onOpenName={() =>
+                    setNameDrafts((current) => ({ ...current, [posTable.posTableId]: "" }))
                   }
                   onCancelName={() =>
                     setNameDrafts((current) => {
@@ -499,16 +496,18 @@ function PosOnlyRow({
   nameDraft,
   isPending,
   onNameDraftChange,
+  onOpenName,
   onCancelName,
   onAdd,
 }: {
   posTable: PosTable;
-  /** `undefined` until the server asked for an operator-typed QR table id. */
+  /** `undefined` until the operator opens the QR table code input. */
   nameDraft: string | undefined;
   isPending: boolean;
   onNameDraftChange: (value: string) => void;
+  onOpenName: () => void;
   onCancelName: () => void;
-  onAdd: (posTableId: number, id?: string) => void;
+  onAdd: (posTableId: number, id: string) => void;
 }) {
   const { t } = useTranslation("tables");
   const inputId = `qr-table-id-${posTable.posTableId}`;
@@ -529,8 +528,7 @@ function PosOnlyRow({
             type="button"
             size="sm"
             variant="outline"
-            disabled={isPending}
-            onClick={() => onAdd(posTable.posTableId)}
+            onClick={onOpenName}
           >
             {t("posOnlyAdd")}
           </Button>

@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  CUSTOMER_TEST_TABLE_OPTIONS,
+  DEFAULT_CUSTOMER_TEST_TABLE,
   isCustomerTestEntryTokenValid,
   normalizeCustomerTestTable,
+  resolveCustomerTestTable,
 } from "../lib/customer-test-entry.ts";
 
 test("테스트 입장 토큰은 설정된 값과 정확히 일치할 때만 유효하다", () => {
@@ -25,4 +28,12 @@ test("테스트 테이블 번호는 QR 진입과 같은 규칙으로 정규화�
   assert.equal(normalizeCustomerTestTable("T-13"), "T-13");
   assert.equal(normalizeCustomerTestTable("B-06"), "B-06");
   assert.equal(normalizeCustomerTestTable("r-2"), "R-02");
+});
+
+test("테이블을 지정하지 않은 테스트 입장은 선택지의 기본 테이블로 들어간다", () => {
+  assert.equal(resolveCustomerTestTable(null), "N-01");
+  assert.equal(DEFAULT_CUSTOMER_TEST_TABLE, "N-01");
+  assert.ok(CUSTOMER_TEST_TABLE_OPTIONS.includes(resolveCustomerTestTable(null)));
+  assert.equal(CUSTOMER_TEST_TABLE_OPTIONS.length, 15);
+  assert.equal(resolveCustomerTestTable("t-3"), "T-03");
 });

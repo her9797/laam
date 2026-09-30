@@ -23,3 +23,16 @@ export function isCustomerTestEntryTokenValid(expectedToken: string, receivedTok
 export function normalizeCustomerTestTable(value: string | null) {
   return normalizeQrTable(value);
 }
+
+/** 접근 안내 화면의 테스트 입장 테이블 선택지(N-01~N-15). */
+export const CUSTOMER_TEST_TABLE_OPTIONS: readonly string[] = Array.from(
+  { length: 15 },
+  (_, index) => `N-${String(index + 1).padStart(2, "0")}`,
+);
+
+export const DEFAULT_CUSTOMER_TEST_TABLE = CUSTOMER_TEST_TABLE_OPTIONS[0];
+
+/** 테이블을 지정하지 않은 테스트 입장은 선택지의 기본 테이블로 들어간다. */
+export function resolveCustomerTestTable(value: string | null) {
+  return normalizeCustomerTestTable(value ?? DEFAULT_CUSTOMER_TEST_TABLE);
+}

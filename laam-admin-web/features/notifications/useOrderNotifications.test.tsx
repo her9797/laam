@@ -139,7 +139,7 @@ describe("useOrderNotifications", () => {
     expect(second.result.current.notifications.map((item) => item.id)).toEqual(["o2"]);
   });
 
-  it("dismissAll() clears the list and count and writes localStorage once", async () => {
+  it("dismissMany(ids) hides only the given ids and writes localStorage once", async () => {
     vi.mocked(fetchOrdersPage).mockResolvedValue(twoOrderFixture);
     const setItem = vi.spyOn(Storage.prototype, "setItem");
 
@@ -147,21 +147,41 @@ describe("useOrderNotifications", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     act(() => {
-      result.current.dismissAll();
+      result.current.dismissMany(["o1"]);
     });
 
-    expect(result.current.notifications).toEqual([]);
-    expect(result.current.count).toBe(0);
+    expect(result.current.notifications.map((item) => item.id)).toEqual(["o2"]);
+    expect(result.current.count).toBe(1);
     expect(setItem).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps dismissAll() dismissals across a reload", async () => {
+  it("drops stored ids that are no longer in the fetched orders when dismissing", async () => {
+    window.localStorage.setItem(
+      "lam-admin.notifications.dismissedOrderIds",
+      JSON.stringify(["stale-old"]),
+    );
+    vi.mocked(fetchOrdersPage).mockResolvedValue(twoOrderFixture);
+
+    const { result } = renderHook(() => useOrderNotifications(), { wrapper: createWrapper() });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.dismiss("o1");
+    });
+
+    const stored: unknown = JSON.parse(
+      window.localStorage.getItem("lam-admin.notifications.dismissedOrderIds") ?? "[]",
+    );
+    expect(stored).toEqual(["o1"]);
+  });
+
+  it("keeps dismissMany() dismissals across a reload", async () => {
     vi.mocked(fetchOrdersPage).mockResolvedValue(twoOrderFixture);
 
     const first = renderHook(() => useOrderNotifications(), { wrapper: createWrapper() });
     await waitFor(() => expect(first.result.current.isLoading).toBe(false));
     act(() => {
-      first.result.current.dismissAll();
+      first.result.current.dismissMany(["o1", "o2"]);
     });
 
     const second = renderHook(() => useOrderNotifications(), { wrapper: createWrapper() });
