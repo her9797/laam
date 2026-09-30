@@ -13,7 +13,7 @@ import { toOrderNotifications } from "./order-selectors";
  * the order, not recording the sale.
  *
  * `count`/`notifications` only reflect orders not yet dismissed via
- * `dismiss(id)`. Unlike customer requests, `payment_orders` has no
+ * `dismiss(id)` or `dismissMany(ids)`. Unlike customer requests, `payment_orders` has no
  * server-owned read state, so "처리됨" here is a client-only concept
  * persisted to `localStorage` (`order-dismissal.ts`) rather than a status
  * flip on the server — same trade-off already made for the mute
@@ -48,39 +48,43 @@ export function useOrderNotifications() {
     [allOrders, dismissedIds],
   );
 
-  const dismiss = useCallback((id: string) => {
-    setDismissedIds((previous) => {
-      if (previous.has(id)) {
-        return previous;
-      }
-      const next = new Set(previous);
-      next.add(id);
-      writeDismissedOrderIds(next);
-      return next;
-    });
-  }, []);
+  // Dismisses exactly the given ids in one state update, so localStorage is
+  // written once rather than once per order. Once the feed has loaded,
+  // stored ids outside the current result are pruned: the feed is the latest
+  // DONE page, so an order that fell out of it can never reappear and its id
+  // would otherwise pile up in localStorage forever.
+  const dismissMany = useCallback(
+    (ids: string[]) => {
+      setDismissedIds((previous) => {
+        if (ids.every((id) => previous.has(id))) {
+          return previous;
+        }
+        const next = new Set(previous);
+        for (const id of ids) {
+          next.add(id);
+        }
+        if (ordersQuery.data) {
+          const fetchedIds = new Set(allOrders.map((order) => order.id));
+          for (const id of next) {
+            if (!fetchedIds.has(id)) {
+              next.delete(id);
+            }
+          }
+        }
+        writeDismissedOrderIds(next);
+        return next;
+      });
+    },
+    [ordersQuery.data, allOrders],
+  );
 
-  // Dismisses everything currently shown in one state update, so
-  // localStorage is written once rather than once per order.
-  const dismissAll = useCallback(() => {
-    setDismissedIds((previous) => {
-      const next = new Set(previous);
-      for (const order of notifications) {
-        next.add(order.id);
-      }
-      if (next.size === previous.size) {
-        return previous;
-      }
-      writeDismissedOrderIds(next);
-      return next;
-    });
-  }, [notifications]);
+  const dismiss = useCallback((id: string) => dismissMany([id]), [dismissMany]);
 
   return {
     notifications,
     count: notifications.length,
     isLoading: ordersQuery.isLoading,
     dismiss,
-    dismissAll,
+    dismissMany,
   };
 }
