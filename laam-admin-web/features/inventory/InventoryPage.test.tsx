@@ -124,6 +124,18 @@ describe("InventoryPage", () => {
 
     expect(await screen.findByText("아직 등록한 품목이 없어요.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "품목 추가하러 가기" })).toHaveAttribute("href", "/inventory/items");
+    expect(screen.queryByRole("heading", { name: "재고 현황" })).not.toBeInTheDocument();
+  });
+
+  it("shows one stock overview card with status counts and every item quantity", async () => {
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: "재고 현황" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "재고 상태" })).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: /^전체 3개 품목 재고 막대 차트: 정상 1개, 주문 필요 1개, 확인 필요 1개/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("라임 · -2/5 개")).toBeInTheDocument();
   });
 
   it("lists items needing an order at the top and flags quantities below zero", async () => {
