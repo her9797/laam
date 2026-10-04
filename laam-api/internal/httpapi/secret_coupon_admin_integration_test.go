@@ -114,30 +114,78 @@ func TestRouter_AdminSecretCoupons(t *testing.T) {
 		}
 	})
 
+	claimedAtBody := func(t *testing.T, id string) []byte {
+		t.Helper()
+		rec := doRequest(t, handler, http.MethodGet, base, nil, adminHeaders())
+		var items []struct {
+			ID        string  `json:"id"`
+			ClaimedAt *string `json:"claimedAt"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+			t.Fatalf("decode list: %v", err)
+		}
+		for _, c := range items {
+			if c.ID == id {
+				if c.ClaimedAt == nil {
+					return []byte(`{"claimedAt":"2026-01-02T03:04:05Z"}`)
+				}
+				b, _ := json.Marshal(map[string]string{"claimedAt": *c.ClaimedAt})
+				return b
+			}
+		}
+		t.Fatalf("coupon %s not in list", id)
+		return nil
+	}
+
+	t.Run("redeem and reset require a valid claimedAt body", func(t *testing.T) {
+		for _, action := range []string{"redeem", "reset"} {
+			for _, b := range [][]byte{nil, []byte(`{bad`), []byte(`{}`), []byte(`{"claimedAt":""}`), []byte(`{"claimedAt":"yesterday"}`), []byte(`{"claimedAt":null}`)} {
+				rec := doRequest(t, handler, http.MethodPost, base+"/vinyl-laam/"+action, b, adminHeaders())
+				if rec.Code != http.StatusBadRequest {
+					t.Errorf("%s body %q status = %d, want 400", action, b, rec.Code)
+				}
+			}
+		}
+	})
+
 	t.Run("redeem and reset flow", func(t *testing.T) {
-		if rec := doRequest(t, handler, http.MethodPost, base+"/table-badge/redeem", nil, adminHeaders()); rec.Code != http.StatusConflict {
+		if rec := doRequest(t, handler, http.MethodPost, base+"/table-badge/redeem", claimedAtBody(t, "table-badge"), adminHeaders()); rec.Code != http.StatusConflict {
 			t.Errorf("redeem unclaimed status = %d, want 409", rec.Code)
 		}
-		if rec := doRequest(t, handler, http.MethodPost, base+"/nope/redeem", nil, adminHeaders()); rec.Code != http.StatusNotFound {
+		if rec := doRequest(t, handler, http.MethodPost, base+"/table-badge/reset", claimedAtBody(t, "table-badge"), adminHeaders()); rec.Code != http.StatusConflict {
+			t.Errorf("reset unclaimed status = %d, want 409", rec.Code)
+		}
+		if rec := doRequest(t, handler, http.MethodPost, base+"/nope/redeem", []byte(`{"claimedAt":"2026-01-02T03:04:05Z"}`), adminHeaders()); rec.Code != http.StatusNotFound {
 			t.Errorf("redeem unknown status = %d, want 404", rec.Code)
 		}
 		claimBody, _ := json.Marshal(map[string]string{"tableNumber": "3"})
 		if rec := doRequest(t, handler, http.MethodPost, "/api/v1/secret-coupons/table-badge/claim", claimBody, requestHeaders()); rec.Code != http.StatusCreated {
 			t.Fatalf("claim status = %d, body = %s", rec.Code, rec.Body.String())
 		}
-		rec := doRequest(t, handler, http.MethodPost, base+"/table-badge/redeem", nil, adminHeaders())
+		stale := []byte(`{"claimedAt":"2000-01-01T00:00:00Z"}`)
+		if rec := doRequest(t, handler, http.MethodPost, base+"/table-badge/redeem", stale, adminHeaders()); rec.Code != http.StatusConflict {
+			t.Errorf("redeem stale status = %d, want 409", rec.Code)
+		}
+		if rec := doRequest(t, handler, http.MethodPost, base+"/table-badge/reset", stale, adminHeaders()); rec.Code != http.StatusConflict {
+			t.Errorf("reset stale status = %d, want 409", rec.Code)
+		}
+		current := claimedAtBody(t, "table-badge")
+		rec := doRequest(t, handler, http.MethodPost, base+"/table-badge/redeem", current, adminHeaders())
 		if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), `"redeemedAt":null`) {
 			t.Fatalf("redeem status = %d, body = %s", rec.Code, rec.Body.String())
 		}
-		if rec := doRequest(t, handler, http.MethodPost, base+"/table-badge/redeem", nil, adminHeaders()); rec.Code != http.StatusConflict {
+		if rec := doRequest(t, handler, http.MethodPost, base+"/table-badge/redeem", current, adminHeaders()); rec.Code != http.StatusConflict {
 			t.Errorf("redeem twice status = %d, want 409", rec.Code)
 		}
-		rec = doRequest(t, handler, http.MethodPost, base+"/table-badge/reset", nil, adminHeaders())
+		rec = doRequest(t, handler, http.MethodPost, base+"/table-badge/reset", current, adminHeaders())
 		body := rec.Body.String()
 		if rec.Code != http.StatusOK || !strings.Contains(body, `"claimedAt":null`) || !strings.Contains(body, `"redeemedAt":null`) || !strings.Contains(body, `"tableNumber":""`) {
 			t.Errorf("reset status = %d, body = %s", rec.Code, body)
 		}
-		if rec := doRequest(t, handler, http.MethodPost, base+"/nope/reset", nil, adminHeaders()); rec.Code != http.StatusNotFound {
+		if rec := doRequest(t, handler, http.MethodPost, base+"/table-badge/reset", current, adminHeaders()); rec.Code != http.StatusConflict {
+			t.Errorf("reset twice status = %d, want 409", rec.Code)
+		}
+		if rec := doRequest(t, handler, http.MethodPost, base+"/nope/reset", current, adminHeaders()); rec.Code != http.StatusNotFound {
 			t.Errorf("reset unknown status = %d, want 404", rec.Code)
 		}
 	})
