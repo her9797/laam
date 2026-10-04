@@ -430,6 +430,7 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO notices (id, text, is_visible, sort_order)
 VALUES ('secret-coupon-progress', '쉿크릿 쿠폰 발견 갯수 (0/5)', true, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM notices))
 ON CONFLICT (id) DO NOTHING;
+ALTER TABLE secret_coupons ADD COLUMN IF NOT EXISTS redeemed_at TIMESTAMPTZ;
 CREATE TABLE IF NOT EXISTS qr_tables (
   id TEXT PRIMARY KEY,
   area TEXT NOT NULL,
@@ -2323,22 +2324,9 @@ func claimSecretCoupon(ctx context.Context, tx pgx.Tx, id string, tableNumber st
 		return lamdata.SecretCouponClaim{}, ErrAlreadyExists
 	}
 
-	var claimedCount int
-	if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM secret_coupons WHERE claimed_at IS NOT NULL`).Scan(&claimedCount); err != nil {
+	claimedCount, err := syncSecretCouponNotice(ctx, tx)
+	if err != nil {
 		return lamdata.SecretCouponClaim{}, err
-	}
-
-	noticeText := fmt.Sprintf("쉿크릿 쿠폰 발견 갯수 (%d/%d)", claimedCount, TotalSecretCoupons)
-	var sortOrder int
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(MAX(sort_order), 0) + 1 FROM notices`).Scan(&sortOrder); err != nil {
-		return lamdata.SecretCouponClaim{}, err
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO notices (id, text, is_visible, sort_order)
-		VALUES ($1, $2, true, $3)
-		ON CONFLICT (id) DO UPDATE SET text = EXCLUDED.text
-	`, secretCouponNoticeID, noticeText, sortOrder); err != nil {
-		return lamdata.SecretCouponClaim{}, classifyError(err)
 	}
 
 	return lamdata.SecretCouponClaim{
