@@ -9,7 +9,8 @@ import {
   listSecretCoupons,
   redeemSecretCoupon,
   resetSecretCoupon,
-  updateSecretCouponLabel,
+  updateSecretCoupon,
+  type SecretCouponPatch,
 } from "./api";
 
 export const couponKeys = {
@@ -47,11 +48,11 @@ function useCouponMutationHandlers(successKey: string, failureKey: string) {
   };
 }
 
-export function useUpdateSecretCouponLabelMutation() {
+export function useUpdateSecretCouponMutation() {
   const handlers = useCouponMutationHandlers("updated", "updateFailed");
   return useMutation({
-    mutationFn: ({ id, rewardLabel }: { id: string; rewardLabel: string }) =>
-      updateSecretCouponLabel(id, rewardLabel),
+    mutationFn: ({ id, patch }: { id: string; patch: SecretCouponPatch }) =>
+      updateSecretCoupon(id, patch),
     ...handlers,
   });
 }

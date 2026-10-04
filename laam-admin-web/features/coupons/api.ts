@@ -2,17 +2,20 @@ import { fetchJson } from "@/lib/api/fetch-json";
 
 import type { SecretCoupon } from "./model";
 
+/** Only the fields present are changed by the server. */
+export type SecretCouponPatch = { rewardLabel?: string; hidingNote?: string };
+
 const COUPONS_PATH = "/api/admin/secret-coupons";
 
 export function listSecretCoupons(): Promise<SecretCoupon[]> {
   return fetchJson<SecretCoupon[]>(COUPONS_PATH);
 }
 
-export function updateSecretCouponLabel(id: string, rewardLabel: string): Promise<SecretCoupon> {
+export function updateSecretCoupon(id: string, patch: SecretCouponPatch): Promise<SecretCoupon> {
   return fetchJson<SecretCoupon>(`${COUPONS_PATH}/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ rewardLabel }),
+    body: JSON.stringify(patch),
   });
 }
 

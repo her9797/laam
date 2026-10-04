@@ -2,6 +2,8 @@
 export type SecretCoupon = {
   id: string;
   rewardLabel: string;
+  /** Where/how the coupon is hidden; `""` when there is no note. */
+  hidingNote: string;
   sortOrder: number;
   /** RFC3339 UTC; `null` while no table has found the coupon. */
   claimedAt: string | null;
@@ -14,6 +16,7 @@ export type SecretCoupon = {
 export type SecretCouponStatus = "unclaimed" | "claimed" | "redeemed";
 
 export const REWARD_LABEL_MAX_LENGTH = 40;
+export const HIDING_NOTE_MAX_LENGTH = 200;
 
 export function couponStatus(coupon: SecretCoupon): SecretCouponStatus {
   if (coupon.redeemedAt) {
@@ -47,6 +50,16 @@ export function validateRewardLabel(label: string): RewardLabelValidationKey | u
   }
   if (Array.from(trimmed).length > REWARD_LABEL_MAX_LENGTH) {
     return "errorLabelTooLong";
+  }
+  return undefined;
+}
+
+export type HidingNoteValidationKey = "errorHidingNoteTooLong";
+
+/** Same rule as `laam-api` (trimmed, 0 to 200 characters; blank is allowed). */
+export function validateHidingNote(note: string): HidingNoteValidationKey | undefined {
+  if (Array.from(note.trim()).length > HIDING_NOTE_MAX_LENGTH) {
+    return "errorHidingNoteTooLong";
   }
   return undefined;
 }
