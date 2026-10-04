@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 import { formatNumber } from "./format";
+import { InventoryOverviewChart } from "./InventoryOverviewChart";
 import { ItemDetailSheet } from "./ItemDetailSheet";
 import { filterInventoryItems, type ExpenseCategory } from "./model";
 import {
@@ -88,6 +89,8 @@ export function InventoryPage() {
   return (
     <div className="flex flex-col gap-4">
       {header}
+
+      <InventoryOverviewChart items={items} />
 
       <section
         aria-labelledby={reorderHeadingId}

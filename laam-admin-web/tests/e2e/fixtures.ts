@@ -1,6 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 
 import type { AppData } from "@/features/bootstrap/model";
+import type { BillDetail } from "@/features/orders/bills/model";
 import type { PaymentOrder } from "@/features/orders/model";
 import type { CustomerRequest } from "@/features/requests/model";
 import type { SpecialRequest } from "@/features/special-requests/model";
@@ -452,5 +453,64 @@ export async function mockSystemLogsPage(page: Page, logs: SystemLog[]): Promise
     await route.fulfill({
       json: { items: logs, page: 1, pageSize: 20, total: logs.length },
     });
+  });
+}
+
+/**
+ * Fresh `BillDetail` each call — shape matches
+ * `features/orders/bills/model.ts`'s `BillDetail` (mirrors `laam-api`), with
+ * one approved card payment, one cancelled cash payment and two menu rows.
+ */
+export function buildBillDetail(): BillDetail {
+  const [menuItem] = buildPaymentOrders();
+  return {
+    id: "bill-1",
+    posOrderId: "pos-order-1",
+    tableNumber: "3",
+    status: "PAID",
+    openedAt: "2026-09-03T10:00:00Z",
+    completedAt: "2026-09-03T11:00:00Z",
+    totalAmount: 9000,
+    discountAmount: 0,
+    paidAmount: 9000,
+    paymentsSyncedAt: "2026-09-03T11:00:05Z",
+    payments: [
+      {
+        id: "payment-1",
+        state: "APPROVED",
+        sourceType: "CARD",
+        paymentMethod: "신용카드",
+        cardBrand: "신한카드",
+        amount: 9000,
+        taxAmount: 818,
+        supplyAmount: 8182,
+        taxExemptAmount: 0,
+        approvedNo: "30012345",
+        approvedAt: "2026-09-03T11:00:00Z",
+      },
+      {
+        id: "payment-2",
+        state: "CANCELLED",
+        sourceType: "CASH",
+        paymentMethod: "",
+        amount: 5000,
+        taxAmount: 455,
+        supplyAmount: 4545,
+        taxExemptAmount: 0,
+        approvedAt: "2026-09-03T10:50:00Z",
+        cancelledAt: "2026-09-03T10:55:00Z",
+      },
+    ],
+    menuItems: [
+      menuItem,
+      { ...menuItem, orderId: "order-2", menuItemId: "menu-2", menuItemName: "카페라테", amount: 5000 },
+    ],
+  };
+}
+
+/** Mocks the bill detail route (`GET /api/admin/payment-bills/{billId}`), for `/orders/bills/{billId}`. */
+export async function mockBillDetail(page: Page, bill: BillDetail): Promise<void> {
+  await page.route(`**/api/admin/payment-bills/${bill.id}`, async (route) => {
+    await route.fulfill({ json: bill });
   });
 }

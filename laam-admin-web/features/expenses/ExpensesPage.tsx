@@ -22,6 +22,7 @@ import {
   type ExpenseReceipt,
   type ExpenseSummary,
 } from "./model";
+import { MonthPicker } from "./MonthPicker";
 import { useExpenseReceiptsQuery, useExpenseSummaryQuery } from "./queries";
 import { ReceiptImageDialog } from "./ReceiptImageDialog";
 import { ReceiptSheet } from "./ReceiptSheet";
@@ -99,9 +100,12 @@ export function ExpensesPage() {
         >
           <RiArrowLeftSLine aria-hidden="true" />
         </Button>
-        <p aria-live="polite" className="min-w-28 text-center text-lg font-semibold text-foreground">
-          {monthLabel}
-        </p>
+        <MonthPicker
+          month={month}
+          label={monthLabel}
+          language={language}
+          onChange={(next) => updateQuery({ month: next, categoryId })}
+        />
         <Button
           type="button"
           variant="ghost"

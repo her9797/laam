@@ -126,8 +126,13 @@ export function BillDetailPage({ billId }: { billId: string }) {
     timeFields.push({ labelKey: "billDetailFieldCancelledAt", value: formatTime(bill.cancelledAt) });
   }
 
+  // `totalAmount` is the POS charge after discounts when a charge is
+  // recorded (`discountAmount` is then a number), so add the discount back
+  // to show the pre-discount total. Without a discount it is shown as is.
+  const hasDiscount = bill.discountAmount !== null && bill.discountAmount > 0;
+  const displayedTotal = hasDiscount ? bill.totalAmount + (bill.discountAmount ?? 0) : bill.totalAmount;
   const amountFields: Array<{ labelKey: string; value: string }> = [
-    { labelKey: "billDetailFieldTotalAmount", value: formatAmount(bill.totalAmount) },
+    { labelKey: "billDetailFieldTotalAmount", value: formatAmount(displayedTotal) },
   ];
   if (bill.discountAmount !== null) {
     amountFields.push({ labelKey: "billDetailFieldDiscountAmount", value: formatAmount(bill.discountAmount) });
@@ -181,7 +186,7 @@ export function BillDetailPage({ billId }: { billId: string }) {
           {bill.payments.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("billDetailPaymentsEmpty")}</p>
           ) : (
-            <Table>
+            <Table className="min-w-[44rem]">
               <TableHeader>
                 <TableRow>
                   <TableHead>{t("billDetailColumnPaymentMethod")}</TableHead>
@@ -248,10 +253,10 @@ export function BillDetailPage({ billId }: { billId: string }) {
       return <p className="text-sm text-muted-foreground">{t("billDetailMenuItemsEmpty")}</p>;
     }
     return (
-      <Table>
+      <Table className="min-w-[28rem]">
         <TableHeader>
           <TableRow>
-            <TableHead>{t("billDetailColumnMenuItem")}</TableHead>
+            <TableHead className="w-2/5">{t("billDetailColumnMenuItem")}</TableHead>
             <TableHead>{t("billDetailColumnCategory")}</TableHead>
             <TableHead>{t("billDetailColumnAmount")}</TableHead>
             <TableHead>{t("billDetailColumnStatus")}</TableHead>

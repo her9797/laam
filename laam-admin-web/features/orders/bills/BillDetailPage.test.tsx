@@ -66,7 +66,8 @@ const BILL: BillDetail = {
   status: "PAID",
   openedAt: "2026-01-10T12:00:00Z",
   completedAt: "2026-01-10T13:00:00Z",
-  totalAmount: 23000,
+  // totalAmount is the POS charge after discounts (API contract).
+  totalAmount: 20000,
   discountAmount: 3000,
   paidAmount: 20000,
   paymentsSyncedAt: "2026-01-10T13:01:00Z",
@@ -214,7 +215,7 @@ describe("BillDetailPage", () => {
     }
   });
 
-  it("renders total, discount and paid amounts", () => {
+  it("shows the pre-discount total (charged total + discount) with discount and paid amounts", () => {
     render(<BillDetailPage billId="bill-1" />);
 
     const amounts = sectionByTitle("금액 요약");
@@ -222,6 +223,19 @@ describe("BillDetailPage", () => {
     expect(within(amounts).getByText("할인 금액")).toBeInTheDocument();
     expect(within(amounts).getByText("₩3,000")).toBeInTheDocument();
     expect(within(amounts).getByText("₩20,000")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["null", null],
+    ["0", 0],
+  ] as const)("shows totalAmount as is when the discount is %s", (_name, discountAmount) => {
+    mockBill({ totalAmount: 20000, discountAmount, paidAmount: 20000 });
+
+    render(<BillDetailPage billId="bill-1" />);
+
+    const amounts = sectionByTitle("금액 요약");
+    expect(within(amounts).getAllByText("₩20,000")).toHaveLength(2);
+    expect(within(amounts).queryByText("₩23,000")).not.toBeInTheDocument();
   });
 
   it("hides the discount while it is still unknown (null)", () => {

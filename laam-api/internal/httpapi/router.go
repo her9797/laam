@@ -1091,6 +1091,92 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 		writeJSON(w, http.StatusOK, bootstrap)
 	}))
 
+	mux.HandleFunc("/api/v1/admin/secret-coupons", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
+		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
+			return
+		}
+
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowed(w)
+			return
+		}
+
+		items, err := repository.ListSecretCoupons(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, items)
+	}))
+
+	mux.HandleFunc("/api/v1/admin/secret-coupons/", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
+		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
+			return
+		}
+
+		rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/admin/secret-coupons/"), "/")
+		parts := strings.Split(rest, "/")
+		if rest == "" || len(parts) > 2 || parts[0] == "" {
+			http.NotFound(w, r)
+			return
+		}
+		id := parts[0]
+
+		var (
+			coupon lamdata.AdminSecretCoupon
+			err    error
+		)
+		switch {
+		case len(parts) == 1:
+			if r.Method != http.MethodPatch {
+				writeMethodNotAllowed(w)
+				return
+			}
+			var payload struct {
+				RewardLabel *string `json:"rewardLabel"`
+				HidingNote  *string `json:"hidingNote"`
+			}
+			if decodeErr := json.NewDecoder(r.Body).Decode(&payload); decodeErr != nil {
+				writeError(w, http.StatusBadRequest, decodeErr)
+				return
+			}
+			coupon, err = repository.UpdateSecretCoupon(r.Context(), id, store.SecretCouponUpdate{
+				RewardLabel: payload.RewardLabel,
+				HidingNote:  payload.HidingNote,
+			})
+		case parts[1] == "redeem":
+			if r.Method != http.MethodPost {
+				writeMethodNotAllowed(w)
+				return
+			}
+			claimedAt, ok := decodeSecretCouponClaimedAt(w, r)
+			if !ok {
+				return
+			}
+			coupon, err = repository.RedeemSecretCoupon(r.Context(), id, claimedAt)
+		case parts[1] == "reset":
+			if r.Method != http.MethodPost {
+				writeMethodNotAllowed(w)
+				return
+			}
+			claimedAt, ok := decodeSecretCouponClaimedAt(w, r)
+			if !ok {
+				return
+			}
+			coupon, err = repository.ResetSecretCoupon(r.Context(), id, claimedAt)
+		default:
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, coupon)
+	}))
+
 	mux.HandleFunc("/api/v1/admin/system-logs", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
 		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
 			return
@@ -1294,6 +1380,29 @@ func readImageUpload(w http.ResponseWriter, r *http.Request, maxFileBytes int64,
 	}
 
 	return imageUpload{filename: header.Filename, mimeType: mimeType, content: content}, http.StatusOK, nil
+}
+
+// decodeSecretCouponClaimedAt reads the required { "claimedAt": RFC3339 }
+// body of the redeem/reset endpoints. It writes a 400 and returns false when
+// the body is missing, malformed or the timestamp does not parse.
+func decodeSecretCouponClaimedAt(w http.ResponseWriter, r *http.Request) (time.Time, bool) {
+	var payload struct {
+		ClaimedAt *string `json:"claimedAt"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return time.Time{}, false
+	}
+	if payload.ClaimedAt == nil || strings.TrimSpace(*payload.ClaimedAt) == "" {
+		writeError(w, http.StatusBadRequest, errors.New("claimedAt is required"))
+		return time.Time{}, false
+	}
+	claimedAt, err := time.Parse(time.RFC3339, strings.TrimSpace(*payload.ClaimedAt))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("claimedAt must be an RFC3339 timestamp"))
+		return time.Time{}, false
+	}
+	return claimedAt, true
 }
 
 func writeStoreError(w http.ResponseWriter, err error) {

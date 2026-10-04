@@ -300,3 +300,15 @@ type SecretCouponClaim struct {
 	ClaimedCount int    `json:"claimedCount"`
 	TotalCount   int    `json:"totalCount"`
 }
+
+// AdminSecretCoupon is the admin view of one secret coupon. Time fields are
+// RFC3339 UTC strings, or null when unset (keys are never omitted).
+type AdminSecretCoupon struct {
+	ID          string  `json:"id"`
+	RewardLabel string  `json:"rewardLabel"`
+	SortOrder   int     `json:"sortOrder"`
+	ClaimedAt   *string `json:"claimedAt"`
+	TableNumber string  `json:"tableNumber"`
+	RedeemedAt  *string `json:"redeemedAt"`
+	HidingNote  string  `json:"hidingNote"`
+}
