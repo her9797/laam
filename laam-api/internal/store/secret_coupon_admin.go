@@ -14,7 +14,9 @@ import (
 
 const maxSecretCouponRewardLabelRunes = 40
 
-const secretCouponColumns = `id, reward_label, sort_order, claimed_at, table_number, redeemed_at`
+const maxSecretCouponHidingNoteRunes = 200
+
+const secretCouponColumns = `id, reward_label, sort_order, claimed_at, table_number, redeemed_at, hiding_note`
 
 type secretCouponRowScanner interface {
 	Scan(dest ...any) error
@@ -23,7 +25,7 @@ type secretCouponRowScanner interface {
 func scanAdminSecretCoupon(row secretCouponRowScanner) (lamdata.AdminSecretCoupon, error) {
 	var c lamdata.AdminSecretCoupon
 	var claimedAt, redeemedAt *time.Time
-	if err := row.Scan(&c.ID, &c.RewardLabel, &c.SortOrder, &claimedAt, &c.TableNumber, &redeemedAt); err != nil {
+	if err := row.Scan(&c.ID, &c.RewardLabel, &c.SortOrder, &claimedAt, &c.TableNumber, &redeemedAt, &c.HidingNote); err != nil {
 		return lamdata.AdminSecretCoupon{}, err
 	}
 	c.ClaimedAt = formatCouponTime(claimedAt)
@@ -58,16 +60,42 @@ func (r *Repository) ListSecretCoupons(ctx context.Context) ([]lamdata.AdminSecr
 	return items, rows.Err()
 }
 
-// UpdateSecretCouponRewardLabel changes the reward label of one coupon.
-func (r *Repository) UpdateSecretCouponRewardLabel(ctx context.Context, id string, rewardLabel string) (lamdata.AdminSecretCoupon, error) {
-	rewardLabel = strings.TrimSpace(rewardLabel)
-	if rewardLabel == "" || utf8.RuneCountInString(rewardLabel) > maxSecretCouponRewardLabelRunes {
+// SecretCouponUpdate holds the optional fields of a partial coupon update.
+// A nil field is left unchanged.
+type SecretCouponUpdate struct {
+	RewardLabel *string
+	HidingNote  *string
+}
+
+// UpdateSecretCoupon changes the reward label and/or hiding note of one
+// coupon. At least one field is required.
+func (r *Repository) UpdateSecretCoupon(ctx context.Context, id string, update SecretCouponUpdate) (lamdata.AdminSecretCoupon, error) {
+	if update.RewardLabel == nil && update.HidingNote == nil {
 		return lamdata.AdminSecretCoupon{}, ErrInvalidInput
 	}
 
+	var rewardLabel, hidingNote *string
+	if update.RewardLabel != nil {
+		v := strings.TrimSpace(*update.RewardLabel)
+		if v == "" || utf8.RuneCountInString(v) > maxSecretCouponRewardLabelRunes {
+			return lamdata.AdminSecretCoupon{}, ErrInvalidInput
+		}
+		rewardLabel = &v
+	}
+	if update.HidingNote != nil {
+		v := strings.TrimSpace(*update.HidingNote)
+		if utf8.RuneCountInString(v) > maxSecretCouponHidingNoteRunes {
+			return lamdata.AdminSecretCoupon{}, ErrInvalidInput
+		}
+		hidingNote = &v
+	}
+
 	c, err := scanAdminSecretCoupon(r.pool.QueryRow(ctx, `
-		UPDATE secret_coupons SET reward_label = $2 WHERE id = $1
-		RETURNING `+secretCouponColumns, id, rewardLabel))
+		UPDATE secret_coupons
+		SET reward_label = COALESCE($2, reward_label),
+		    hiding_note = COALESCE($3, hiding_note)
+		WHERE id = $1
+		RETURNING `+secretCouponColumns, id, rewardLabel, hidingNote))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return lamdata.AdminSecretCoupon{}, ErrNotFound
 	}

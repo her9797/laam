@@ -431,6 +431,23 @@ INSERT INTO notices (id, text, is_visible, sort_order)
 VALUES ('secret-coupon-progress', '쉿크릿 쿠폰 발견 갯수 (0/5)', true, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM notices))
 ON CONFLICT (id) DO NOTHING;
 ALTER TABLE secret_coupons ADD COLUMN IF NOT EXISTS redeemed_at TIMESTAMPTZ;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'secret_coupons' AND column_name = 'hiding_note'
+  ) THEN
+    ALTER TABLE secret_coupons ADD COLUMN hiding_note TEXT NOT NULL DEFAULT '';
+    UPDATE secret_coupons SET hiding_note = CASE id
+      WHEN 'vinyl-laam' THEN '손님 홈 화면의 LP판을 누르면 발견'
+      WHEN 'table-badge' THEN '화면에 떠 있는 테이블 번호 배지를 누르면 발견'
+      WHEN 'first-order-8pm' THEN '한국 시간 20:00~20:59에 가장 먼저 주문한 테이블이 발견'
+      WHEN 'crush-song-request' THEN '가수를 Crush 또는 크러쉬로 노래 신청하면 발견'
+      WHEN 'owner-compliment-request' THEN '특별 요청에 "사장님"과 "잘생겼어요"를 함께 쓰면 발견'
+      ELSE hiding_note
+    END;
+  END IF;
+END $$;
 CREATE TABLE IF NOT EXISTS qr_tables (
   id TEXT PRIMARY KEY,
   area TEXT NOT NULL,
