@@ -310,4 +310,5 @@ type AdminSecretCoupon struct {
 	ClaimedAt   *string `json:"claimedAt"`
 	TableNumber string  `json:"tableNumber"`
 	RedeemedAt  *string `json:"redeemedAt"`
+	HidingNote  string  `json:"hidingNote"`
 }

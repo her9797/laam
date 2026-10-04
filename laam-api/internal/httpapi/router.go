@@ -1134,13 +1134,17 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 				return
 			}
 			var payload struct {
-				RewardLabel string `json:"rewardLabel"`
+				RewardLabel *string `json:"rewardLabel"`
+				HidingNote  *string `json:"hidingNote"`
 			}
 			if decodeErr := json.NewDecoder(r.Body).Decode(&payload); decodeErr != nil {
 				writeError(w, http.StatusBadRequest, decodeErr)
 				return
 			}
-			coupon, err = repository.UpdateSecretCouponRewardLabel(r.Context(), id, payload.RewardLabel)
+			coupon, err = repository.UpdateSecretCoupon(r.Context(), id, store.SecretCouponUpdate{
+				RewardLabel: payload.RewardLabel,
+				HidingNote:  payload.HidingNote,
+			})
 		case parts[1] == "redeem":
 			if r.Method != http.MethodPost {
 				writeMethodNotAllowed(w)

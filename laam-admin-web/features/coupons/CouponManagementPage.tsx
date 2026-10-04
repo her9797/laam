@@ -2,6 +2,7 @@
 
 import "@/i18n/client";
 
+import { RiMapPinLine } from "@remixicon/react";
 import { useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -18,14 +19,23 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/utils";
 
-import { couponStatus, summarizeCoupons, validateRewardLabel, type SecretCoupon } from "./model";
+import type { SecretCouponPatch } from "./api";
+import {
+  HIDING_NOTE_MAX_LENGTH,
+  couponStatus,
+  summarizeCoupons,
+  validateHidingNote,
+  validateRewardLabel,
+  type SecretCoupon,
+} from "./model";
 import {
   useRedeemSecretCouponMutation,
   useResetSecretCouponMutation,
   useSecretCouponsQuery,
-  useUpdateSecretCouponLabelMutation,
+  useUpdateSecretCouponMutation,
 } from "./queries";
 
 const ACTION_BUTTON_CLASS = "min-h-11 px-4";
@@ -33,15 +43,17 @@ const ACTION_BUTTON_CLASS = "min-h-11 px-4";
 export function CouponManagementPage() {
   const { t, i18n } = useTranslation("coupons");
   const couponsQuery = useSecretCouponsQuery();
-  const updateMutation = useUpdateSecretCouponLabelMutation();
+  const updateMutation = useUpdateSecretCouponMutation();
   const redeemMutation = useRedeemSecretCouponMutation();
   const resetMutation = useResetSecretCouponMutation();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [noteDraft, setNoteDraft] = useState("");
   // Holds a translation KEY (see `validateRewardLabel`), so a language switch
   // re-renders the message too.
   const [errorKey, setErrorKey] = useState<string | undefined>(undefined);
+  const [noteErrorKey, setNoteErrorKey] = useState<string | undefined>(undefined);
   const [pendingResetId, setPendingResetId] = useState<string | null>(null);
 
   if (couponsQuery.isLoading) {
@@ -65,25 +77,39 @@ export function CouponManagementPage() {
   function startEdit(coupon: SecretCoupon) {
     setEditingId(coupon.id);
     setDraft(coupon.rewardLabel);
+    setNoteDraft(coupon.hidingNote);
     setErrorKey(undefined);
+    setNoteErrorKey(undefined);
   }
 
   function cancelEdit() {
     setEditingId(null);
     setErrorKey(undefined);
+    setNoteErrorKey(undefined);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>, coupon: SecretCoupon) {
     event.preventDefault();
     const error = validateRewardLabel(draft);
+    const noteError = validateHidingNote(noteDraft);
     setErrorKey(error);
-    if (error) {
+    setNoteErrorKey(noteError);
+    if (error || noteError) {
       return;
     }
-    updateMutation.mutate(
-      { id: coupon.id, rewardLabel: draft.trim() },
-      { onSuccess: () => setEditingId(null) },
-    );
+    // Send only the fields that actually changed.
+    const patch: SecretCouponPatch = {};
+    if (draft.trim() !== coupon.rewardLabel) {
+      patch.rewardLabel = draft.trim();
+    }
+    if (noteDraft.trim() !== coupon.hidingNote) {
+      patch.hidingNote = noteDraft.trim();
+    }
+    if (Object.keys(patch).length === 0) {
+      setEditingId(null);
+      return;
+    }
+    updateMutation.mutate({ id: coupon.id, patch }, { onSuccess: () => setEditingId(null) });
   }
 
   function isPending(mutation: { isPending: boolean; variables: unknown }, id: string): boolean {
@@ -160,6 +186,28 @@ export function CouponManagementPage() {
                         {t(errorKey)}
                       </p>
                     ) : null}
+                    <label
+                      htmlFor={`coupon-note-${coupon.id}`}
+                      className="mt-1 text-sm font-medium"
+                    >
+                      {t("hidingNoteField")}
+                    </label>
+                    <Textarea
+                      id={`coupon-note-${coupon.id}`}
+                      className="break-words"
+                      value={noteDraft}
+                      placeholder={t("hidingNotePlaceholder")}
+                      aria-invalid={noteErrorKey ? true : undefined}
+                      onChange={(event) => setNoteDraft(event.target.value)}
+                    />
+                    <p className="text-right text-xs text-muted-foreground">
+                      {Array.from(noteDraft.trim()).length}/{HIDING_NOTE_MAX_LENGTH}
+                    </p>
+                    {noteErrorKey ? (
+                      <p role="alert" className="text-sm text-destructive">
+                        {t(noteErrorKey)}
+                      </p>
+                    ) : null}
                     <div className="flex flex-wrap gap-2">
                       <Button
                         type="submit"
@@ -179,7 +227,20 @@ export function CouponManagementPage() {
                     </div>
                   </form>
                 ) : (
-                  <p className="min-w-0 break-words text-base font-medium">{coupon.rewardLabel}</p>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <p className="min-w-0 break-words text-base font-medium">{coupon.rewardLabel}</p>
+                    <div className="flex min-w-0 items-start gap-1.5 text-sm text-muted-foreground">
+                      <RiMapPinLine aria-hidden className="mt-0.5 size-4 shrink-0" />
+                      <p className="min-w-0 break-words">
+                        <span className="font-medium">{t("hidingNoteLabel")}</span>{" "}
+                        {coupon.hidingNote ? (
+                          <span className="whitespace-pre-wrap">{coupon.hidingNote}</span>
+                        ) : (
+                          <span className="opacity-60">{t("hidingNoteEmpty")}</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
                 )}
 
                 <span

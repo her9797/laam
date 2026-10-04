@@ -29,7 +29,7 @@ func TestRouter_AdminSecretCoupons(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil || len(raw) != 5 {
 			t.Fatalf("decode = %v, len = %d", err, len(raw))
 		}
-		for _, k := range []string{"id", "rewardLabel", "sortOrder", "claimedAt", "tableNumber", "redeemedAt"} {
+		for _, k := range []string{"id", "rewardLabel", "sortOrder", "claimedAt", "tableNumber", "redeemedAt", "hidingNote"} {
 			if _, ok := raw[0][k]; !ok {
 				t.Errorf("missing key %q in %s", k, rec.Body.String())
 			}
@@ -68,6 +68,49 @@ func TestRouter_AdminSecretCoupons(t *testing.T) {
 		rec := doRequest(t, handler, http.MethodPatch, base+"/nope", []byte(`{"rewardLabel":"x"}`), adminHeaders())
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("unknown status = %d, want 404", rec.Code)
+		}
+	})
+
+	t.Run("patch hidingNote partially", func(t *testing.T) {
+		rec := doRequest(t, handler, http.MethodPatch, base+"/table-badge", []byte(`{"hidingNote":"  새 메모  "}`), adminHeaders())
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"hidingNote":"새 메모"`) {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		rec = doRequest(t, handler, http.MethodPatch, base+"/table-badge", []byte(`{"rewardLabel":"라벨"}`), adminHeaders())
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"rewardLabel":"라벨"`) || !strings.Contains(rec.Body.String(), `"hidingNote":"새 메모"`) {
+			t.Fatalf("label-only status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		rec = doRequest(t, handler, http.MethodPatch, base+"/table-badge", []byte(`{"hidingNote":""}`), adminHeaders())
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"hidingNote":""`) || !strings.Contains(rec.Body.String(), `"rewardLabel":"라벨"`) {
+			t.Fatalf("empty note status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		for _, b := range []string{`{}`, `{"hidingNote":"` + strings.Repeat("가", 201) + `"}`} {
+			rec := doRequest(t, handler, http.MethodPatch, base+"/table-badge", []byte(b), adminHeaders())
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("body %.20s status = %d, want 400", b, rec.Code)
+			}
+		}
+		rec = doRequest(t, handler, http.MethodPatch, base+"/nope", []byte(`{"hidingNote":"x"}`), adminHeaders())
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("unknown status = %d, want 404", rec.Code)
+		}
+	})
+
+	t.Run("list exposes seeded hidingNote", func(t *testing.T) {
+		rec := doRequest(t, handler, http.MethodGet, base, nil, adminHeaders())
+		if !strings.Contains(rec.Body.String(), `"hidingNote":"손님 홈 화면의 LP판을 누르면 발견"`) {
+			t.Errorf("body = %s", rec.Body.String())
+		}
+	})
+
+	t.Run("customer claim response hides hidingNote", func(t *testing.T) {
+		claimBody, _ := json.Marshal(map[string]string{"tableNumber": "4"})
+		rec := doRequest(t, handler, http.MethodPost, "/api/v1/secret-coupons/vinyl-laam/claim", claimBody, requestHeaders())
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("claim status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), "hidingNote") {
+			t.Errorf("claim body leaks hidingNote: %s", rec.Body.String())
 		}
 	})
 

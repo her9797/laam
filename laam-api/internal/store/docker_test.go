@@ -148,12 +148,12 @@ func resetDB(t *testing.T) *Repository {
 		t.Fatalf("seed store_profile: %v", err)
 	}
 	if _, err := testPool.Exec(ctx, `
-		INSERT INTO secret_coupons (id, reward_label, sort_order) VALUES
-			('vinyl-laam', '1만원 할인권', 1),
-			('table-badge', '1만원 할인권', 2),
-			('first-order-8pm', '1만원 할인권', 3),
-			('crush-song-request', '한 잔 무료 쿠폰', 4),
-			('owner-compliment-request', '한 잔 무료 쿠폰', 5)
+		INSERT INTO secret_coupons (id, reward_label, sort_order, hiding_note) VALUES
+			('vinyl-laam', '1만원 할인권', 1, '손님 홈 화면의 LP판을 누르면 발견'),
+			('table-badge', '1만원 할인권', 2, '화면에 떠 있는 테이블 번호 배지를 누르면 발견'),
+			('first-order-8pm', '1만원 할인권', 3, '한국 시간 20:00~20:59에 가장 먼저 주문한 테이블이 발견'),
+			('crush-song-request', '한 잔 무료 쿠폰', 4, '가수를 Crush 또는 크러쉬로 노래 신청하면 발견'),
+			('owner-compliment-request', '한 잔 무료 쿠폰', 5, '특별 요청에 "사장님"과 "잘생겼어요"를 함께 쓰면 발견')
 	`); err != nil {
 		t.Fatalf("seed secret_coupons: %v", err)
 	}

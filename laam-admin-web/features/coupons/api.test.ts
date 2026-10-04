@@ -13,13 +13,14 @@ import {
   listSecretCoupons,
   redeemSecretCoupon,
   resetSecretCoupon,
-  updateSecretCouponLabel,
+  updateSecretCoupon,
 } from "./api";
 import type { SecretCoupon } from "./model";
 
 const COUPON: SecretCoupon = {
   id: "coupon-1",
   rewardLabel: "하이볼 1잔",
+  hidingNote: "",
   sortOrder: 1,
   claimedAt: null,
   tableNumber: "",
@@ -41,12 +42,24 @@ describe("secret coupon api", () => {
   it("updates the reward label with PATCH and a JSON body", async () => {
     vi.mocked(fetchJson).mockResolvedValue({ ...COUPON, rewardLabel: "안주 1개" });
 
-    await updateSecretCouponLabel("coupon-1", "안주 1개");
+    await updateSecretCoupon("coupon-1", { rewardLabel: "안주 1개" });
 
     expect(fetchJson).toHaveBeenCalledWith("/api/admin/secret-coupons/coupon-1", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rewardLabel: "안주 1개" }),
+    });
+  });
+
+  it("sends only the hiding note when only the note changes", async () => {
+    vi.mocked(fetchJson).mockResolvedValue({ ...COUPON, hidingNote: "LP판" });
+
+    await updateSecretCoupon("coupon-1", { hidingNote: "LP판" });
+
+    expect(fetchJson).toHaveBeenCalledWith("/api/admin/secret-coupons/coupon-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hidingNote: "LP판" }),
     });
   });
 
