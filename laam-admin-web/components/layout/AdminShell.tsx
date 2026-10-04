@@ -13,6 +13,7 @@ import {
   RiArrowDownSLine,
   RiBarChart2Line,
   RiCheckLine,
+  RiCoupon3Line,
   RiDashboardLine,
   RiFileTextLine,
   RiFolderLine,
@@ -148,6 +149,7 @@ const NAV_GROUPS: NavGroup[] = [
 
 const BOTTOM_NAV_ITEMS: NavItem[] = [
   { href: "/notices", labelKey: "navNotices", icon: RiMegaphoneLine },
+  { href: "/coupons", labelKey: "navCoupons", icon: RiCoupon3Line },
   { href: "/store-copy", labelKey: "navStoreCopy", icon: RiFileTextLine },
   // A standalone top-level item, not folded into any of the grouped
   // dropdowns above — this is an operational diagnostics screen, not a
