@@ -1091,6 +1091,80 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 		writeJSON(w, http.StatusOK, bootstrap)
 	}))
 
+	mux.HandleFunc("/api/v1/admin/secret-coupons", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
+		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
+			return
+		}
+
+		if r.Method != http.MethodGet {
+			writeMethodNotAllowed(w)
+			return
+		}
+
+		items, err := repository.ListSecretCoupons(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, items)
+	}))
+
+	mux.HandleFunc("/api/v1/admin/secret-coupons/", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
+		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
+			return
+		}
+
+		rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/admin/secret-coupons/"), "/")
+		parts := strings.Split(rest, "/")
+		if rest == "" || len(parts) > 2 || parts[0] == "" {
+			http.NotFound(w, r)
+			return
+		}
+		id := parts[0]
+
+		var (
+			coupon lamdata.AdminSecretCoupon
+			err    error
+		)
+		switch {
+		case len(parts) == 1:
+			if r.Method != http.MethodPatch {
+				writeMethodNotAllowed(w)
+				return
+			}
+			var payload struct {
+				RewardLabel string `json:"rewardLabel"`
+			}
+			if decodeErr := json.NewDecoder(r.Body).Decode(&payload); decodeErr != nil {
+				writeError(w, http.StatusBadRequest, decodeErr)
+				return
+			}
+			coupon, err = repository.UpdateSecretCouponRewardLabel(r.Context(), id, payload.RewardLabel)
+		case parts[1] == "redeem":
+			if r.Method != http.MethodPost {
+				writeMethodNotAllowed(w)
+				return
+			}
+			coupon, err = repository.RedeemSecretCoupon(r.Context(), id)
+		case parts[1] == "reset":
+			if r.Method != http.MethodPost {
+				writeMethodNotAllowed(w)
+				return
+			}
+			coupon, err = repository.ResetSecretCoupon(r.Context(), id)
+		default:
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, coupon)
+	}))
+
 	mux.HandleFunc("/api/v1/admin/system-logs", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
 		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
 			return
