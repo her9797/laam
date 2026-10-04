@@ -105,14 +105,32 @@ func (r *Repository) UpdateSecretCoupon(ctx context.Context, id string, update S
 	return c, nil
 }
 
-// RedeemSecretCoupon marks a claimed coupon as exchanged for the physical
-// reward. Unknown ids return ErrNotFound; unclaimed or already redeemed
-// coupons return ErrAlreadyExists (HTTP 409).
-func (r *Repository) RedeemSecretCoupon(ctx context.Context, id string) (lamdata.AdminSecretCoupon, error) {
+// secretCouponNoticeLockKey serializes every transaction that changes
+// whether a secret coupon is discovered (customer claim, admin reset). Each of
+// them recounts the claimed coupons to rewrite the single progress notice,
+// and under READ COMMITTED two concurrent transactions cannot see each
+// other's uncommitted rows, so the last writer could publish a stale count.
+// Holding this transaction-scoped advisory lock before touching a coupon row
+// makes the recount observe every earlier change. It is distinct from the
+// other advisory lock keys (posOrderLockNamespace, posTableSyncLockKey).
+const secretCouponNoticeLockKey = 815234911
+
+func lockSecretCouponNotice(ctx context.Context, tx pgx.Tx) error {
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, int64(secretCouponNoticeLockKey))
+	return err
+}
+
+// RedeemSecretCoupon marks a discovered coupon as exchanged for the physical
+// reward, but only if the coupon is still the discovery the caller's screen
+// showed (claimedAt, compared at second precision). Unknown ids return
+// ErrNotFound; undiscovered, already redeemed or re-discovered coupons return
+// ErrAlreadyExists (HTTP 409).
+func (r *Repository) RedeemSecretCoupon(ctx context.Context, id string, claimedAt time.Time) (lamdata.AdminSecretCoupon, error) {
 	c, err := scanAdminSecretCoupon(r.pool.QueryRow(ctx, `
 		UPDATE secret_coupons SET redeemed_at = NOW()
-		WHERE id = $1 AND claimed_at IS NOT NULL AND redeemed_at IS NULL
-		RETURNING `+secretCouponColumns, id))
+		WHERE id = $1 AND claimed_at IS NOT NULL AND date_trunc('second', claimed_at) = $2::timestamptz
+		  AND redeemed_at IS NULL
+		RETURNING `+secretCouponColumns, id, claimedAt))
 	if err == nil {
 		return c, nil
 	}
@@ -130,21 +148,34 @@ func (r *Repository) RedeemSecretCoupon(ctx context.Context, id string) (lamdata
 	return lamdata.AdminSecretCoupon{}, ErrAlreadyExists
 }
 
-// ResetSecretCoupon returns a coupon to the undiscovered state and refreshes
-// the hunt-progress notice. It is idempotent.
-func (r *Repository) ResetSecretCoupon(ctx context.Context, id string) (lamdata.AdminSecretCoupon, error) {
+// ResetSecretCoupon returns a discovered coupon to the undiscovered state and
+// refreshes the hunt-progress notice, but only if the coupon is still the
+// discovery the caller's screen showed (claimedAt, second precision). Unknown
+// ids return ErrNotFound; undiscovered or re-discovered coupons return
+// ErrAlreadyExists (HTTP 409).
+func (r *Repository) ResetSecretCoupon(ctx context.Context, id string, claimedAt time.Time) (lamdata.AdminSecretCoupon, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return lamdata.AdminSecretCoupon{}, err
 	}
 	defer tx.Rollback(ctx)
 
+	if err := lockSecretCouponNotice(ctx, tx); err != nil {
+		return lamdata.AdminSecretCoupon{}, err
+	}
 	c, err := scanAdminSecretCoupon(tx.QueryRow(ctx, `
 		UPDATE secret_coupons SET claimed_at = NULL, table_number = '', redeemed_at = NULL
-		WHERE id = $1
-		RETURNING `+secretCouponColumns, id))
+		WHERE id = $1 AND claimed_at IS NOT NULL AND date_trunc('second', claimed_at) = $2::timestamptz
+		RETURNING `+secretCouponColumns, id, claimedAt))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return lamdata.AdminSecretCoupon{}, ErrNotFound
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM secret_coupons WHERE id = $1)`, id).Scan(&exists); err != nil {
+			return lamdata.AdminSecretCoupon{}, err
+		}
+		if !exists {
+			return lamdata.AdminSecretCoupon{}, ErrNotFound
+		}
+		return lamdata.AdminSecretCoupon{}, ErrAlreadyExists
 	}
 	if err != nil {
 		return lamdata.AdminSecretCoupon{}, classifyError(err)
@@ -159,7 +190,8 @@ func (r *Repository) ResetSecretCoupon(ctx context.Context, id string) (lamdata.
 }
 
 // syncSecretCouponNotice recounts claimed coupons and upserts the single
-// progress notice, returning the count. Shared by claim and admin reset.
+// progress notice, returning the count. Shared by claim and admin reset; the
+// caller must already hold lockSecretCouponNotice.
 func syncSecretCouponNotice(ctx context.Context, tx pgx.Tx) (int, error) {
 	var claimedCount int
 	if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM secret_coupons WHERE claimed_at IS NOT NULL`).Scan(&claimedCount); err != nil {

@@ -1150,13 +1150,21 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 				writeMethodNotAllowed(w)
 				return
 			}
-			coupon, err = repository.RedeemSecretCoupon(r.Context(), id)
+			claimedAt, ok := decodeSecretCouponClaimedAt(w, r)
+			if !ok {
+				return
+			}
+			coupon, err = repository.RedeemSecretCoupon(r.Context(), id, claimedAt)
 		case parts[1] == "reset":
 			if r.Method != http.MethodPost {
 				writeMethodNotAllowed(w)
 				return
 			}
-			coupon, err = repository.ResetSecretCoupon(r.Context(), id)
+			claimedAt, ok := decodeSecretCouponClaimedAt(w, r)
+			if !ok {
+				return
+			}
+			coupon, err = repository.ResetSecretCoupon(r.Context(), id, claimedAt)
 		default:
 			http.NotFound(w, r)
 			return
@@ -1372,6 +1380,29 @@ func readImageUpload(w http.ResponseWriter, r *http.Request, maxFileBytes int64,
 	}
 
 	return imageUpload{filename: header.Filename, mimeType: mimeType, content: content}, http.StatusOK, nil
+}
+
+// decodeSecretCouponClaimedAt reads the required { "claimedAt": RFC3339 }
+// body of the redeem/reset endpoints. It writes a 400 and returns false when
+// the body is missing, malformed or the timestamp does not parse.
+func decodeSecretCouponClaimedAt(w http.ResponseWriter, r *http.Request) (time.Time, bool) {
+	var payload struct {
+		ClaimedAt *string `json:"claimedAt"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return time.Time{}, false
+	}
+	if payload.ClaimedAt == nil || strings.TrimSpace(*payload.ClaimedAt) == "" {
+		writeError(w, http.StatusBadRequest, errors.New("claimedAt is required"))
+		return time.Time{}, false
+	}
+	claimedAt, err := time.Parse(time.RFC3339, strings.TrimSpace(*payload.ClaimedAt))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("claimedAt must be an RFC3339 timestamp"))
+		return time.Time{}, false
+	}
+	return claimedAt, true
 }
 
 func writeStoreError(w http.ResponseWriter, err error) {
