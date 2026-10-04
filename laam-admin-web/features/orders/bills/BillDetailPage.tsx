@@ -186,7 +186,7 @@ export function BillDetailPage({ billId }: { billId: string }) {
           {bill.payments.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("billDetailPaymentsEmpty")}</p>
           ) : (
-            <Table>
+            <Table className="min-w-[44rem]">
               <TableHeader>
                 <TableRow>
                   <TableHead>{t("billDetailColumnPaymentMethod")}</TableHead>
@@ -253,10 +253,10 @@ export function BillDetailPage({ billId }: { billId: string }) {
       return <p className="text-sm text-muted-foreground">{t("billDetailMenuItemsEmpty")}</p>;
     }
     return (
-      <Table>
+      <Table className="min-w-[28rem]">
         <TableHeader>
           <TableRow>
-            <TableHead>{t("billDetailColumnMenuItem")}</TableHead>
+            <TableHead className="w-2/5">{t("billDetailColumnMenuItem")}</TableHead>
             <TableHead>{t("billDetailColumnCategory")}</TableHead>
             <TableHead>{t("billDetailColumnAmount")}</TableHead>
             <TableHead>{t("billDetailColumnStatus")}</TableHead>
