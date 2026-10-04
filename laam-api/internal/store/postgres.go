@@ -435,7 +435,7 @@ DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'secret_coupons' AND column_name = 'hiding_note'
+    WHERE table_schema = current_schema() AND table_name = 'secret_coupons' AND column_name = 'hiding_note'
   ) THEN
     ALTER TABLE secret_coupons ADD COLUMN hiding_note TEXT NOT NULL DEFAULT '';
     UPDATE secret_coupons SET hiding_note = CASE id
@@ -2317,6 +2317,9 @@ func claimSecretCoupon(ctx context.Context, tx pgx.Tx, id string, tableNumber st
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return lamdata.SecretCouponClaim{}, ErrInvalidInput
+	}
+	if err := lockSecretCouponNotice(ctx, tx); err != nil {
+		return lamdata.SecretCouponClaim{}, err
 	}
 
 	var rewardLabel string

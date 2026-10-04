@@ -65,6 +65,22 @@ async function mockSecretCoupons(page: Page, coupons: SecretCoupon[]): Promise<v
 test.describe("coupon management", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
+  test("sends the card's claimedAt when redeeming", async ({ page }) => {
+    await mockDashboardData(page);
+    await mockSecretCoupons(page, buildCoupons());
+    let redeemBody: unknown;
+    await page.route("**/api/admin/secret-coupons/c2/redeem", async (route) => {
+      redeemBody = route.request().postDataJSON();
+      await route.fulfill({ json: { ...buildCoupons()[1], redeemedAt: "2026-10-03T12:30:00Z" } });
+    });
+    await loginAsAdmin(page);
+
+    await page.goto("/coupons");
+    await page.getByRole("button", { name: "교환 처리" }).click();
+
+    await expect.poll(() => redeemBody).toEqual({ claimedAt: "2026-10-03T10:00:00Z" });
+  });
+
   test("renders the coupon cards at 390px without horizontal scrolling", async ({ page }) => {
     await mockDashboardData(page);
     await mockSecretCoupons(page, buildCoupons());

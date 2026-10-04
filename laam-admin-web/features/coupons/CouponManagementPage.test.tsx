@@ -148,7 +148,7 @@ describe("CouponManagementPage", () => {
   it("redeems a claimed coupon", () => {
     render(<CouponManagementPage />);
     fireEvent.click(within(cardOf("안주 1개")).getByRole("button", { name: "교환 처리" }));
-    expect(redeemMutate).toHaveBeenCalledWith("c2");
+    expect(redeemMutate).toHaveBeenCalledWith({ id: "c2", claimedAt: "2026-10-03T10:00:00Z" });
   });
 
   it("asks for confirmation with a warning before resetting", () => {
@@ -160,7 +160,31 @@ describe("CouponManagementPage", () => {
     expect(dialog).toHaveTextContent("초기화하면 손님이 이 쿠폰을 다시 찾을 수 있어요");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "초기화" }));
-    expect(resetMutate).toHaveBeenCalledWith("c2", expect.anything());
+    expect(resetMutate).toHaveBeenCalledWith(
+      { id: "c2", claimedAt: "2026-10-03T10:00:00Z" },
+      expect.anything(),
+    );
+  });
+
+  it("resets with the claimedAt from when the dialog opened, even if the list refreshes", () => {
+    const view = render(<CouponManagementPage />);
+    fireEvent.click(within(cardOf("안주 1개")).getByRole("button", { name: "초기화" }));
+
+    // Another admin reset it and a different table found it again.
+    mockQuery({
+      data: COUPONS.map((coupon) =>
+        coupon.id === "c2" ? { ...coupon, claimedAt: "2026-10-03T13:00:00Z" } : coupon,
+      ),
+    });
+    view.rerender(<CouponManagementPage />);
+
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", { name: "초기화" }),
+    );
+    expect(resetMutate).toHaveBeenCalledWith(
+      { id: "c2", claimedAt: "2026-10-03T10:00:00Z" },
+      expect.anything(),
+    );
   });
 
   it("edits the reward label with trimmed input", () => {

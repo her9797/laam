@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
 import { toast } from "@/components/ui/toast";
+import { FetchJsonError } from "@/lib/api/fetch-json";
 
 import {
   listSecretCoupons,
@@ -38,12 +39,18 @@ function useCouponMutationHandlers(successKey: string, failureKey: string) {
       toast.add({ type: "success", title: i18n.t(successKey, { ns: "coupons" }) });
       await queryClient.invalidateQueries({ queryKey: couponKeys.all });
     },
-    onError: (error: unknown) => {
-      toast.add({
-        type: "error",
-        title: i18n.t(failureKey, { ns: "coupons" }),
-        description: error instanceof Error ? error.message : undefined,
-      });
+    onError: async (error: unknown) => {
+      if (error instanceof FetchJsonError && error.status === 409) {
+        // The coupon changed under this screen; reload so the admin sees the truth.
+        toast.add({ type: "error", title: i18n.t("conflictRefreshed", { ns: "coupons" }) });
+      } else {
+        toast.add({
+          type: "error",
+          title: i18n.t(failureKey, { ns: "coupons" }),
+          description: error instanceof Error ? error.message : undefined,
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: couponKeys.all });
     },
   };
 }
@@ -60,7 +67,8 @@ export function useUpdateSecretCouponMutation() {
 export function useRedeemSecretCouponMutation() {
   const handlers = useCouponMutationHandlers("redeemed", "redeemFailed");
   return useMutation({
-    mutationFn: (id: string) => redeemSecretCoupon(id),
+    mutationFn: ({ id, claimedAt }: { id: string; claimedAt: string }) =>
+      redeemSecretCoupon(id, claimedAt),
     ...handlers,
   });
 }
@@ -68,7 +76,8 @@ export function useRedeemSecretCouponMutation() {
 export function useResetSecretCouponMutation() {
   const handlers = useCouponMutationHandlers("resetDone", "resetFailed");
   return useMutation({
-    mutationFn: (id: string) => resetSecretCoupon(id),
+    mutationFn: ({ id, claimedAt }: { id: string; claimedAt: string }) =>
+      resetSecretCoupon(id, claimedAt),
     ...handlers,
   });
 }
