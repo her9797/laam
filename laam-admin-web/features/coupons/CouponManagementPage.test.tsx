@@ -197,7 +197,8 @@ describe("CouponManagementPage", () => {
     render(<CouponManagementPage />);
 
     const claimed = cardOf("안주 1개");
-    expect(within(claimed).getByText("숨긴 위치")).toBeInTheDocument();
+    // Only the pin icon is visible; the label stays for screen readers.
+    expect(within(claimed).getByText("숨긴 위치")).toHaveClass("sr-only");
     expect(within(claimed).getByText("손님 홈 화면의 LP판을 누르면 발견")).toBeInTheDocument();
 
     expect(within(cardOf("하이볼 1잔")).getByText("숨긴 위치 메모가 없어요")).toBeInTheDocument();

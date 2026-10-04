@@ -232,7 +232,7 @@ export function CouponManagementPage() {
                     <div className="flex min-w-0 items-start gap-1.5 text-sm text-muted-foreground">
                       <RiMapPinLine aria-hidden className="mt-0.5 size-4 shrink-0" />
                       <p className="min-w-0 break-words">
-                        <span className="font-medium">{t("hidingNoteLabel")}</span>{" "}
+                        <span className="sr-only">{t("hidingNoteLabel")}</span>
                         {coupon.hidingNote ? (
                           <span className="whitespace-pre-wrap">{coupon.hidingNote}</span>
                         ) : (
