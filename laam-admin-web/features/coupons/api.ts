@@ -19,10 +19,23 @@ export function updateSecretCoupon(id: string, patch: SecretCouponPatch): Promis
   });
 }
 
-export function redeemSecretCoupon(id: string): Promise<SecretCoupon> {
-  return fetchJson<SecretCoupon>(`${COUPONS_PATH}/${id}/redeem`, { method: "POST" });
+/**
+ * `claimedAt` is the discovery timestamp the screen last saw for this coupon.
+ * The server rejects (409) when the current discovery differs, so a stale
+ * screen cannot act on a newer discovery.
+ */
+export function redeemSecretCoupon(id: string, claimedAt: string): Promise<SecretCoupon> {
+  return fetchJson<SecretCoupon>(`${COUPONS_PATH}/${id}/redeem`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ claimedAt }),
+  });
 }
 
-export function resetSecretCoupon(id: string): Promise<SecretCoupon> {
-  return fetchJson<SecretCoupon>(`${COUPONS_PATH}/${id}/reset`, { method: "POST" });
+export function resetSecretCoupon(id: string, claimedAt: string): Promise<SecretCoupon> {
+  return fetchJson<SecretCoupon>(`${COUPONS_PATH}/${id}/reset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ claimedAt }),
+  });
 }

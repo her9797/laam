@@ -54,7 +54,8 @@ export function CouponManagementPage() {
   // re-renders the message too.
   const [errorKey, setErrorKey] = useState<string | undefined>(undefined);
   const [noteErrorKey, setNoteErrorKey] = useState<string | undefined>(undefined);
-  const [pendingResetId, setPendingResetId] = useState<string | null>(null);
+  // Keeps the claimedAt seen when the dialog opened so a list refresh cannot swap it.
+  const [pendingReset, setPendingReset] = useState<{ id: string; claimedAt: string } | null>(null);
 
   if (couponsQuery.isLoading) {
     return <LoadingState label={t("loading")} />;
@@ -72,7 +73,6 @@ export function CouponManagementPage() {
 
   const coupons = couponsQuery.data ?? [];
   const summary = summarizeCoupons(coupons);
-  const resetTarget = coupons.find((coupon) => coupon.id === pendingResetId) ?? null;
 
   function startEdit(coupon: SecretCoupon) {
     setEditingId(coupon.id);
@@ -256,7 +256,7 @@ export function CouponManagementPage() {
                         type="button"
                         className={ACTION_BUTTON_CLASS}
                         disabled={isPending(redeemMutation, coupon.id)}
-                        onClick={() => redeemMutation.mutate(coupon.id)}
+                        onClick={() => redeemMutation.mutate({ id: coupon.id, claimedAt: coupon.claimedAt ?? "" })}
                       >
                         {t("redeem")}
                       </Button>
@@ -274,7 +274,7 @@ export function CouponManagementPage() {
                         type="button"
                         variant="outline"
                         className={ACTION_BUTTON_CLASS}
-                        onClick={() => setPendingResetId(coupon.id)}
+                        onClick={() => setPendingReset({ id: coupon.id, claimedAt: coupon.claimedAt ?? "" })}
                       >
                         {t("reset")}
                       </Button>
@@ -288,10 +288,10 @@ export function CouponManagementPage() {
       )}
 
       <AlertDialog
-        open={resetTarget !== null}
+        open={pendingReset !== null}
         onOpenChange={(open) => {
           if (!open) {
-            setPendingResetId(null);
+            setPendingReset(null);
           }
         }}
       >
@@ -305,9 +305,9 @@ export function CouponManagementPage() {
             <AlertDialogAction
               disabled={resetMutation.isPending}
               onClick={() => {
-                if (resetTarget) {
-                  resetMutation.mutate(resetTarget.id, {
-                    onSettled: () => setPendingResetId(null),
+                if (pendingReset) {
+                  resetMutation.mutate(pendingReset, {
+                    onSettled: () => setPendingReset(null),
                   });
                 }
               }}

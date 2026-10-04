@@ -63,23 +63,27 @@ describe("secret coupon api", () => {
     });
   });
 
-  it("redeems with POST", async () => {
+  it("redeems with POST and the claimedAt it saw as a JSON body", async () => {
     vi.mocked(fetchJson).mockResolvedValue(COUPON);
 
-    await redeemSecretCoupon("coupon-1");
+    await redeemSecretCoupon("coupon-1", "2026-10-03T10:00:00Z");
 
     expect(fetchJson).toHaveBeenCalledWith("/api/admin/secret-coupons/coupon-1/redeem", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claimedAt: "2026-10-03T10:00:00Z" }),
     });
   });
 
-  it("resets with POST", async () => {
+  it("resets with POST and the claimedAt it saw as a JSON body", async () => {
     vi.mocked(fetchJson).mockResolvedValue(COUPON);
 
-    await resetSecretCoupon("coupon-1");
+    await resetSecretCoupon("coupon-1", "2026-10-03T10:00:00Z");
 
     expect(fetchJson).toHaveBeenCalledWith("/api/admin/secret-coupons/coupon-1/reset", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claimedAt: "2026-10-03T10:00:00Z" }),
     });
   });
 });
