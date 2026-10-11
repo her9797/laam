@@ -242,7 +242,6 @@ export function BillListView({ query, enabled, onPageChange, onPageSizeChange }:
                       {t(STATUS_LABEL_KEY[bill.status])}
                     </TableCell>
                   </TableRow>
-  
                 );
               })}
             </TableBody>

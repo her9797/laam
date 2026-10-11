@@ -15,7 +15,8 @@ export type BillAmounts = {
  * and shown without a sign.
  */
 export function getBillAmounts(bill: Pick<Bill, "totalAmount" | "discountAmount" | "paidAmount">): BillAmounts {
-  const discount = bill.discountAmount === null ? null : Math.abs(bill.discountAmount);
+  // `== null` also covers a list response from an API without the field.
+  const discount = bill.discountAmount == null ? null : Math.abs(bill.discountAmount);
   return {
     total: bill.totalAmount + (discount ?? 0),
     discount,

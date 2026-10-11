@@ -15,4 +15,9 @@ describe("getBillAmounts", () => {
       paid: 66000,
     });
   });
+
+  it("treats a missing discount (list API without the field) as unknown", () => {
+    const bill = { totalAmount: 66000, paidAmount: 66000 } as Parameters<typeof getBillAmounts>[0];
+    expect(getBillAmounts(bill)).toEqual({ total: 66000, discount: null, paid: 66000 });
+  });
 });
