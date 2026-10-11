@@ -10,6 +10,10 @@
 // It is a dry-run by default: it reads TossPlace and the database, prints
 // what would change, and writes nothing (the database session is also put
 // in read-only mode). Pass --apply to write. Re-running is safe.
+//
+// Candidates are the POS orders some web order reached. A paid POS-only
+// order whose completed webhook was never applied is not among them; name
+// it with --pos-order-ids to record it the same way.
 package main
 
 import (
@@ -22,6 +26,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -49,6 +54,7 @@ func run(ctx context.Context, args []string, cfg config.Config, out io.Writer) i
 	delay := flags.Duration("delay", defaultDelay, "TossPlace API 호출 사이 대기 시간")
 	limit := flags.Int("limit", 0, "처리할 POS 주문 최대 수 (0 = 전체, 오래된 순)")
 	offset := flags.Int("offset", 0, "앞에서부터 건너뛸 POS 주문 수 (배치 실행용)")
+	posOrderIDs := flags.String("pos-order-ids", "", "쉼표로 구분한 POS 주문 ID만 처리한다 (웹 주문이 없는 POS 전용 주문 복구용, 기본은 DB의 웹 주문 연결 POS 주문 전체)")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
@@ -56,7 +62,7 @@ func run(ctx context.Context, args []string, cfg config.Config, out io.Writer) i
 		return 2
 	}
 	if flags.NArg() > 0 || *delay < 0 || *limit < 0 || *offset < 0 {
-		fmt.Fprintln(out, "usage: backfill-payment-bills [--apply] [--delay 200ms] [--limit N] [--offset N]")
+		fmt.Fprintln(out, "usage: backfill-payment-bills [--apply] [--delay 200ms] [--limit N] [--offset N] [--pos-order-ids ID,ID]")
 		return 2
 	}
 	if cfg.TossPlaceAccessKey == "" || cfg.TossPlaceSecretKey == "" || cfg.TossPlaceMerchantID == "" {
@@ -87,7 +93,7 @@ func run(ctx context.Context, args []string, cfg config.Config, out io.Writer) i
 		runner.Writer = repo
 	}
 
-	summary, err := runner.Run(ctx, Options{Apply: *apply, Delay: *delay, Limit: *limit, Offset: *offset})
+	summary, err := runner.Run(ctx, Options{Apply: *apply, Delay: *delay, Limit: *limit, Offset: *offset, POSOrderIDs: splitIDs(*posOrderIDs)})
 	if err != nil {
 		fmt.Fprintf(out, "백필 실패: %v\n", err)
 		return 1
@@ -96,6 +102,21 @@ func run(ctx context.Context, args []string, cfg config.Config, out io.Writer) i
 		return 1
 	}
 	return 0
+}
+
+// splitIDs parses --pos-order-ids: comma-separated, blanks and repeats
+// dropped, order kept.
+func splitIDs(raw string) []string {
+	seen := map[string]bool{}
+	ids := make([]string, 0)
+	for _, id := range strings.Split(raw, ",") {
+		id = strings.TrimSpace(id)
+		if id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 // openPool mirrors store.NewPool's statement_timeout and, for dry-run,

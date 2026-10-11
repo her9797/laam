@@ -280,6 +280,40 @@ func TestRunner_ApplyCompletesTheBillWithItsPOSNativeLines(t *testing.T) {
 	}
 }
 
+// posOnlyFixture adds to twoOrderFixture a paid POS order that no web
+// order ever reached, so the database's candidate list does not name it.
+func posOnlyFixture() (fakeSource, fakePOS) {
+	source, pos := twoOrderFixture()
+	pos.orders["pos-only"] = tossplace.Order{
+		ID: "pos-only", OrderState: "COMPLETED", CompletedAt: "2026-09-18T13:00:00Z",
+		ChargePrice: tossplace.OrderChargePrice{TotalAmount: 12000},
+		LineItems:   []tossplace.OrderLineItem{lineItem("생맥주", "맥주", 6000, 2)},
+	}
+	pos.payments["pos-only"] = []tossplace.Payment{{ID: "pay-only", State: "APPROVED", SourceType: "CARD", Amount: 12000, ApprovedAt: "2026-09-18T13:00:00Z"}}
+	return source, pos
+}
+
+func TestRunner_ExplicitPOSOrderIDsReplaceTheDatabaseCandidates(t *testing.T) {
+	source, pos := posOnlyFixture()
+	writer := &spyWriter{}
+	runner := &Runner{Source: source, POS: pos, Writer: writer, Out: &bytes.Buffer{}, Sleep: func(context.Context, time.Duration) error { return nil }}
+
+	summary, err := runner.Run(context.Background(), Options{Apply: true, POSOrderIDs: []string{"pos-only"}})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if summary.Candidates != 1 {
+		t.Fatalf("candidates = %d, want only the one named order", summary.Candidates)
+	}
+	want := []string{
+		"ApplyPOSCompletion pos-only complete=[] move_out=[] adopt=[] natives=[맥주/생맥주:12000] total=12000",
+		"SyncPOSPayments(PAID) pos-only",
+	}
+	if strings.Join(writer.calls, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("writer calls =\n%s\nwant\n%s", strings.Join(writer.calls, "\n"), strings.Join(want, "\n"))
+	}
+}
+
 func TestBuildPlan_CompletedBillWithOnlyNativeLinesLiveIsPaid(t *testing.T) {
 	_, pos := mixedBillFixture()
 	snapshot := Snapshot{Rows: []SnapshotRow{{ID: "o1", Status: "CANCELLED", Amount: 11000, MenuItemName: "하우스 하이볼", CategoryName: "하이볼"}}}
