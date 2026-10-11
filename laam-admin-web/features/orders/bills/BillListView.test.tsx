@@ -22,6 +22,7 @@ const PAID_BILL: Bill = {
   openedAt: "2026-01-10T12:00:00Z",
   completedAt: "2026-01-10T13:30:00Z",
   totalAmount: 50000,
+  discountAmount: -2000,
   paidAmount: 50000,
   payments: [
     { sourceType: "CARD", paymentMethod: "CARD", amount: 30000, state: "APPROVED" },
@@ -39,6 +40,7 @@ const OPEN_BILL: Bill = {
   status: "OPEN",
   openedAt: "2026-01-10T14:00:00Z",
   totalAmount: 12000,
+  discountAmount: null,
   paidAmount: 0,
   payments: [],
   menuCount: 1,
@@ -53,6 +55,7 @@ const CANCELLED_BILL: Bill = {
   openedAt: "2026-01-10T15:00:00Z",
   cancelledAt: "2026-01-10T15:10:00Z",
   totalAmount: 8000,
+  discountAmount: 0,
   paidAmount: 0,
   payments: [{ sourceType: "CASH", paymentMethod: "CASH", amount: 8000, state: "CANCELLED" }],
   menuCount: 1,
@@ -173,21 +176,34 @@ describe("BillListView", () => {
     expect(screen.getByText("총 3건")).toBeInTheDocument();
   });
 
-  it("renders each bill's table, total amount, and status label", () => {
+  it("renders each bill's table and status label", () => {
     renderView();
 
     const paidRow = rowOf(PAID_BILL);
     expect(within(paidRow).getByText("5")).toBeInTheDocument();
-    expect(within(paidRow).getByText("₩50,000")).toBeInTheDocument();
     expect(within(paidRow).getByText("결제 완료")).toHaveClass("text-success");
-
-    const openRow = rowOf(OPEN_BILL);
-    expect(within(openRow).getByText("₩12,000")).toBeInTheDocument();
-    expect(within(openRow).getByText("결제 대기")).toHaveClass("text-warning");
-
+    expect(within(rowOf(OPEN_BILL)).getByText("결제 대기")).toHaveClass("text-warning");
     expect(within(rowOf(CANCELLED_BILL)).getByText("취소")).toHaveClass("text-muted-foreground");
   });
 
+  it("shows 총액 / 할인 금액 / 결제 금액 columns in that order, between the payments and status columns", () => {
+    renderView();
+
+    const headers = screen.getAllByRole("columnheader").map((header) => header.textContent);
+    expect(headers).toEqual(["주문 시각", "테이블", "메뉴", "결제 내역", "총액", "할인 금액", "결제 금액", "상태"]);
+  });
+
+  it("renders total (charge + |discount|), unsigned discount and paid amount per row", () => {
+    renderView();
+
+    const cells = (bill: Bill) => within(rowOf(bill)).getAllByRole("cell").map((cell) => cell.textContent);
+    // negative discount: 50,000 charged + 2,000 discount = 52,000 total.
+    expect(cells(PAID_BILL).slice(4, 7)).toEqual(["₩52,000", "₩2,000", "₩50,000"]);
+    // null discount: dash, total as is.
+    expect(cells(OPEN_BILL).slice(4, 7)).toEqual(["₩12,000", "-", "₩0"]);
+    // zero discount.
+    expect(cells(CANCELLED_BILL).slice(4, 7)).toEqual(["₩8,000", "₩0", "₩0"]);
+  });
   it("shows the payment time under the order time only for a paid bill", () => {
     renderView();
 
@@ -219,7 +235,8 @@ describe("BillListView", () => {
     expect(cancelled).toHaveClass("line-through");
 
     expect(within(rowOf(CANCELLED_BILL)).getByText("현금 8,000 취소")).toBeInTheDocument();
-    expect(within(rowOf(OPEN_BILL)).getByText("-")).toBeInTheDocument();
+    // 결제 내역 is the 4th cell; the open bill has none (its 할인 금액 dash is a separate cell).
+    expect(within(rowOf(OPEN_BILL)).getAllByRole("cell")[3]).toHaveTextContent("-");
   });
 
   it("lists every menu of a bill in its row, grouping repeats", () => {

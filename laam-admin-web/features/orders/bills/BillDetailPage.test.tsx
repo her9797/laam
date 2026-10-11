@@ -66,9 +66,10 @@ const BILL: BillDetail = {
   status: "PAID",
   openedAt: "2026-01-10T12:00:00Z",
   completedAt: "2026-01-10T13:00:00Z",
-  // totalAmount is the POS charge after discounts (API contract).
+  // totalAmount is the POS charge after discounts (API contract); the
+  // order-level discount arrives negative from TossPlace.
   totalAmount: 20000,
-  discountAmount: 3000,
+  discountAmount: -3000,
   paidAmount: 20000,
   paymentsSyncedAt: "2026-01-10T13:01:00Z",
   payments: [CARD_PAYMENT],
@@ -215,35 +216,37 @@ describe("BillDetailPage", () => {
     }
   });
 
-  it("shows the pre-discount total (charged total + discount) with discount and paid amounts", () => {
+  it("shows the pre-discount total (charged total + |discount|) with an unsigned discount and the paid amount", () => {
+    mockBill({ totalAmount: 66000, discountAmount: -2000, paidAmount: 66000 });
+
     render(<BillDetailPage billId="bill-1" />);
 
     const amounts = sectionByTitle("금액 요약");
-    expect(within(amounts).getByText("₩23,000")).toBeInTheDocument();
-    expect(within(amounts).getByText("할인 금액")).toBeInTheDocument();
-    expect(within(amounts).getByText("₩3,000")).toBeInTheDocument();
-    expect(within(amounts).getByText("₩20,000")).toBeInTheDocument();
+    const field = (label: string) => within(amounts).getByText(label).parentElement as HTMLElement;
+    expect(within(field("총액")).getByText("₩68,000")).toBeInTheDocument();
+    expect(within(field("할인 금액")).getByText("₩2,000")).toBeInTheDocument();
+    expect(within(field("결제 금액")).getByText("₩66,000")).toBeInTheDocument();
   });
 
-  it.each([
-    ["null", null],
-    ["0", 0],
-  ] as const)("shows totalAmount as is when the discount is %s", (_name, discountAmount) => {
-    mockBill({ totalAmount: 20000, discountAmount, paidAmount: 20000 });
+  it("shows ₩0 as the discount and the total as is when the discount is 0", () => {
+    mockBill({ totalAmount: 20000, discountAmount: 0, paidAmount: 20000 });
 
     render(<BillDetailPage billId="bill-1" />);
 
     const amounts = sectionByTitle("금액 요약");
+    expect(within(amounts).getByText("₩0")).toBeInTheDocument();
     expect(within(amounts).getAllByText("₩20,000")).toHaveLength(2);
-    expect(within(amounts).queryByText("₩23,000")).not.toBeInTheDocument();
   });
 
-  it("hides the discount while it is still unknown (null)", () => {
-    mockBill({ discountAmount: null });
+  it("shows a dash for the discount while it is still unknown (null) and keeps the total as is", () => {
+    mockBill({ totalAmount: 20000, discountAmount: null, paidAmount: 20000 });
 
     render(<BillDetailPage billId="bill-1" />);
 
-    expect(screen.queryByText("할인 금액")).not.toBeInTheDocument();
+    const amounts = sectionByTitle("금액 요약");
+    const discountField = within(amounts).getByText("할인 금액").parentElement as HTMLElement;
+    expect(within(discountField).getByText("-")).toBeInTheDocument();
+    expect(within(amounts).getAllByText("₩20,000")).toHaveLength(2);
   });
 
   it("warns that payments may be incomplete for a PAID bill whose payments are not synced yet", () => {

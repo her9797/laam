@@ -332,3 +332,44 @@ func TestRepository_GetPOSBillForAdmin_UnknownIDIsNotFound(t *testing.T) {
 		t.Fatalf("GetPOSBillForAdmin() error = %v, want ErrNotFound", err)
 	}
 }
+
+// The list returns the POS order-level discount exactly as stored: a
+// negative TossPlace discount stays negative, zero stays zero, and a bill
+// without a recorded POS charge has no discount (nil).
+func TestRepository_ListPOSBillsPage_ReturnsDiscountAmountAsStored(t *testing.T) {
+	repo := resetDB(t)
+	ctx := context.Background()
+	opened := time.Date(2026, 1, 10, 20, 0, 0, 0, kst)
+	seedAdminBill(t, ctx, adminBillSeed{
+		ID: "bill-neg", TableNumber: "T-01", Status: "PAID", OpenedAt: opened,
+		TotalAmount: adminBillInt64(66000), DiscountAmount: adminBillInt64(-2000), Synced: true,
+	})
+	seedAdminBill(t, ctx, adminBillSeed{
+		ID: "bill-zero", TableNumber: "T-02", Status: "PAID", OpenedAt: opened.Add(-time.Hour),
+		TotalAmount: adminBillInt64(10000), DiscountAmount: adminBillInt64(0), Synced: true,
+	})
+	seedAdminBill(t, ctx, adminBillSeed{
+		ID: "bill-open", TableNumber: "T-03", Status: "OPEN", OpenedAt: opened.Add(-2 * time.Hour),
+	})
+
+	items, _, err := repo.ListPOSBillsPage(ctx, POSBillFilter{Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("ListPOSBillsPage() error = %v", err)
+	}
+	got := map[string]*int64{}
+	for _, item := range items {
+		got[item.ID] = item.DiscountAmount
+	}
+	if len(got) != 3 {
+		t.Fatalf("items = %d, want 3", len(got))
+	}
+	if d := got["bill-neg"]; d == nil || *d != -2000 {
+		t.Errorf("bill-neg discount = %v, want -2000 (sign kept)", d)
+	}
+	if d := got["bill-zero"]; d == nil || *d != 0 {
+		t.Errorf("bill-zero discount = %v, want 0", d)
+	}
+	if d := got["bill-open"]; d != nil {
+		t.Errorf("bill-open discount = %v, want nil (no POS charge yet)", *d)
+	}
+}
