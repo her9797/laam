@@ -14,6 +14,7 @@ import { cn, formatCurrencyKRW, formatDateTime } from "@/lib/utils";
 
 import type { PaymentOrderStatus } from "../model";
 import { paymentMethodLabel } from "../payment-method";
+import { getBillAmounts } from "./amounts";
 import type { BillDetail, BillPayment, BillPaymentState, BillStatus } from "./model";
 import { useBillQuery } from "./queries";
 
@@ -126,18 +127,18 @@ export function BillDetailPage({ billId }: { billId: string }) {
     timeFields.push({ labelKey: "billDetailFieldCancelledAt", value: formatTime(bill.cancelledAt) });
   }
 
-  // `totalAmount` is the POS charge after discounts when a charge is
-  // recorded (`discountAmount` is then a number), so add the discount back
-  // to show the pre-discount total. Without a discount it is shown as is.
-  const hasDiscount = bill.discountAmount !== null && bill.discountAmount > 0;
-  const displayedTotal = hasDiscount ? bill.totalAmount + (bill.discountAmount ?? 0) : bill.totalAmount;
+  // `totalAmount` is the POS charge after the (negative) order-level
+  // discount, so the shared helper adds the discount back to show the
+  // pre-discount total and gives the discount unsigned (null while unknown).
+  const amounts = getBillAmounts(bill);
   const amountFields: Array<{ labelKey: string; value: string }> = [
-    { labelKey: "billDetailFieldTotalAmount", value: formatAmount(displayedTotal) },
+    { labelKey: "billDetailFieldTotalAmount", value: formatAmount(amounts.total) },
+    {
+      labelKey: "billDetailFieldDiscountAmount",
+      value: amounts.discount === null ? "-" : formatAmount(amounts.discount),
+    },
+    { labelKey: "billDetailFieldPaidAmount", value: formatAmount(amounts.paid) },
   ];
-  if (bill.discountAmount !== null) {
-    amountFields.push({ labelKey: "billDetailFieldDiscountAmount", value: formatAmount(bill.discountAmount) });
-  }
-  amountFields.push({ labelKey: "billDetailFieldPaidAmount", value: formatAmount(bill.paidAmount) });
 
   // A PAID bill whose full payment list hasn't been fetched yet may show
   // only the payments its webhooks carried so far.

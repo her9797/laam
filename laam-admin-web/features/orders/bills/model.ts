@@ -29,6 +29,11 @@ export type Bill = {
   cancelledAt?: string;
   /** POS charge when known, otherwise the sum of non-cancelled menu rows. */
   totalAmount: number;
+  /**
+   * POS order-level discount as reported: negative when discounted, 0 when
+   * none, null until the POS charge is recorded.
+   */
+  discountAmount: number | null;
   /** Sum of APPROVED payments. */
   paidAmount: number;
   payments: BillPaymentSummary[];
@@ -59,8 +64,6 @@ export type BillPayment = {
 };
 
 export type BillDetail = Omit<Bill, "payments" | "menuCount" | "menuPreview"> & {
-  /** POS order-level discount; null until the POS charge is recorded. */
-  discountAmount: number | null;
   /** Set once the full payment list was fetched; payments may be incomplete until then. */
   paymentsSyncedAt?: string;
   payments: BillPayment[];
