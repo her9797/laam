@@ -20,7 +20,7 @@ vi.mock("recharts", async (importOriginal) => {
     ResponsiveContainer: ({ children }: { children: React.ReactElement<{ width?: number; height?: number }> }) =>
       cloneElement(children, { width: 400, height: 300 }),
     Pie: (props: React.ComponentProps<typeof actual.Pie>) => {
-      pieDataMock(props.data);
+      pieDataMock(props.data, props);
       return createElement(actual.Pie, props);
     },
     Tooltip: (props: React.ComponentProps<typeof actual.Tooltip>) => {
@@ -240,6 +240,54 @@ describe("SalesStatsPage", () => {
     expect(screen.getByText("카드")).toBeInTheDocument();
     expect(screen.getByText("₩15,000")).toBeInTheDocument();
     expect(screen.getByText("결제 건수: 3")).toBeInTheDocument();
+  });
+
+  it("draws the trend chart's axes and grid in theme colors so dates stay readable in dark mode", () => {
+    render(<SalesStatsPage />);
+
+    const card = screen.getByText(/매출 추이/).closest('[data-slot="card"]') as HTMLElement;
+    const dateTick = within(card).getByText("2026-01-10").closest("text");
+    expect(dateTick).toHaveAttribute("fill", "var(--muted-foreground)");
+    // Both axes' labels — the two date buckets plus the revenue scale.
+    const ticks = Array.from(card.querySelectorAll(".recharts-cartesian-axis-tick-value"));
+    expect(ticks.length).toBeGreaterThan(2);
+    for (const tick of ticks) {
+      expect(tick).toHaveAttribute("fill", "var(--muted-foreground)");
+    }
+    const gridLine = card.querySelector(".recharts-cartesian-grid line");
+    expect(gridLine).toHaveAttribute("stroke", "var(--border)");
+  });
+
+  it("themes recharts' default tooltips and slice borders instead of their white defaults", () => {
+    tooltipPropsMock.mockClear();
+    pieDataMock.mockClear();
+
+    render(<SalesStatsPage />);
+
+    // The trend bar and the category pie keep recharts' default tooltip
+    // body, whose label otherwise inherits the page's (light, in dark mode)
+    // text color on top of a hardcoded white box.
+    const defaultTooltips = tooltipPropsMock.mock.calls
+      .map(([props]) => props as { content?: unknown; contentStyle?: React.CSSProperties; cursor?: unknown })
+      .filter((props) => typeof props.content !== "function");
+    expect(defaultTooltips.length).toBeGreaterThan(0);
+    for (const props of defaultTooltips) {
+      expect(props.contentStyle).toMatchObject({
+        backgroundColor: "var(--popover)",
+        borderColor: "var(--border)",
+        color: "var(--popover-foreground)",
+      });
+    }
+    // The bar chart's hover highlight otherwise defaults to a light gray.
+    expect(defaultTooltips.some((props) => props.cursor !== undefined)).toBe(true);
+    for (const props of defaultTooltips.filter((p) => p.cursor !== undefined)) {
+      expect(props.cursor).toEqual({ fill: "var(--muted)" });
+    }
+
+    expect(pieDataMock.mock.calls.length).toBeGreaterThan(0);
+    for (const [, props] of pieDataMock.mock.calls) {
+      expect((props as { stroke?: string }).stroke).toBe("var(--card)");
+    }
   });
 
   it("defaults the aggregation basis to '영업일' (business day)", () => {

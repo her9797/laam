@@ -85,4 +85,11 @@ describe("InventoryOverviewChart", () => {
     const large = parseInt(screen.getByRole("img").style.height, 10);
     expect(large).toBeGreaterThan(small + 400);
   });
+
+  it("draws axis labels in a theme color so item names stay readable in dark mode", () => {
+    render(<InventoryOverviewChart items={[item("맥주", 30, 10), item("소주", 3, 10)]} />);
+
+    expect(screen.getByText("맥주").closest("text")).toHaveAttribute("fill", "var(--muted-foreground)");
+    expect(screen.getByText("100%").closest("text")).toHaveAttribute("fill", "var(--muted-foreground)");
+  });
 });
