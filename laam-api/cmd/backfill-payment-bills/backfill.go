@@ -87,6 +87,11 @@ type Options struct {
 	// that many of the oldest first, so a large backfill can run in batches.
 	Limit  int
 	Offset int
+	// POSOrderIDs, when set, are processed instead of the database's
+	// candidates (see Source.ListPOSOrderIDsForBackfill), which only name
+	// POS orders some web order reached: a paid POS-only order whose
+	// completed webhook was never applied can only be recovered this way.
+	POSOrderIDs []string
 }
 
 type paymentTotal struct {
@@ -196,9 +201,13 @@ func (r *Runner) Run(ctx context.Context, opts Options) (Summary, error) {
 		return summary, errors.New("limit and offset must not be negative")
 	}
 
-	ids, err := r.Source.ListPOSOrderIDsForBackfill(ctx)
-	if err != nil {
-		return summary, fmt.Errorf("list POS orders: %w", err)
+	ids := opts.POSOrderIDs
+	if len(ids) == 0 {
+		var err error
+		ids, err = r.Source.ListPOSOrderIDsForBackfill(ctx)
+		if err != nil {
+			return summary, fmt.Errorf("list POS orders: %w", err)
+		}
 	}
 	if opts.Offset >= len(ids) {
 		ids = nil

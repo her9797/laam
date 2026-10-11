@@ -496,6 +496,34 @@ func TestBackfill_ApplyRecordsMissingPOSNativeLineOnce(t *testing.T) {
 	}
 }
 
+// A paid POS order no web order reached is not among the database's
+// candidates; naming it with --pos-order-ids records it like the completed
+// webhook would — and only the named orders are touched.
+func TestBackfill_POSOrderIDsRecordsAPOSOnlyOrder(t *testing.T) {
+	resetTables(t)
+	fake, server := newFakeTossPlace(t)
+	seedStuckTable(t, fake)
+	fake.setOrderJSON("pos-only", `{"id":"pos-only","orderState":"COMPLETED","openedAt":"2026-09-01T11:50:00Z",`+
+		`"completedAt":"2026-09-01T13:00:00Z","chargePrice":{"totalAmount":12000,"discountAmount":0},"lineItems":[`+
+		lineItemJSON("생맥주", "맥주", 6000, 2)+`]}`,
+		`[`+paymentJSON("pay-only", "APPROVED", "CARD", 12000, "2026-09-01T13:00:00Z", "")+`]`)
+
+	code, out := runBackfill(t, testConfig(server.URL), "--pos-order-ids", " pos-only, ,pos-only", "--apply")
+	if code != 0 {
+		t.Fatalf("exit code = %d, output:\n%s", code, out)
+	}
+	if state := snapshotDB(t); state.Bills != 1 || state.Payments != 1 {
+		t.Fatalf("bills=%d payments=%d, want only pos-only's bill and payment", state.Bills, state.Payments)
+	}
+	if bill := loadBill(t, "pos-only"); bill.Status != "PAID" || bill.Total == nil || *bill.Total != 12000 {
+		t.Fatalf("pos-only bill = %+v, want PAID total 12000", bill)
+	}
+	native := loadNativeRows(t, "pos-only")
+	if len(native) != 1 || native[0].Status != "DONE" || native[0].Amount != 12000 || !native[0].Linked {
+		t.Fatalf("native rows = %+v, want one DONE 생맥주 12000 on the bill", native)
+	}
+}
+
 func TestBackfill_ApplyStampsTheOrdersCancelledAt(t *testing.T) {
 	resetTables(t)
 	fake, server := newFakeTossPlace(t)
