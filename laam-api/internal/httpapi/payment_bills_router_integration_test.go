@@ -214,3 +214,39 @@ func TestRouter_AdminPaymentBills_DetailUnknownIDIsNotFound(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 }
+
+func TestRouter_AdminPaymentBills_ListIncludesDiscountAmountAsStored(t *testing.T) {
+	handler := resetServer(t)
+	base := time.Date(2026, 1, 10, 12, 0, 0, 0, time.UTC)
+	seedPaymentBillViaSQL(t, "bill-disc", "T-01", "CARD", 66000, base)
+	seedPaymentBillViaSQL(t, "bill-none", "T-02", "CARD", 9000, base.Add(time.Hour))
+	if _, err := testPool.Exec(context.Background(), `UPDATE pos_bills SET discount_amount = -2000 WHERE id = 'bill-disc'`); err != nil {
+		t.Fatalf("set discount: %v", err)
+	}
+
+	rec := doRequest(t, handler, http.MethodGet, "/api/v1/admin/payment-bills?pageSize=10", nil, adminHeaders())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var envelope struct {
+		Items []map[string]json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode: %v, body = %s", err, rec.Body.String())
+	}
+	got := map[string]string{}
+	for _, item := range envelope.Items {
+		raw, ok := item["discountAmount"]
+		if !ok {
+			t.Fatalf("list item has no discountAmount key: %v", item)
+		}
+		var id string
+		if err := json.Unmarshal(item["id"], &id); err != nil {
+			t.Fatalf("decode id: %v", err)
+		}
+		got[id] = string(raw)
+	}
+	if got["bill-disc"] != "-2000" || got["bill-none"] != "null" {
+		t.Errorf("discountAmount = %v, want bill-disc=-2000 bill-none=null", got)
+	}
+}

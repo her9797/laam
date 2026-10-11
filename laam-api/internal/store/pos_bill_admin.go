@@ -99,6 +99,7 @@ func (r *Repository) ListPOSBillsPage(ctx context.Context, filter POSBillFilter)
 			b.completed_at,
 			b.cancelled_at,
 			`+posBillAmountColumns+`,
+			b.discount_amount,
 			(SELECT COUNT(*) FROM payment_orders o WHERE o.bill_id = b.id AND `+posBillListedMenuCondition+`),
 			ARRAY(
 				SELECT o.menu_item_name FROM payment_orders o
@@ -128,6 +129,7 @@ func (r *Repository) ListPOSBillsPage(ctx context.Context, filter POSBillFilter)
 			&cancelledAt,
 			&bill.TotalAmount,
 			&bill.PaidAmount,
+			&bill.DiscountAmount,
 			&bill.MenuCount,
 			&bill.MenuPreview,
 		); err != nil {

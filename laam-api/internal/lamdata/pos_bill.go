@@ -25,10 +25,14 @@ type POSBill struct {
 	// otherwise the sum of the bill's non-cancelled menu rows.
 	TotalAmount int64 `json:"totalAmount"`
 	// PaidAmount is the sum of the bill's APPROVED payments.
-	PaidAmount  int64                   `json:"paidAmount"`
-	Payments    []POSBillPaymentSummary `json:"payments"`
-	MenuCount   int                     `json:"menuCount"`
-	MenuPreview []string                `json:"menuPreview"`
+	PaidAmount int64 `json:"paidAmount"`
+	// DiscountAmount is the POS order-level discount as TossPlace reports
+	// it (negative when discounted), null until the POS charge has been
+	// recorded.
+	DiscountAmount *int64                  `json:"discountAmount"`
+	Payments       []POSBillPaymentSummary `json:"payments"`
+	MenuCount      int                     `json:"menuCount"`
+	MenuPreview    []string                `json:"menuPreview"`
 }
 
 type POSBillPage struct {
