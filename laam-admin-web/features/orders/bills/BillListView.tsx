@@ -21,6 +21,7 @@ import { useRetainedListQuery } from "@/hooks/use-retained-list-query";
 import { cn, formatCurrencyKRW, formatDateTime, resolveDateTimeLocale } from "@/lib/utils";
 
 import { paymentMethodLabel } from "../payment-method";
+import { getBillAmounts } from "./amounts";
 import type { Bill, BillListQuery, BillPaymentState, BillStatus } from "./model";
 import { useBillsPageQuery } from "./queries";
 
@@ -192,7 +193,7 @@ export function BillListView({ query, enabled, onPageChange, onPageSizeChange }:
           // Same narrow-screen strategy as the menu-row table: a fixed
           // minimum width inside the table's own `overflow-x-auto` container,
           // so a phone scrolls the table sideways instead of crushing columns.
-          <Table className="min-w-[48rem]">
+          <Table className="min-w-[64rem]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-32">{t("billListColumnOpenedAt")}</TableHead>
@@ -200,42 +201,50 @@ export function BillListView({ query, enabled, onPageChange, onPageSizeChange }:
                 <TableHead>{t("billListColumnMenu")}</TableHead>
                 <TableHead>{t("billListColumnPayments")}</TableHead>
                 <TableHead className="w-28">{t("billListColumnTotal")}</TableHead>
+                <TableHead className="w-28">{t("billListColumnDiscount")}</TableHead>
+                <TableHead className="w-28">{t("billListColumnPaid")}</TableHead>
                 <TableHead className="w-24">{t("billListColumnStatus")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {bills.map((bill) => (
-                <TableRow key={bill.id}>
-                  <TableCell className="align-top">
-                    <Link
-                      href={`/orders/bills/${encodeURIComponent(bill.id)}`}
-                      className="text-foreground underline underline-offset-4 hover:font-bold"
-                    >
-                      {formatDateTime(bill.openedAt, i18n.language)}
-                    </Link>
-                    {bill.status === "PAID" && bill.completedAt ? (
-                      <div className="text-xs text-muted-foreground">
-                        {t("billListCompletedAt", {
-                          time: formatDateTime(bill.completedAt, i18n.language),
-                        })}
-                      </div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell className="align-top">{bill.tableNumber || "-"}</TableCell>
-                  <TableCell className="align-top whitespace-normal">
-                    <BillMenus bill={bill} />
-                  </TableCell>
-                  <TableCell className="align-top whitespace-normal">
-                    <BillPayments bill={bill} />
-                  </TableCell>
-                  <TableCell className="align-top">
-                    {formatCurrencyKRW(bill.totalAmount, i18n.language)}
-                  </TableCell>
-                  <TableCell className={cn("align-top", STATUS_COLOR_CLASS[bill.status])}>
-                    {t(STATUS_LABEL_KEY[bill.status])}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {bills.map((bill) => {
+                const amounts = getBillAmounts(bill);
+                return (
+                  <TableRow key={bill.id}>
+                    <TableCell className="align-top">
+                      <Link
+                        href={`/orders/bills/${encodeURIComponent(bill.id)}`}
+                        className="text-foreground underline underline-offset-4 hover:font-bold"
+                      >
+                        {formatDateTime(bill.openedAt, i18n.language)}
+                      </Link>
+                      {bill.status === "PAID" && bill.completedAt ? (
+                        <div className="text-xs text-muted-foreground">
+                          {t("billListCompletedAt", {
+                            time: formatDateTime(bill.completedAt, i18n.language),
+                          })}
+                        </div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="align-top">{bill.tableNumber || "-"}</TableCell>
+                    <TableCell className="align-top whitespace-normal">
+                      <BillMenus bill={bill} />
+                    </TableCell>
+                    <TableCell className="align-top whitespace-normal">
+                      <BillPayments bill={bill} />
+                    </TableCell>
+                    <TableCell className="align-top">{formatCurrencyKRW(amounts.total, i18n.language)}</TableCell>
+                    <TableCell className="align-top">
+                      {amounts.discount === null ? "-" : formatCurrencyKRW(amounts.discount, i18n.language)}
+                    </TableCell>
+                    <TableCell className="align-top">{formatCurrencyKRW(amounts.paid, i18n.language)}</TableCell>
+                    <TableCell className={cn("align-top", STATUS_COLOR_CLASS[bill.status])}>
+                      {t(STATUS_LABEL_KEY[bill.status])}
+                    </TableCell>
+                  </TableRow>
+  
+                );
+              })}
             </TableBody>
           </Table>
         )}
