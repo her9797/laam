@@ -63,6 +63,20 @@ const CHART_COLORS = [
   "var(--chart-5)",
 ];
 
+// recharts' own defaults are light-theme only (axis text #666, a white
+// tooltip box whose label inherits the page's text color, a #ccc hover
+// cursor, white slice borders) — in dark theme that leaves the tooltip's
+// date white-on-white and the axis labels barely visible. These swap them
+// for the theme's tokens.
+const AXIS_COLOR = "var(--muted-foreground)";
+const GRID_COLOR = "var(--border)";
+const TOOLTIP_CONTENT_STYLE: React.CSSProperties = {
+  backgroundColor: "var(--popover)",
+  borderColor: "var(--border)",
+  color: "var(--popover-foreground)",
+};
+const SLICE_BORDER_COLOR = "var(--card)";
+
 const TREND_UNIT_LABEL_KEY: Record<TrendUnit, string> = {
   day: "statsTrendUnitDay",
   week: "statsTrendUnitWeek",
@@ -96,12 +110,16 @@ function ShareChart({
     <div role="img" aria-label={ariaLabel} className="h-64 w-full">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
-          <Pie data={data} dataKey="revenue" nameKey={nameKey} outerRadius="80%">
+          <Pie data={data} dataKey="revenue" nameKey={nameKey} outerRadius="80%" stroke={SLICE_BORDER_COLOR}>
             {data.map((_, index) => (
               <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
             ))}
           </Pie>
-          {tooltipContent ? <RechartsTooltip content={tooltipContent} /> : <RechartsTooltip />}
+          {tooltipContent ? (
+            <RechartsTooltip content={tooltipContent} />
+          ) : (
+            <RechartsTooltip contentStyle={TOOLTIP_CONTENT_STYLE} />
+          )}
           <Legend />
         </PieChart>
       </ResponsiveContainer>
@@ -304,10 +322,14 @@ function SalesStatsContent({
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.trend.buckets}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="bucket" />
-                <YAxis />
-                <RechartsTooltip formatter={(value) => formatCurrencyKRW(Number(value), language)} />
+                <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
+                <XAxis dataKey="bucket" stroke={AXIS_COLOR} />
+                <YAxis stroke={AXIS_COLOR} />
+                <RechartsTooltip
+                  formatter={(value) => formatCurrencyKRW(Number(value), language)}
+                  contentStyle={TOOLTIP_CONTENT_STYLE}
+                  cursor={{ fill: "var(--muted)" }}
+                />
                 <Bar dataKey="revenue" fill={CHART_COLORS[0]} />
               </BarChart>
             </ResponsiveContainer>

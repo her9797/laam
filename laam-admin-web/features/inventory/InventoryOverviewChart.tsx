@@ -107,8 +107,21 @@ export function InventoryOverviewChart({ items }: { items: InventoryItem[] }) {
       >
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} layout="vertical" margin={{ top: 4, right: 84, bottom: 4, left: 0 }}>
-            <XAxis type="number" domain={[0, MAX_PERCENT]} tickFormatter={(v) => `${v}%`} />
-            <YAxis type="category" dataKey="label" width={80} interval={0} tick={{ fontSize: 12 }} />
+            {/* recharts' default axis color (#666) is barely visible on the dark theme's surface. */}
+            <XAxis
+              type="number"
+              domain={[0, MAX_PERCENT]}
+              tickFormatter={(v) => `${v}%`}
+              stroke="var(--muted-foreground)"
+            />
+            <YAxis
+              type="category"
+              dataKey="label"
+              width={80}
+              interval={0}
+              tick={{ fontSize: 12 }}
+              stroke="var(--muted-foreground)"
+            />
             <ReferenceLine x={100} stroke="var(--muted-foreground)" strokeDasharray="4 4" />
             <Bar dataKey="percent" barSize={16} isAnimationActive={false}>
               {data.map((entry) => (
