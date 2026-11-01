@@ -6,6 +6,7 @@ import type {
   CreateCategoryInput,
   CreateMenuItemInput,
   MenuItemRecipe,
+  UpdateMenuItemContentInput,
   UpdateMenuItemRecipeInput,
   UploadMenuItemImageInput,
 } from "./model";
@@ -74,6 +75,19 @@ export function updateMenuItemLabelColors(id: string, colors: string[]): Promise
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ colors }),
+  });
+}
+
+/**
+ * Saves the operator's customer-screen description and typed labels
+ * together. `descriptionOverride: ""` falls back to the POS description and
+ * `labels: []` falls back to the Toss labels.
+ */
+export function updateMenuItemContent(id: string, input: UpdateMenuItemContentInput): Promise<AppData> {
+  return fetchJson<AppData>(`${MENU_ITEMS_PATH}/${id}/content`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
   });
 }
 

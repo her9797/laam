@@ -38,7 +38,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { CatalogResyncButton } from "./CatalogResyncButton";
 import { BADGE_COLOR_OPTIONS, MenuItemForm } from "./MenuItemForm";
 import { buildMenuListSearchParams, parseMenuListQuery, type MenuListQuery } from "./list-query-url";
-import { filterItemsByCategory, getMenuItemDisplayImage } from "./model";
+import { MENU_LABEL_CHIP_CLASSES, filterItemsByCategory, getMenuItemDisplayImage } from "./model";
 import { useUpdateMenuItemLabelColorsMutation, useUpdateMenuItemVisibilityMutation } from "./queries";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -274,12 +274,25 @@ export function MenuManagementPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Link
-                      href={`/menu/${item.id}`}
-                      className="text-foreground underline underline-offset-4 hover:font-bold"
-                    >
-                      {item.name}
-                    </Link>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <Link
+                        href={`/menu/${item.id}`}
+                        className="text-foreground underline underline-offset-4 hover:font-bold"
+                      >
+                        {item.name}
+                      </Link>
+                      {/* 손님 화면에 실제로 보이는 설명. 관리자가 덮어쓴 설명이면 포스 설명과 구분해 표시한다. */}
+                      {item.description ? (
+                        <span className="line-clamp-2 max-w-72 text-xs whitespace-pre-line text-muted-foreground">
+                          {item.descriptionOverride ? (
+                            <span className="mr-1 rounded-3xl bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
+                              {t("itemDescriptionOverridden")}
+                            </span>
+                          ) : null}
+                          {item.description}
+                        </span>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell>{category?.label ?? item.categoryId}</TableCell>
                   <TableCell>{item.price}</TableCell>
@@ -298,7 +311,28 @@ export function MenuManagementPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {item.labels?.length ? (
+                    {item.customLabels?.length && item.labels?.length ? (
+                      // 운영자가 입력한 라벨은 메뉴 상세에서 고친다. 아래 색 선택은 위치 기반으로
+                      // 포스 라벨 색을 바꾸므로 여기서 보여 주면 엉뚱한 라벨이 바뀐다.
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <div className="flex flex-wrap gap-1">
+                          {item.labels.map((label, index) => (
+                            <span
+                              key={`${label.text}-${index}`}
+                              className={`rounded-3xl px-2 py-0.5 text-xs ${MENU_LABEL_CHIP_CLASSES[label.color ?? ""] ?? "bg-muted text-foreground"}`}
+                            >
+                              {label.text}
+                            </span>
+                          ))}
+                        </div>
+                        <Link
+                          href={`/menu/${item.id}`}
+                          className="text-xs text-muted-foreground underline underline-offset-4"
+                        >
+                          {t("itemLabelsEditLink")}
+                        </Link>
+                      </div>
+                    ) : item.labels?.length ? (
                       <div className="flex min-w-0 flex-col gap-1">
                         {item.labels.map((label, index) => (
                           <div key={`${label.text}-${index}`} className="flex items-center gap-1">

@@ -96,3 +96,13 @@ test("메뉴 상세 모달은 화면을 기준으로 가운데에 고정되도�
   assert.match(source, /import\s+\{\s*createPortal\s*\}\s+from\s+"react-dom"/);
   assert.match(source, /createPortal\([\s\S]*document\.body,\s*\)/);
 });
+
+test("메뉴 라벨은 # 없이 관리자가 정한 글자 그대로 보여준다(목록·상세)", async () => {
+  const source = await readFile(new URL("../components/menu/menu-item-card.tsx", import.meta.url), "utf8");
+  const tags = source.match(/className="menu-label-tag"[\s\S]*?<\/span>/g) ?? [];
+  assert.equal(tags.length, 2, "목록과 상세 두 곳에서 라벨을 그린다");
+  for (const tag of tags) {
+    assert.match(tag, />\s*\{label\.text\}\s*</);
+    assert.doesNotMatch(tag, /#\{label\.text\}/);
+  }
+});

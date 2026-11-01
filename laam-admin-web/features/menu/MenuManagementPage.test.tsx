@@ -557,6 +557,64 @@ describe("MenuManagementPage", () => {
     });
   });
 
+  it("shows operator-typed labels without the Toss color picker, pointing to the item detail", () => {
+    // customLabels가 있으면 item.labels는 운영자가 입력한 라벨이다. 위치 기반 label-colors API는
+    // 포스 라벨 색을 바꾸므로 여기서 색을 고르면 엉뚱한 라벨이 바뀐다.
+    mockBootstrap({
+      data: {
+        ...FIXTURE,
+        items: [
+          {
+            ...FIXTURE.items[0],
+            customLabels: [{ text: "스무디", color: "pink" }],
+            labels: [{ text: "스무디", color: "pink" }],
+          },
+        ],
+      },
+    });
+
+    render(<MenuManagementPage />);
+
+    const menuRow = screen.getByText("아메리카노").closest("tr") as HTMLElement;
+    expect(within(menuRow).getByText("스무디")).toBeInTheDocument();
+    expect(within(menuRow).queryAllByRole("combobox")).toHaveLength(0);
+    expect(within(menuRow).getByRole("link", { name: "상세에서 라벨 수정" })).toHaveAttribute("href", "/menu/menu-1");
+  });
+
+  it("shows the customer-facing description under the name, marking an operator override", () => {
+    mockBootstrap({
+      data: {
+        ...FIXTURE,
+        items: [
+          { ...FIXTURE.items[0], id: "menu-1", name: "아메리카노", description: "시원한 아메리카노" },
+          {
+            ...FIXTURE.items[0],
+            id: "menu-2",
+            name: "라떼",
+            description: "직접 쓴 설명",
+            posDescription: "포스 설명",
+            descriptionOverride: "직접 쓴 설명",
+          },
+          { ...FIXTURE.items[0], id: "menu-3", name: "물", description: "" },
+        ],
+      },
+    });
+
+    render(<MenuManagementPage />);
+
+    const posRow = screen.getByText("아메리카노").closest("tr") as HTMLElement;
+    expect(within(posRow).getByText("시원한 아메리카노")).toBeInTheDocument();
+    expect(within(posRow).queryByText("직접 입력")).not.toBeInTheDocument();
+
+    const overrideRow = screen.getByText("라떼").closest("tr") as HTMLElement;
+    expect(within(overrideRow).getByText("직접 쓴 설명")).toBeInTheDocument();
+    expect(within(overrideRow).getByText("직접 입력")).toBeInTheDocument();
+    expect(within(overrideRow).queryByText("포스 설명")).not.toBeInTheDocument();
+
+    const emptyRow = screen.getByText("물").closest("tr") as HTMLElement;
+    expect(within(emptyRow).queryByText("직접 입력")).not.toBeInTheDocument();
+  });
+
   it("does not show a delete action in the list (removed from this screen's UI)", () => {
     render(<MenuManagementPage />);
 

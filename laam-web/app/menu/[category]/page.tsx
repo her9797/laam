@@ -2,8 +2,10 @@ import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
 import { CategoryScreen } from "@/components/screens/category-screen";
-import { getQrCookieName, isQrSessionValid } from "@/lib/auth";
+import { getQrCookieName } from "@/lib/auth";
 import { getCustomerMenuCategories } from "@/lib/customer-menu-categories";
+import { PREVIEW_COOKIE_NAME } from "@/lib/customer-template";
+import { canViewCustomerPage } from "@/lib/preview-request";
 import {
   getAppData,
   getMenuItemsByCategoryFromData,
@@ -20,7 +22,7 @@ type CategoryPageProps = {
 export default async function CategoryPage({ params }: CategoryPageProps) {
   const cookieStore = await cookies();
   const qrSession = cookieStore.get(getQrCookieName())?.value;
-  if (!isQrSessionValid(qrSession)) {
+  if (!canViewCustomerPage(qrSession, cookieStore.get(PREVIEW_COOKIE_NAME)?.value)) {
     redirect("/access-required");
   }
 

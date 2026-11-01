@@ -69,6 +69,8 @@ export type StoreInfo = {
   songRequestCopy: string;
   requestCopy: string;
   eventCopy: string;
+  /** 관리자가 고른 손님 화면 템플릿. 없거나 모르는 값이면 classic(lib/customer-template.ts). */
+  customerTemplate?: string;
 };
 
 export const store: StoreInfo = {

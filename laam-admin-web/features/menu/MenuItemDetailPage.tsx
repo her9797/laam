@@ -2,34 +2,55 @@
 
 import "@/i18n/client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
+import { RiAddLine, RiCloseLine } from "@remixicon/react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states/PageStates";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
+import type { AppData, MenuItem, MenuItemCustomLabel } from "@/features/bootstrap/model";
 import { useBootstrapQuery } from "@/features/bootstrap/queries";
 
-import { useMenuItemRecipeQuery, useUpdateMenuItemRecipeMutation } from "./queries";
-import { getMenuItemDisplayImage, type UpdateMenuItemRecipeInput } from "./model";
+import {
+  useMenuItemRecipeQuery,
+  useUpdateMenuItemContentMutation,
+  useUpdateMenuItemRecipeMutation,
+} from "./queries";
+import {
+  DESCRIPTION_OVERRIDE_MAX_LENGTH,
+  getMenuItemDisplayImage,
+  MAX_MENU_ITEM_LABELS,
+  MENU_LABEL_CHIP_CLASSES,
+  MENU_LABEL_COLOR_OPTIONS,
+  MENU_LABEL_TEXT_MAX_LENGTH,
+  type UpdateMenuItemContentInput,
+  type UpdateMenuItemRecipeInput,
+} from "./model";
+
+const SELECT_CLASS = "h-8 rounded-3xl border border-transparent bg-input/50 px-2 text-sm text-foreground";
 
 /**
- * Menu item detail screen: basic item info (name/category/price/
- * description) is read-only here — `laam-api` has no menu-item update
- * endpoint yet — while the recipe fields are editable and saved through
- * the dedicated admin-only recipe subresource (never part of the shared
- * `AppData` bootstrap tree; see `MenuItemRecipe` in `./model`).
+ * Menu item detail screen. Name/category/price stay read-only (they come
+ * from the POS catalog sync). The customer-screen description override and
+ * the operator's own labels (typed here, max 5) are editable and saved together through the admin
+ * `content` endpoint, which returns the full `AppData` tree. The recipe
+ * fields are saved through the dedicated admin-only recipe subresource
+ * (never part of the shared `AppData` bootstrap tree; see `MenuItemRecipe`
+ * in `./model`).
  */
 export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
   const { t } = useTranslation("menu");
   const bootstrapQuery = useBootstrapQuery();
   const recipeQuery = useMenuItemRecipeQuery(menuItemId);
   const updateRecipeMutation = useUpdateMenuItemRecipeMutation(menuItemId);
+  const updateContentMutation = useUpdateMenuItemContentMutation(menuItemId);
 
   // Same render-time seeding pattern as `StoreCopyPage`: seeded once from
   // the first loaded recipe response (guarded by `form === null`), never
@@ -41,6 +62,24 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
   if (form === null && recipeQuery.data) {
     setForm({ ingredients: recipeQuery.data.ingredients, instructions: recipeQuery.data.instructions });
   }
+
+  // Seeded once from bootstrap the same way as the recipe form above.
+  const item = bootstrapQuery.data?.items.find((candidate) => candidate.id === menuItemId);
+  const [content, setContent] = useState<UpdateMenuItemContentInput | null>(null);
+  // Label errors appear only after a save attempt, then track the input live.
+  const [showLabelErrors, setShowLabelErrors] = useState(false);
+  if (content === null && item) {
+    setContent(savedContent(item));
+  }
+  // 라벨 줄을 지우면 그 버튼이 사라지므로 포커스를 "라벨 추가"로 옮긴다(Enter 연타로 연달아 지워지지 않게).
+  const addLabelButtonRef = useRef<HTMLButtonElement>(null);
+  const focusAddAfterRemoveRef = useRef(false);
+  useEffect(() => {
+    if (focusAddAfterRemoveRef.current) {
+      focusAddAfterRemoveRef.current = false;
+      addLabelButtonRef.current?.focus();
+    }
+  }, [content?.labels]);
 
   if (bootstrapQuery.isError) {
     return (
@@ -56,14 +95,54 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
     return <LoadingState label={t("loading")} />;
   }
 
-  const item = bootstrapQuery.data?.items.find((candidate) => candidate.id === menuItemId);
-  if (!item) {
+  if (!item || !content) {
     return <EmptyState title={t("detailNotFoundTitle")} description={t("detailNotFoundDescription")} />;
   }
 
   const category = bootstrapQuery.data?.categories.find((candidate) => candidate.id === item.categoryId);
   const displayImage = getMenuItemDisplayImage(item);
   const options = item.options ?? [];
+  const saved = savedContent(item);
+  const trimmedLabels = content.labels.map((label) => ({ text: label.text.trim(), color: label.color }));
+  const labelErrors = labelErrorKeys(trimmedLabels);
+  const isContentUnchanged =
+    content.descriptionOverride === saved.descriptionOverride &&
+    JSON.stringify(trimmedLabels) === JSON.stringify(saved.labels);
+  const posDescription = item.posDescription ?? item.description;
+  // `item.labels` is the effective list; it only shows the Toss labels while no custom label is saved.
+  const posLabels = saved.labels.length === 0 ? (item.labels ?? []) : [];
+  const isLabelLimitReached = content.labels.length >= MAX_MENU_ITEM_LABELS;
+
+  function updateLabels(update: (labels: MenuItemCustomLabel[]) => MenuItemCustomLabel[]) {
+    setContent((current) => (current ? { ...current, labels: update(current.labels) } : current));
+  }
+
+  function changeLabel(index: number, change: Partial<MenuItemCustomLabel>) {
+    updateLabels((labels) => labels.map((label, i) => (i === index ? { ...label, ...change } : label)));
+  }
+
+  function handleContentSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!content) {
+      return;
+    }
+    setStatusMessage(null);
+    setShowLabelErrors(true);
+    if (labelErrors.some(Boolean)) {
+      return;
+    }
+    updateContentMutation.mutate({ descriptionOverride: content.descriptionOverride, labels: trimmedLabels }, {
+      onSuccess: (appData: AppData) => {
+        const savedItem = appData.items.find((candidate) => candidate.id === menuItemId);
+        if (savedItem) {
+          setContent(savedContent(savedItem));
+        }
+        setShowLabelErrors(false);
+        setStatusMessage(t("detailContentSaved"));
+      },
+      // No onError: a failed save keeps the operator's edits.
+    });
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -128,11 +207,169 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
               <span className="text-sm text-muted-foreground">{t("itemPriceLabel")}</span>
               <span className="text-sm text-foreground">{item.price}</span>
             </div>
-            <div className="flex flex-col gap-1 sm:col-span-2">
-              <span className="text-sm text-muted-foreground">{t("itemDescriptionLabel")}</span>
-              <span className="text-sm text-foreground">{item.description}</span>
-            </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <h2 id="menu-item-content-title">{t("detailContentTitle")}</h2>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form
+            aria-labelledby="menu-item-content-title"
+            className="flex flex-col gap-4"
+            onSubmit={handleContentSubmit}
+            noValidate
+          >
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-baseline justify-between gap-2">
+                <Label htmlFor="menu-item-description-override">{t("itemDescriptionLabel")}</Label>
+                <span className="text-xs text-muted-foreground">
+                  {t("detailContentDescriptionCount", {
+                    count: content.descriptionOverride.length,
+                    max: DESCRIPTION_OVERRIDE_MAX_LENGTH,
+                  })}
+                </span>
+              </div>
+              <Textarea
+                id="menu-item-description-override"
+                aria-describedby="menu-item-description-hint"
+                maxLength={DESCRIPTION_OVERRIDE_MAX_LENGTH}
+                placeholder={posDescription}
+                value={content.descriptionOverride}
+                onChange={(event) =>
+                  setContent((current) =>
+                    current ? { ...current, descriptionOverride: event.target.value } : current,
+                  )
+                }
+              />
+              <p id="menu-item-description-hint" className="text-xs text-muted-foreground">
+                {posDescription
+                  ? t("detailContentPosHint", { description: posDescription })
+                  : t("detailContentPosHintEmpty")}
+              </p>
+            </div>
+
+            <div role="group" aria-labelledby="menu-item-labels-title" className="flex flex-col gap-2">
+              <span id="menu-item-labels-title" className="text-sm font-medium text-foreground">
+                {t("detailContentLabelsLabel")}
+              </span>
+              {content.labels.length > 0 ? (
+                <ol className="flex flex-col gap-2">
+                  {content.labels.map((label, index) => {
+                    const n = index + 1;
+                    const errorKey = showLabelErrors ? labelErrors[index] : null;
+                    const errorId = `menu-item-label-${index}-error`;
+                    const preview = label.text.trim();
+                    return (
+                      // Rows are fully controlled with no local state, so index keys stay correct on removal.
+                      <li key={index} className="flex flex-col gap-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Input
+                            aria-label={t("detailContentLabelTextAria", { n })}
+                            aria-invalid={errorKey ? true : undefined}
+                            aria-describedby={errorKey ? errorId : undefined}
+                            className="w-40"
+                            maxLength={MENU_LABEL_TEXT_MAX_LENGTH}
+                            value={label.text}
+                            onChange={(event) => changeLabel(index, { text: event.target.value })}
+                          />
+                          <select
+                            aria-label={t("detailContentLabelColorAria", { n })}
+                            className={SELECT_CLASS}
+                            value={label.color}
+                            onChange={(event) => changeLabel(index, { color: event.target.value })}
+                          >
+                            {MENU_LABEL_COLOR_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {t(option.labelKey)}
+                              </option>
+                            ))}
+                          </select>
+                          {preview ? (
+                            <span
+                              data-label-color={label.color}
+                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                MENU_LABEL_CHIP_CLASSES[label.color] ?? "bg-muted text-foreground"
+                              }`}
+                            >
+                              {preview}
+                            </span>
+                          ) : null}
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label={t("detailContentLabelRemoveAria", { n })}
+                            onClick={() => {
+                              focusAddAfterRemoveRef.current = true;
+                              updateLabels((labels) => labels.filter((_, i) => i !== index));
+                            }}
+                          >
+                            <RiCloseLine aria-hidden="true" />
+                          </Button>
+                        </div>
+                        {errorKey ? (
+                          <p id={errorId} className="text-xs text-destructive">
+                            {t(errorKey)}
+                          </p>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ol>
+              ) : null}
+              <Button
+                ref={addLabelButtonRef}
+                type="button"
+                size="sm"
+                variant="outline"
+                className="self-start"
+                disabled={isLabelLimitReached}
+                onClick={() => updateLabels((labels) => [...labels, { text: "", color: MENU_LABEL_COLOR_OPTIONS[0].value }])}
+              >
+                <RiAddLine data-icon="inline-start" aria-hidden="true" />
+                {t("detailContentLabelAdd")}
+              </Button>
+              {isLabelLimitReached ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("detailContentLabelsLimit", { max: MAX_MENU_ITEM_LABELS })}
+                </p>
+              ) : null}
+              {content.labels.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("detailContentLabelsFallback")}
+                  {posLabels.length > 0 ? (
+                    <>
+                      {" "}
+                      <span>
+                        {t("detailContentPosLabels", { labels: posLabels.map((label) => label.text).join(", ") })}
+                      </span>
+                    </>
+                  ) : null}
+                </p>
+              ) : null}
+            </div>
+
+            {updateContentMutation.isError ? (
+              <p role="alert" className="text-sm text-destructive">
+                {updateContentMutation.error instanceof Error
+                  ? updateContentMutation.error.message
+                  : t("detailContentSaveFailed")}
+              </p>
+            ) : null}
+
+            <Button
+              type="submit"
+              disabled={isContentUnchanged || updateContentMutation.isPending}
+              className="self-start"
+            >
+              {t("common:save")}
+            </Button>
+          </form>
         </CardContent>
       </Card>
 
@@ -247,4 +484,27 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
       </Card>
     </div>
   );
+}
+
+function savedContent(item: MenuItem): UpdateMenuItemContentInput {
+  return {
+    descriptionOverride: item.descriptionOverride ?? "",
+    labels: (item.customLabels ?? []).map((label) => ({ text: label.text, color: label.color })),
+  };
+}
+
+/** Mirrors laam-api's checks (non-empty, no case-insensitive duplicates) so the save stops before a 400. */
+function labelErrorKeys(labels: MenuItemCustomLabel[]): (string | null)[] {
+  const seen = new Set<string>();
+  return labels.map(({ text }) => {
+    if (!text) {
+      return "detailContentLabelRequired";
+    }
+    const key = text.toLowerCase();
+    if (seen.has(key)) {
+      return "detailContentLabelDuplicate";
+    }
+    seen.add(key);
+    return null;
+  });
 }

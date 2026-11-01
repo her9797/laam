@@ -1,7 +1,10 @@
 import { FloatingHomeBadge } from "@/components/navigation/floating-home-badge";
 import { PrimaryNav } from "@/components/navigation/primary-nav";
 import { SecretCouponTrigger } from "@/components/easter-egg/secret-coupon-trigger";
-import type { MenuCategory, MenuItem, StoreInfo } from "@/data/menu-data";
+import { ChalkboardHomeScreen } from "@/components/templates/chalkboard-home-screen";
+import { NotebookHomeScreen } from "@/components/templates/notebook-home-screen";
+import type { MenuCategory, MenuItem, NoticeItem, StoreInfo } from "@/data/menu-data";
+import type { CustomerTemplate } from "@/lib/customer-template";
 import { customerNavigationItems } from "@/lib/customer-navigation";
 import Link from "next/link";
 
@@ -10,9 +13,18 @@ type HomeScreenProps = {
   featuredCategory?: MenuCategory;
   featuredItems: MenuItem[];
   canEditTable: boolean;
+  template?: CustomerTemplate;
+  notices?: NoticeItem[];
 };
 
-export function HomeScreen({ store, canEditTable }: HomeScreenProps) {
+export function HomeScreen({ store, canEditTable, template = "classic", notices = [] }: HomeScreenProps) {
+  if (template === "notebook") {
+    return <NotebookHomeScreen store={store} canEditTable={canEditTable} />;
+  }
+  if (template === "chalkboard") {
+    return <ChalkboardHomeScreen store={store} canEditTable={canEditTable} notice={notices[0]} />;
+  }
+
   return (
     <main className="page-shell">
       <FloatingHomeBadge active />

@@ -36,6 +36,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 	registerTossPlaceWebhookRoutes(mux, repository, cfg)
 	registerExpenseRoutes(mux, repository, cfg)
 	registerPaymentBillRoutes(mux, repository, cfg)
+	registerStoreTemplateRoutes(mux, repository, cfg)
 
 	mux.HandleFunc("/api/v1/bootstrap", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -402,6 +403,38 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 			default:
 				writeMethodNotAllowed(w)
 			}
+			return
+		}
+
+		if strings.HasSuffix(path, "/content") {
+			menuItemID := strings.Trim(strings.TrimSuffix(path, "/content"), "/")
+			if menuItemID == "" {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodPatch {
+				writeMethodNotAllowed(w)
+				return
+			}
+
+			var payload updateMenuItemContentRequest
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+
+			if err := repository.UpdateMenuItemContent(r.Context(), menuItemID, payload.DescriptionOverride, payload.Labels); err != nil {
+				writeStoreError(w, err)
+				return
+			}
+
+			bootstrap, err := repository.GetBootstrapData(r.Context())
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			writeJSON(w, http.StatusOK, bootstrap)
 			return
 		}
 

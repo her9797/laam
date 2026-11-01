@@ -1,0 +1,700 @@
+/* 공책(notebook) 템플릿: 시안 D. 모든 규칙은 html[data-template="notebook"] 아래에만 둔다(classic 보호, test/customer-template-screens.test.mts). */
+
+html[data-template="notebook"] {
+  color-scheme: light;
+  --nb-ink: #26324a;
+  --nb-muted: #5a6478;
+  --nb-red: #b23a3a;
+  --nb-paper: #fbf8ef;
+  --nb-marker: #ffe36e;
+  --nb-hand: var(--font-gaegu), "Apple SD Gothic Neo", sans-serif;
+  --nb-sheet: min(440px, calc(100vw - 60px));
+  --background: #e9e3d3;
+  --page-background: var(--nb-paper);
+  --surface: transparent;
+  --surface-strong: #fffdf6;
+  --surface-soft: #fffdf6;
+  --border: rgba(38, 50, 74, 0.2);
+  --border-strong: rgba(38, 50, 74, 0.45);
+  --line: rgba(38, 50, 74, 0.3);
+  --text: var(--nb-ink);
+  --muted: var(--nb-muted);
+  --muted-strong: #3b4660;
+  --shadow: 0 6px 18px rgba(38, 50, 74, 0.18);
+}
+
+html[data-template="notebook"] body {
+  /* 공통 CSS의 최소 폭 320px을 풀어 폴드 접힘(280px) 같은 좁은 화면에서 잘리지 않게 한다 */
+  min-width: 0;
+  background: #e9e3d3;
+  color: var(--nb-ink);
+  font-family: var(--font-nanum-gothic), "Apple SD Gothic Neo", sans-serif;
+}
+
+/* 종이 한 장: 줄, 빨간 여백선. 오른쪽 50px은 인덱스 탭 자리 */
+html[data-template="notebook"] .page-shell {
+  position: relative;
+  left: -20px;
+  width: var(--nb-sheet);
+  min-height: calc(100vh - 32px);
+  margin: 18px auto 14px;
+  padding: 44px 14px 96px 52px;
+  border-radius: 4px;
+  background-color: var(--nb-paper);
+  background-image:
+    linear-gradient(to right, transparent 40px, #e9a3a3 40px 42px, transparent 42px),
+    repeating-linear-gradient(to bottom, transparent 0 31px, #cfdcea 31px 32px);
+  box-shadow: var(--shadow);
+}
+
+html[data-template="notebook"] .phone-frame {
+  width: 100%;
+}
+
+html[data-template="notebook"] .notebook-spiral {
+  position: absolute;
+  top: 8px;
+  left: calc(50% - var(--nb-sheet) / 2 - 2px);
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  width: calc(var(--nb-sheet) - 36px);
+  pointer-events: none;
+}
+
+/* 관리자 미리보기 띠(약 60px)가 있을 때 스프링이 띠 밑에 가려지지 않게 종이 윗변에 다시 맞춘다 */
+html[data-template="notebook"] body:has(.template-preview-banner) .notebook-spiral {
+  top: 68px;
+}
+
+html[data-template="notebook"] .notebook-spiral span {
+  width: 8px;
+  height: 24px;
+  border-radius: 4px;
+  background: #7b8394;
+  box-shadow: inset -2px 0 0 #565e70;
+}
+
+html[data-template="notebook"] .notebook-index-tabs {
+  position: fixed;
+  top: 110px;
+  left: calc(50% + var(--nb-sheet) / 2 - 20px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+html[data-template="notebook"] .notebook-index-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 84px;
+  border-radius: 0 10px 10px 0;
+  box-shadow: 2px 2px 4px rgba(38, 50, 74, 0.14);
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 19px;
+  font-weight: 700;
+  writing-mode: vertical-rl;
+  transition: width 120ms ease;
+}
+
+html[data-template="notebook"] .notebook-index-tab:nth-child(1) { background: #ffe36e; }
+html[data-template="notebook"] .notebook-index-tab:nth-child(2) { background: #c9e8d2; }
+html[data-template="notebook"] .notebook-index-tab:nth-child(3) { background: #cfe0f5; }
+html[data-template="notebook"] .notebook-index-tab:nth-child(4) { background: #ffc9d6; }
+html[data-template="notebook"] .notebook-index-tab:nth-child(5) { background: #e6d6f2; }
+
+html[data-template="notebook"] .notebook-index-tab.active {
+  width: 56px;
+}
+
+/* 머리글: 카드 대신 종이에 바로 쓴 글씨 */
+html[data-template="notebook"] .hero-card,
+html[data-template="notebook"] .content-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html[data-template="notebook"] .hero-card,
+html[data-template="notebook"] .content-card {
+  padding: 0;
+}
+
+html[data-template="notebook"] .eyebrow,
+html[data-template="notebook"] .section-kicker {
+  color: var(--nb-muted);
+  font-family: var(--nb-hand);
+  font-size: 17px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+html[data-template="notebook"] .hero-card h1,
+html[data-template="notebook"] .section-header h2,
+html[data-template="notebook"] .payment-card h1 {
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: clamp(28px, 9vw, 38px);
+  font-weight: 700;
+  line-height: 64px;
+  word-break: keep-all;
+}
+
+html[data-template="notebook"] .section-header h2 {
+  font-size: 30px;
+  line-height: 48px;
+}
+
+html[data-template="notebook"] .hero-copy,
+html[data-template="notebook"] .hero-meta {
+  margin-top: 0;
+  color: var(--muted-strong);
+  font-size: 15px;
+  line-height: 32px;
+}
+
+/* 주요 메뉴 줄은 오른쪽 인덱스 탭이 대신한다 */
+html[data-template="notebook"] .primary-strip {
+  display: none;
+}
+
+/* 카테고리: 손으로 친 동그라미 */
+html[data-template="notebook"] .floating-subnav-shell {
+  padding: 4px 0;
+}
+
+html[data-template="notebook"] .category-pill,
+html[data-template="notebook"] .request-category-pill {
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 2px solid transparent;
+  border-radius: 50% 45% 55% 48%;
+  background: transparent;
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 20px;
+}
+
+html[data-template="notebook"] .category-pill.active,
+html[data-template="notebook"] .request-category-pill.active {
+  border-color: var(--nb-red);
+  background: transparent;
+  color: var(--nb-ink);
+  font-weight: 700;
+}
+
+html[data-template="notebook"] .request-category-pill-special {
+  color: var(--nb-red);
+}
+
+/* 메뉴 목록: 폴라로이드 썸네일, 빨간 펜 가격 */
+/* 종이 폭이 좁아 배지·가격은 설명 아래 줄로 내린다(시안 D) */
+html[data-template="notebook"] .menu-item {
+  grid-template-columns: 62px minmax(0, 1fr);
+  /* 사진 칸이 두 줄(이름·설명 / 가격)에 걸치고 남는 높이는 가격 줄이 받는다. 설명이 없어도 가격이 이름 바로 아래 붙는다 */
+  grid-template-rows: auto 1fr;
+  row-gap: 6px;
+  align-items: start;
+}
+
+html[data-template="notebook"] .menu-item .menu-icon {
+  grid-row: 1 / span 2;
+}
+
+/* 설명이 비어 있으면 빈 줄을 남기지 않는다 */
+html[data-template="notebook"] .menu-copy p:empty {
+  display: none;
+}
+
+html[data-template="notebook"] .menu-side {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-items: start;
+}
+
+html[data-template="notebook"] .menu-side .menu-badge {
+  margin: 0;
+}
+
+html[data-template="notebook"] .menu-side .menu-badge-placeholder {
+  display: none;
+}
+
+html[data-template="notebook"] .menu-item + .menu-item,
+html[data-template="notebook"] .notice-item + .notice-item {
+  border-top: 1.5px dashed var(--line);
+}
+
+html[data-template="notebook"] .menu-icon {
+  width: 58px;
+  height: 64px;
+  padding: 4px 4px 10px;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: 0 3px 8px rgba(38, 50, 74, 0.16);
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 24px;
+  transform: rotate(-3deg);
+}
+
+html[data-template="notebook"] .menu-item:nth-child(even) .menu-icon {
+  transform: rotate(3deg);
+}
+
+html[data-template="notebook"] .menu-copy h3,
+html[data-template="notebook"] .menu-detail-modal h2 {
+  font-family: var(--nb-hand);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+html[data-template="notebook"] .menu-detail-modal h2 {
+  font-size: 32px;
+}
+
+html[data-template="notebook"] .menu-copy p:last-child,
+html[data-template="notebook"] .menu-detail-description {
+  color: var(--nb-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+html[data-template="notebook"] .menu-price,
+html[data-template="notebook"] .menu-detail-price {
+  padding: 0 8px;
+  border: 2px solid var(--nb-red);
+  border-radius: 50% 45% 52% 48%;
+  color: var(--nb-red);
+  font-family: var(--nb-hand);
+  font-size: 19px;
+  transform: rotate(-3deg);
+}
+
+html[data-template="notebook"] .menu-detail-price {
+  display: inline-block;
+  font-size: 22px;
+}
+
+html[data-template="notebook"] .menu-badge,
+html[data-template="notebook"] .menu-badge[data-badge-color],
+html[data-template="notebook"] .menu-label-tag,
+html[data-template="notebook"] .menu-label-tag[data-label-color] {
+  border: 1.5px solid var(--nb-red);
+  background: transparent;
+  color: var(--nb-red);
+  font-family: var(--nb-hand);
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+/* 라벨이 여러 개면 이름이 한 글자씩 끊기지 않게, 자리가 모자랄 때 라벨을 다음 줄로 내린다(classic은 nowrap 유지) */
+html[data-template="notebook"] .menu-title-row {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+html[data-template="notebook"] .menu-title-row h3,
+html[data-template="notebook"] .menu-title-row h2 {
+  word-break: keep-all;
+}
+
+html[data-template="notebook"] .menu-title-row .menu-labels {
+  flex-shrink: 1;
+}
+
+/* 관리자가 고른 라벨 색(초록·주황·분홍·파랑)을 펜 색으로 구분한다. 색이 없으면 카드가 green으로 넘긴다. */
+html[data-template="notebook"] .menu-label-tag[data-label-color="green"] { border-color: #1f7a4a; color: #1f7a4a; }
+html[data-template="notebook"] .menu-label-tag[data-label-color="amber"] { border-color: #8a5a00; color: #8a5a00; }
+html[data-template="notebook"] .menu-label-tag[data-label-color="pink"] { border-color: #b0336e; color: #b0336e; }
+html[data-template="notebook"] .menu-label-tag[data-label-color="blue"] { border-color: #2756a8; color: #2756a8; }
+
+html[data-template="notebook"] .customer-menu-page-controls button {
+  min-height: 44px;
+  border-color: var(--nb-ink);
+  background: transparent;
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 18px;
+}
+
+/* 모달: 테이프로 붙인 메모지 */
+html[data-template="notebook"] .table-session-modal-backdrop {
+  background: rgba(38, 50, 74, 0.45);
+}
+
+html[data-template="notebook"] .table-session-modal {
+  position: relative;
+  border: 0;
+  border-radius: 4px;
+  background: #fffdf6;
+  box-shadow: 0 14px 30px rgba(38, 50, 74, 0.3);
+  color: var(--nb-ink);
+}
+
+html[data-template="notebook"] .table-session-modal::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  width: 88px;
+  height: 22px;
+  margin-left: -44px;
+  background: rgba(240, 205, 120, 0.8);
+  transform: rotate(-2deg);
+}
+
+html[data-template="notebook"] .table-session-modal.secret-coupon-modal::before {
+  content: none;
+}
+
+html[data-template="notebook"] .table-session-modal-header h2 {
+  font-family: var(--nb-hand);
+  font-size: 30px;
+}
+
+html[data-template="notebook"] .menu-option-group {
+  border: 0;
+  border-top: 1.5px dashed var(--line);
+  border-radius: 0;
+}
+
+html[data-template="notebook"] .menu-option-group legend,
+html[data-template="notebook"] .menu-option-choice {
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 19px;
+}
+
+html[data-template="notebook"] .menu-option-group legend span {
+  color: var(--nb-red);
+  font-size: 15px;
+}
+
+html[data-template="notebook"] .menu-detail-order-success {
+  color: #1f7a4a;
+  font-family: var(--nb-hand);
+  font-size: 20px;
+}
+
+html[data-template="notebook"] .menu-detail-order-confirm {
+  font-family: var(--nb-hand);
+  font-size: 21px;
+}
+
+html[data-template="notebook"] .table-session-error,
+html[data-template="notebook"] .payment-notice {
+  color: var(--nb-red);
+}
+
+/* 입력: 줄 위에 쓰는 밑줄 */
+html[data-template="notebook"] .request-compose-field span,
+html[data-template="notebook"] .request-compose-fieldset-legend {
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 19px;
+  font-weight: 700;
+}
+
+html[data-template="notebook"] .request-compose-fieldset {
+  border: 0;
+  border-top: 1.5px dashed var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+html[data-template="notebook"] .request-compose-field input,
+html[data-template="notebook"] .request-compose-field select,
+html[data-template="notebook"] .request-compose-field textarea,
+html[data-template="notebook"] .menu-option-quantity {
+  min-height: 44px;
+  border: 0;
+  border-bottom: 2px solid var(--nb-ink);
+  border-radius: 0;
+  background: transparent;
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 20px;
+}
+
+html[data-template="notebook"] .request-compose-field textarea {
+  line-height: 32px;
+}
+
+html[data-template="notebook"] .request-compose-field input:focus,
+html[data-template="notebook"] .request-compose-field select:focus,
+html[data-template="notebook"] .request-compose-field textarea:focus {
+  border-color: var(--nb-red);
+}
+
+/* 키보드 포커스: 밝은 종이 위에서 보이는 빨간 펜 링(classic의 흰 링 대신) */
+html[data-template="notebook"] :focus-visible,
+html[data-template="notebook"] .menu-item-button:focus-visible {
+  outline: 3px solid var(--nb-red);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+html[data-template="notebook"] .request-compose-field input::placeholder,
+html[data-template="notebook"] .request-compose-field textarea::placeholder {
+  color: var(--nb-muted);
+  opacity: 1;
+}
+
+/* WebKit은 기본 모양(menulist) 선택칸에 높이를 적용하지 않는다. 템플릿에서만 기본 모양을 끄고 화살표를 직접 그려 44px를 맞춘다. */
+html[data-template="notebook"] .request-compose-field select {
+  height: 44px;
+  padding-right: 36px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2326324a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 12px center;
+  background-repeat: no-repeat;
+}
+
+/* 버튼: 형광펜 칠한 종이 버튼 */
+html[data-template="notebook"] .request-compose-button,
+html[data-template="notebook"] .payment-submit {
+  min-height: 52px;
+  border: 0;
+  border-radius: 14px 10px 16px 12px;
+  background: var(--nb-marker);
+  box-shadow: 2px 3px 0 var(--nb-ink);
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+html[data-template="notebook"] .table-session-modal-close,
+html[data-template="notebook"] .table-session-action,
+html[data-template="notebook"] .table-session-pill {
+  border: 2px solid var(--nb-ink);
+  border-radius: 12px 16px 10px 14px;
+  background: transparent;
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 19px;
+}
+
+html[data-template="notebook"] .table-session-pill.active {
+  background: var(--nb-marker);
+}
+
+html[data-template="notebook"] .request-toast {
+  border-radius: 4px;
+  background: #ffe98a;
+  box-shadow: 0 6px 12px rgba(38, 50, 74, 0.2);
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 19px;
+}
+
+/* 공지: 테이프 붙인 포스트잇 */
+html[data-template="notebook"] .notice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+html[data-template="notebook"] .notice-item {
+  position: relative;
+  padding: 16px 14px 14px;
+  background: #ffe98a;
+  box-shadow: 0 5px 12px rgba(38, 50, 74, 0.14);
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 19px;
+  line-height: 1.35;
+  transform: rotate(-1.5deg);
+}
+
+html[data-template="notebook"] .notice-item + .notice-item {
+  border-top: 0;
+}
+
+html[data-template="notebook"] .notice-item:nth-child(3n + 2) {
+  background: #ffffff;
+  transform: rotate(1.5deg);
+}
+
+html[data-template="notebook"] .notice-item:nth-child(3n) {
+  background: #e6d6f2;
+  transform: rotate(-0.5deg);
+}
+
+/* 떠 있는 버튼: 테이프와 스티커 */
+html[data-template="notebook"] .floating-table-badge {
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: rgba(240, 205, 120, 0.85);
+  box-shadow: none;
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 18px;
+  letter-spacing: 0;
+  transform: rotate(3deg);
+}
+
+html[data-template="notebook"] .floating-home-core,
+html[data-template="notebook"] .scroll-top-button {
+  border: 2px solid var(--nb-ink);
+  background: #fffdf6;
+  box-shadow: 0 4px 10px rgba(38, 50, 74, 0.18);
+  color: var(--nb-ink);
+}
+
+html[data-template="notebook"] .floating-home-badge {
+  color: var(--nb-ink);
+}
+
+/* 결제 화면 */
+html[data-template="notebook"] .payment-summary,
+html[data-template="notebook"] .payment-widget-slot {
+  background: #fffdf6;
+}
+
+/* 공책 홈 */
+html[data-template="notebook"] .notebook-date {
+  margin: 0;
+  color: var(--nb-muted);
+  font-family: var(--nb-hand);
+  font-size: 18px;
+  line-height: 32px;
+}
+
+html[data-template="notebook"] .notebook-title {
+  margin: 0;
+  font-family: var(--nb-hand);
+  font-size: 52px;
+  font-weight: 700;
+  line-height: 64px;
+}
+
+html[data-template="notebook"] .notebook-lead {
+  margin: 0;
+  font-size: 15px;
+  line-height: 32px;
+}
+
+html[data-template="notebook"] .notebook-polaroid {
+  position: relative;
+  width: 196px;
+  margin: 22px auto 0;
+  padding: 10px 10px 40px;
+  background: #ffffff;
+  box-shadow: 0 6px 14px rgba(38, 50, 74, 0.18);
+  transform: rotate(-4deg);
+}
+
+html[data-template="notebook"] .notebook-polaroid img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+html[data-template="notebook"] .notebook-tape {
+  position: absolute;
+  top: -12px;
+  left: 62px;
+  width: 72px;
+  height: 22px;
+  background: rgba(240, 205, 120, 0.75);
+  transform: rotate(3deg);
+}
+
+html[data-template="notebook"] .notebook-polaroid figcaption {
+  position: absolute;
+  right: 0;
+  bottom: 4px;
+  left: 0;
+  text-align: center;
+}
+
+html[data-template="notebook"] .notebook-polaroid-secret {
+  min-height: 44px;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 20px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+html[data-template="notebook"] .notebook-todo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 26px;
+}
+
+html[data-template="notebook"] .notebook-todo-title {
+  margin: 0;
+  color: var(--nb-red);
+  font-family: var(--nb-hand);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 32px;
+}
+
+html[data-template="notebook"] .notebook-todo-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  color: var(--nb-ink);
+  font-family: var(--nb-hand);
+  font-size: 21px;
+}
+
+html[data-template="notebook"] .notebook-todo-item svg {
+  flex: none;
+  width: 22px;
+  height: 22px;
+}
+
+html[data-template="notebook"] .notebook-todo-item.highlight span {
+  background: linear-gradient(transparent 55%, var(--nb-marker) 55%);
+  font-weight: 700;
+}
+
+html[data-template="notebook"] .notebook-todo-item em {
+  color: var(--nb-red);
+  font-style: normal;
+}
+
+html[data-template="notebook"] .notebook-links {
+  display: flex;
+  gap: 16px;
+  margin-top: 24px;
+  font-size: 12px;
+}
+
+html[data-template="notebook"] .notebook-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--nb-ink);
+  text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-template="notebook"] .notebook-index-tab {
+    transition: none;
+  }
+}

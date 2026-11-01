@@ -11,6 +11,7 @@ import {
   getMenuItemRecipe,
   resyncCatalog,
   updateCategoryVisibility,
+  updateMenuItemContent,
   updateMenuItemLabelColors,
   updateMenuItemRecipe,
   updateMenuItemVisibility,
@@ -19,6 +20,7 @@ import {
 import type {
   CreateCategoryInput,
   CreateMenuItemInput,
+  UpdateMenuItemContentInput,
   UpdateMenuItemRecipeInput,
   UploadMenuItemImageInput,
 } from "./model";
@@ -99,6 +101,14 @@ export function useUploadMenuItemImageMutation() {
   const applyBootstrapUpdate = useApplyBootstrapUpdate();
   return useMutation({
     mutationFn: (input: UploadMenuItemImageInput) => uploadMenuItemImage(input),
+    onSuccess: applyBootstrapUpdate,
+  });
+}
+
+export function useUpdateMenuItemContentMutation(menuItemId: string) {
+  const applyBootstrapUpdate = useApplyBootstrapUpdate();
+  return useMutation({
+    mutationFn: (input: UpdateMenuItemContentInput) => updateMenuItemContent(menuItemId, input),
     onSuccess: applyBootstrapUpdate,
   });
 }

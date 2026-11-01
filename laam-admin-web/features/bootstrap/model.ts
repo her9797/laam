@@ -11,6 +11,8 @@ export type StoreInfo = {
   songRequestCopy: string;
   requestCopy: string;
   eventCopy: string;
+  /** Customer screen template id (`classic`/`notebook`/`chalkboard`). Optional: older APIs omit it, and an unknown value must not crash the admin. */
+  customerTemplate?: string;
 };
 
 export type MenuCategory = {
@@ -57,13 +59,27 @@ export type MenuItem = {
   badge?: string;
   badgeColor?: string;
   name: string;
+  /** Effective customer description: `descriptionOverride` when set, else `posDescription`. */
   description: string;
+  /** POS/Toss original description. Optional: older APIs omit it. */
+  posDescription?: string;
+  /** Operator's customer-screen description ("" = none). Optional: older APIs omit it. */
+  descriptionOverride?: string;
+  /** Operator-typed labels in display order ([] = none). Optional: older APIs omit it. */
+  customLabels?: MenuItemCustomLabel[];
   price: string;
   imageUrl?: string;
   isVisible: boolean;
   images?: MenuImage[];
   options?: MenuOption[];
+  /** Effective labels: `customLabels` if any, else the Toss labels. */
   labels?: MenuItemLabel[];
+};
+
+/** Label the operator typed on the item's detail page; `color` is one of green/amber/pink/blue. */
+export type MenuItemCustomLabel = {
+  text: string;
+  color: string;
 };
 
 // `text`는 토스플레이스 카탈로그 라벨 그대로이며 동기화가 관리한다. `color`는

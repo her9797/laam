@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchJson } from "@/lib/api/fetch-json";
 
-import { getMenuItemRecipe, resyncCatalog, updateMenuItemLabelColors, updateMenuItemRecipe } from "./api";
+import {
+  getMenuItemRecipe,
+  resyncCatalog,
+  updateMenuItemContent,
+  updateMenuItemLabelColors,
+  updateMenuItemRecipe,
+} from "./api";
 
 vi.mock("@/lib/api/fetch-json", () => ({ fetchJson: vi.fn() }));
 
@@ -69,6 +75,28 @@ describe("updateMenuItemLabelColors", () => {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ colors: ["green", "amber"] }),
+    });
+  });
+});
+
+describe("updateMenuItemContent", () => {
+  beforeEach(() => {
+    vi.mocked(fetchJson)
+      .mockReset()
+      .mockResolvedValue({ store: {}, categories: [], items: [], requestGuides: [], notices: [] });
+  });
+
+  it("PATCHes a menu item's description override and typed labels", async () => {
+    const labels = [
+      { text: "인기", color: "pink" },
+      { text: "신메뉴", color: "green" },
+    ];
+    await updateMenuItemContent("menu-1", { descriptionOverride: "새 설명", labels });
+
+    expect(fetchJson).toHaveBeenCalledWith("/api/admin/menu-items/menu-1/content", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ descriptionOverride: "새 설명", labels }),
     });
   });
 });

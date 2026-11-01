@@ -21,6 +21,7 @@ import {
   RiLogoutBoxRLine,
   RiMegaphoneLine,
   RiMusic2Line,
+  RiPaletteLine,
   RiPlayCircleLine,
   RiQrCodeLine,
   RiRestaurantLine,
@@ -105,7 +106,7 @@ const REQUEST_NAV_GROUP: NavGroup = {
 };
 
 // A labeled sub-section rather than its own link — "상품 관리" has no page
-// of its own, only the two management screens nested under it.
+// of its own, only the management screens nested under it.
 const PRODUCT_NAV_GROUP: NavGroup = {
   labelKey: "navProducts",
   icon: RiShoppingBag3Line,
@@ -151,6 +152,7 @@ const BOTTOM_NAV_ITEMS: NavItem[] = [
   { href: "/notices", labelKey: "navNotices", icon: RiMegaphoneLine },
   { href: "/coupons", labelKey: "navCoupons", icon: RiCoupon3Line },
   { href: "/store-copy", labelKey: "navStoreCopy", icon: RiFileTextLine },
+  { href: "/store-template", labelKey: "navStoreTemplate", icon: RiPaletteLine },
   // A standalone top-level item, not folded into any of the grouped
   // dropdowns above — this is an operational diagnostics screen, not a
   // guest-request/order/product management concern.

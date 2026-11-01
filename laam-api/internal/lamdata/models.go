@@ -1,12 +1,31 @@
 package lamdata
 
+import "slices"
+
+// CustomerTemplates lists the customer screen templates laam-web can render.
+// Adding a template is one entry here; the DB column defaults to "classic".
+var CustomerTemplates = []string{"classic", "notebook", "chalkboard"}
+
+func IsCustomerTemplate(id string) bool {
+	return slices.Contains(CustomerTemplates, id)
+}
+
+// MenuLabelColors lists the colors an operator can pick for a menu label;
+// laam-web and laam-admin-web render exactly these.
+var MenuLabelColors = []string{"green", "amber", "pink", "blue"}
+
+func IsMenuLabelColor(color string) bool {
+	return slices.Contains(MenuLabelColors, color)
+}
+
 type StoreInfo struct {
-	Name            string `json:"name"`
-	Subtitle        string `json:"subtitle"`
-	Address         string `json:"address"`
-	SongRequestCopy string `json:"songRequestCopy"`
-	RequestCopy     string `json:"requestCopy"`
-	EventCopy       string `json:"eventCopy"`
+	Name             string `json:"name"`
+	Subtitle         string `json:"subtitle"`
+	Address          string `json:"address"`
+	SongRequestCopy  string `json:"songRequestCopy"`
+	RequestCopy      string `json:"requestCopy"`
+	EventCopy        string `json:"eventCopy"`
+	CustomerTemplate string `json:"customerTemplate"`
 }
 
 type MenuCategory struct {
@@ -28,11 +47,21 @@ type MenuItem struct {
 	Images      []MenuImage     `json:"images,omitempty"`
 	Options     []MenuOption    `json:"options,omitempty"`
 	Labels      []MenuItemLabel `json:"labels,omitempty"`
+
+	// Description above is the effective text: DescriptionOverride when the
+	// operator set one, otherwise PosDescription (the Toss catalog text).
+	PosDescription      string `json:"posDescription"`
+	DescriptionOverride string `json:"descriptionOverride"`
+	// CustomLabels are the operator's free-text labels for this item in
+	// display order (always an array); when non-empty, Labels shows them
+	// instead of the Toss labels.
+	CustomLabels []MenuItemLabel `json:"customLabels"`
 }
 
 // MenuItemLabel pairs a Toss Place catalog label (in the order Toss gives
 // it) with the color an operator assigned to that position. Text always
 // comes from Toss; Color is admin-set and empty until they pick one.
+// MenuItem.CustomLabels reuses it for operator-written labels (color required).
 type MenuItemLabel struct {
 	Text  string `json:"text"`
 	Color string `json:"color,omitempty"`

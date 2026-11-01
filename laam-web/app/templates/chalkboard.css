@@ -1,0 +1,648 @@
+/* 칠판(chalkboard) 템플릿: 시안 G. 모든 규칙은 html[data-template="chalkboard"] 아래에만 둔다(classic 보호, test/customer-template-screens.test.mts). */
+
+html[data-template="chalkboard"] {
+  color-scheme: dark;
+  --ch-board: #222524;
+  --ch-frame: #3c3f3d;
+  --ch-chalk: #edebe4;
+  --ch-dim: #b9b7af;
+  --ch-yellow: #f2d675;
+  --ch-pink: #f4a6b8;
+  --ch-blue: #9cc9f0;
+  --ch-green: #b8e0b0;
+  --ch-hand: var(--font-nanum-pen), "Apple SD Gothic Neo", sans-serif;
+  --background: #2b2e2c;
+  --page-background: var(--ch-board);
+  --surface: transparent;
+  --surface-strong: #252827;
+  --surface-soft: #252827;
+  --border: rgba(237, 235, 228, 0.22);
+  --border-strong: rgba(237, 235, 228, 0.45);
+  --line: rgba(237, 235, 228, 0.3);
+  --text: var(--ch-chalk);
+  --muted: var(--ch-dim);
+  --muted-strong: #d6d4cc;
+  --shadow: none;
+}
+
+html[data-template="chalkboard"] body {
+  /* 공통 CSS의 최소 폭 320px을 풀어 폴드 접힘(280px) 같은 좁은 화면에서 잘리지 않게 한다 */
+  min-width: 0;
+  background: #2b2e2c;
+  color: var(--ch-chalk);
+  font-family: var(--font-nanum-gothic), "Apple SD Gothic Neo", sans-serif;
+}
+
+/* 나무 틀을 두른 칠판 한 장 */
+html[data-template="chalkboard"] .page-shell {
+  width: min(430px, calc(100% - 28px));
+  min-height: calc(100vh - 28px);
+  margin: 14px auto;
+  padding: 20px 18px 100px;
+  border: 10px solid var(--ch-frame);
+  outline: 2px solid #1c1e1d;
+  background: var(--ch-board);
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.45);
+}
+
+html[data-template="chalkboard"] .phone-frame {
+  width: 100%;
+}
+
+html[data-template="chalkboard"] .hero-card,
+html[data-template="chalkboard"] .content-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html[data-template="chalkboard"] .hero-card {
+  padding: 8px 0 0;
+  text-align: center;
+}
+
+html[data-template="chalkboard"] .eyebrow,
+html[data-template="chalkboard"] .section-kicker {
+  color: var(--ch-dim);
+  font-family: var(--ch-hand);
+  font-size: 22px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+html[data-template="chalkboard"] .hero-card h1,
+html[data-template="chalkboard"] .section-header h2,
+html[data-template="chalkboard"] .payment-card h1 {
+  color: var(--ch-chalk);
+  font-family: var(--ch-hand);
+  font-size: 54px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+html[data-template="chalkboard"] .hero-card h1::after {
+  content: "";
+  display: block;
+  width: 150px;
+  height: 8px;
+  margin: 6px auto 0;
+  border-bottom: 3px solid var(--ch-yellow);
+  border-radius: 50%;
+  transform: rotate(-2deg);
+}
+
+html[data-template="chalkboard"] .section-header h2 {
+  font-size: 36px;
+}
+
+html[data-template="chalkboard"] .hero-copy,
+html[data-template="chalkboard"] .hero-meta {
+  color: var(--ch-dim);
+  font-size: 14px;
+}
+
+/* 카테고리: 분필 동그라미 */
+html[data-template="chalkboard"] .floating-subnav-shell {
+  padding: 4px 0;
+}
+
+html[data-template="chalkboard"] .category-strip {
+  justify-content: flex-start;
+}
+
+html[data-template="chalkboard"] .category-pill,
+html[data-template="chalkboard"] .request-category-pill {
+  min-height: 44px;
+  padding: 4px 10px;
+  border: 2px solid transparent;
+  border-radius: 48% 52% 45% 55%;
+  background: transparent;
+  color: var(--ch-chalk);
+  font-family: var(--ch-hand);
+  font-size: 26px;
+}
+
+html[data-template="chalkboard"] .category-pill.active,
+html[data-template="chalkboard"] .request-category-pill.active {
+  border-color: var(--ch-yellow);
+  background: transparent;
+  color: var(--ch-yellow);
+}
+
+html[data-template="chalkboard"] .request-category-pill-special {
+  color: var(--ch-yellow);
+}
+
+/* 메뉴 목록: 사진 없이 분필 글씨와 점선 */
+html[data-template="chalkboard"] .menu-item {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+}
+
+html[data-template="chalkboard"] .menu-item + .menu-item,
+html[data-template="chalkboard"] .notice-item + .notice-item {
+  border-top: 2px dotted var(--line);
+}
+
+/* 사진이 있는 메뉴만 분필 액자 썸네일을 보여주고, 사진이 없으면 칠판 메뉴판처럼 글씨만 둔다.
+   기본은 숨기고 :has로 다시 켜서, :has를 모르는 오래된 브라우저에서도 예전처럼 글씨만 깔끔하게 나온다. */
+html[data-template="chalkboard"] .menu-icon {
+  display: none;
+}
+
+html[data-template="chalkboard"] .menu-icon:has(.menu-icon-image) {
+  display: grid;
+}
+
+/* 사진·설명·가격 3칸은 좁은 화면에서 설명 칸이 너무 좁아져 이름이 끊긴다. 가격은 설명 아래로 내린다. */
+html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) {
+  grid-template-columns: 64px minmax(0, 1fr);
+  /* 사진 칸이 두 줄(이름·설명 / 가격)에 걸치고 남는 높이는 가격 줄이 받는다. 설명이 없어도 가격이 이름 바로 아래 붙는다 */
+  grid-template-rows: auto 1fr;
+  row-gap: 6px;
+  align-items: start;
+}
+
+html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) .menu-icon {
+  grid-row: 1 / span 2;
+}
+
+/* 설명이 비어 있으면 빈 줄을 남기지 않는다 */
+html[data-template="chalkboard"] .menu-copy p:empty {
+  display: none;
+}
+
+html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) .menu-side {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) .menu-side .menu-badge {
+  margin: 0;
+}
+
+/* 빈 배지 자리(visibility: hidden)가 가격 위에 한 줄을 차지하지 않게 없앤다(사진 유무와 상관없이) */
+html[data-template="chalkboard"] .menu-badge-placeholder {
+  display: none;
+}
+
+html[data-template="chalkboard"] .menu-icon {
+  width: 64px;
+  height: 64px;
+  padding: 3px;
+  border: 2px solid var(--ch-chalk);
+  border-radius: 10px 14px 9px 12px;
+  background: transparent;
+  box-sizing: border-box;
+}
+
+html[data-template="chalkboard"] .menu-icon-image {
+  border-radius: 6px;
+}
+
+html[data-template="chalkboard"] .menu-copy h3 {
+  color: var(--ch-chalk);
+  font-family: var(--ch-hand);
+  font-size: 32px;
+  font-weight: 400;
+}
+
+html[data-template="chalkboard"] .menu-item:has(.menu-badge[data-badge-color="green"]:not(.menu-badge-placeholder)) h3 { color: var(--ch-green); }
+html[data-template="chalkboard"] .menu-item:has(.menu-badge[data-badge-color="amber"]:not(.menu-badge-placeholder)) h3 { color: var(--ch-yellow); }
+html[data-template="chalkboard"] .menu-item:has(.menu-badge[data-badge-color="pink"]:not(.menu-badge-placeholder)) h3 { color: var(--ch-pink); }
+html[data-template="chalkboard"] .menu-item:has(.menu-badge[data-badge-color="blue"]:not(.menu-badge-placeholder)) h3 { color: var(--ch-blue); }
+
+html[data-template="chalkboard"] .menu-copy p:last-child,
+html[data-template="chalkboard"] .menu-detail-description {
+  color: var(--ch-dim);
+  font-size: 14px;
+}
+
+html[data-template="chalkboard"] .menu-price,
+html[data-template="chalkboard"] .menu-detail-price {
+  color: var(--ch-chalk);
+  font-family: var(--ch-hand);
+  font-size: 28px;
+  font-weight: 400;
+}
+
+html[data-template="chalkboard"] .menu-badge,
+html[data-template="chalkboard"] .menu-badge[data-badge-color],
+html[data-template="chalkboard"] .menu-label-tag,
+html[data-template="chalkboard"] .menu-label-tag[data-label-color] {
+  border: 1.5px dashed var(--ch-dim);
+  background: transparent;
+  color: var(--ch-dim);
+  font-family: var(--ch-hand);
+  font-size: 16px;
+  letter-spacing: 0;
+}
+
+/* 라벨이 여러 개면 이름이 한 글자씩 끊기지 않게, 자리가 모자랄 때 라벨을 다음 줄로 내린다(classic은 nowrap 유지) */
+html[data-template="chalkboard"] .menu-title-row {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+html[data-template="chalkboard"] .menu-title-row h3,
+html[data-template="chalkboard"] .menu-title-row h2 {
+  word-break: keep-all;
+}
+
+html[data-template="chalkboard"] .menu-title-row .menu-labels {
+  flex-shrink: 1;
+}
+
+/* 관리자가 고른 라벨 색(초록·주황·분홍·파랑)을 분필 색으로 구분한다. 색이 없으면 카드가 green으로 넘긴다. */
+html[data-template="chalkboard"] .menu-label-tag[data-label-color="green"] { border-color: var(--ch-green); color: var(--ch-green); }
+html[data-template="chalkboard"] .menu-label-tag[data-label-color="amber"] { border-color: var(--ch-yellow); color: var(--ch-yellow); }
+html[data-template="chalkboard"] .menu-label-tag[data-label-color="pink"] { border-color: var(--ch-pink); color: var(--ch-pink); }
+html[data-template="chalkboard"] .menu-label-tag[data-label-color="blue"] { border-color: var(--ch-blue); color: var(--ch-blue); }
+
+html[data-template="chalkboard"] .customer-menu-page-controls button {
+  min-height: 44px;
+  border: 2px solid var(--ch-chalk);
+  background: transparent;
+  color: var(--ch-chalk);
+  font-family: var(--ch-hand);
+  font-size: 22px;
+}
+
+/* 모달: 작은 칠판 */
+html[data-template="chalkboard"] .table-session-modal-backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+html[data-template="chalkboard"] .table-session-modal {
+  border: 8px solid #4a4d4b;
+  border-radius: 6px;
+  background: #252827;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
+  color: var(--ch-chalk);
+}
+
+html[data-template="chalkboard"] .table-session-modal.secret-coupon-modal {
+  border: none;
+}
+
+html[data-template="chalkboard"] .menu-detail-modal h2,
+html[data-template="chalkboard"] .table-session-modal-header h2 {
+  color: var(--ch-yellow);
+  font-family: var(--ch-hand);
+  font-size: 46px;
+  font-weight: 400;
+}
+
+html[data-template="chalkboard"] .menu-option-group {
+  border: 2px dashed var(--line);
+  border-radius: 12px 16px 10px 14px;
+}
+
+html[data-template="chalkboard"] .menu-option-group legend,
+html[data-template="chalkboard"] .menu-option-choice {
+  color: var(--ch-chalk);
+  font-family: var(--ch-hand);
+  font-size: 26px;
+}
+
+html[data-template="chalkboard"] .menu-option-group legend span {
+  color: var(--ch-pink);
+  font-size: 20px;
+}
+
+html[data-template="chalkboard"] .menu-option-choice small {
+  font-family: var(--font-nanum-gothic), sans-serif;
+  font-size: 12px;
+}
+
+html[data-template="chalkboard"] .menu-detail-order-success {
+  color: var(--ch-green);
+  font-family: var(--ch-hand);
+  font-size: 26px;
+}
+
+html[data-template="chalkboard"] .menu-detail-order-confirm {
+  font-family: var(--ch-hand);
+  font-size: 28px;
+}
+
+html[data-template="chalkboard"] .table-session-error,
+html[data-template="chalkboard"] .payment-notice {
+  color: var(--ch-pink);
+}
+
+/* 입력: 분필 점선 칸 */
+html[data-template="chalkboard"] .request-compose-field span,
+html[data-template="chalkboard"] .request-compose-fieldset-legend {
+  color: var(--ch-chalk);
+  font-family: var(--ch-hand);
+  font-size: 26px;
+}
+
+html[data-template="chalkboard"] .request-compose-fieldset {
+  border: 2px dashed var(--line);
+  border-radius: 14px 18px 12px 16px;
+  background: transparent;
+}
+
+html[data-template="chalkboard"] .request-compose-field input,
+html[data-template="chalkboard"] .request-compose-field select,
+html[data-template="chalkboard"] .request-compose-field textarea,
+html[data-template="chalkboard"] .menu-option-quantity {
+  min-height: 44px;
+  border: 2px dashed rgba(237, 235, 228, 0.45);
+  border-radius: 12px 16px 10px 14px;
+  background: transparent;
+  color: var(--ch-chalk);
+}
+
+html[data-template="chalkboard"] .request-compose-field select option {
+  background: var(--ch-board);
+}
+
+html[data-template="chalkboard"] .request-compose-field input:focus,
+html[data-template="chalkboard"] .request-compose-field select:focus,
+html[data-template="chalkboard"] .request-compose-field textarea:focus {
+  border-color: var(--ch-yellow);
+}
+
+/* 키보드 포커스: 칠판 위에서 보이는 노란 분필 링 */
+html[data-template="chalkboard"] :focus-visible,
+html[data-template="chalkboard"] .menu-item-button:focus-visible {
+  outline: 3px solid var(--ch-yellow);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+html[data-template="chalkboard"] .request-compose-field input::placeholder,
+html[data-template="chalkboard"] .request-compose-field textarea::placeholder {
+  color: var(--ch-dim);
+  opacity: 1;
+}
+
+/* WebKit은 기본 모양(menulist) 선택칸에 높이를 적용하지 않는다. 템플릿에서만 기본 모양을 끄고 화살표를 직접 그려 44px를 맞춘다. */
+html[data-template="chalkboard"] .request-compose-field select {
+  height: 44px;
+  padding-right: 36px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23edebe4' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 12px center;
+  background-repeat: no-repeat;
+}
+
+/* 버튼: 분필로 칠한 칸 */
+html[data-template="chalkboard"] .request-compose-button,
+html[data-template="chalkboard"] .payment-submit {
+  min-height: 56px;
+  border: 0;
+  border-radius: 14px 10px 16px 12px;
+  background: var(--ch-yellow);
+  color: #222524;
+  font-family: var(--ch-hand);
+  font-size: 30px;
+}
+
+html[data-template="chalkboard"] .table-session-modal-close,
+html[data-template="chalkboard"] .table-session-action,
+html[data-template="chalkboard"] .table-session-pill {
+  border: 2px solid var(--ch-chalk);
+  border-radius: 12px 16px 10px 14px;
+  background: transparent;
+  color: var(--ch-chalk);
+  font-family: var(--ch-hand);
+  font-size: 24px;
+}
+
+html[data-template="chalkboard"] .table-session-pill.active {
+  border-color: var(--ch-yellow);
+  color: var(--ch-yellow);
+}
+
+html[data-template="chalkboard"] .request-toast {
+  border: 2px solid var(--ch-green);
+  background: #252827;
+  color: var(--ch-green);
+  font-family: var(--ch-hand);
+  font-size: 24px;
+}
+
+/* 공지: 색 분필 점선 상자 */
+html[data-template="chalkboard"] .notice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 테두리를 글자색(currentColor)에 묶어 classic의 .notice-item + .notice-item 윗선도 같은 색이 되게 한다 */
+html[data-template="chalkboard"] .notice-item,
+html[data-template="chalkboard"] .notice-item + .notice-item {
+  padding: 12px 14px;
+  border: 2px dashed currentColor;
+  border-radius: 14px 18px 12px 16px;
+  color: var(--ch-blue);
+  font-family: var(--ch-hand);
+  font-size: 26px;
+  line-height: 1.15;
+  transform: rotate(-1deg);
+}
+
+html[data-template="chalkboard"] .notice-item:nth-child(3n + 2) {
+  color: var(--ch-yellow);
+  transform: rotate(1deg);
+}
+
+html[data-template="chalkboard"] .notice-item:nth-child(3n) {
+  color: var(--ch-chalk);
+  transform: rotate(-0.5deg);
+}
+
+/* 요청·공지 화면 위의 주요 메뉴 줄 */
+html[data-template="chalkboard"] .primary-pill,
+html[data-template="chalkboard"] .primary-pill-special,
+html[data-template="chalkboard"] .primary-pill.active,
+html[data-template="chalkboard"] .primary-pill-special.active {
+  border: 2px solid transparent;
+  border-radius: 48% 52% 45% 55%;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ch-chalk);
+  font-family: var(--ch-hand);
+  font-size: 20px;
+  text-shadow: none;
+  animation: none;
+}
+
+html[data-template="chalkboard"] .primary-pill-special,
+html[data-template="chalkboard"] .primary-pill-special.active {
+  color: var(--ch-yellow);
+}
+
+html[data-template="chalkboard"] .primary-pill-special::after {
+  content: none;
+}
+
+html[data-template="chalkboard"] .primary-pill.active,
+html[data-template="chalkboard"] .primary-pill-special.active {
+  border-color: var(--ch-yellow);
+}
+
+/* 떠 있는 버튼 */
+html[data-template="chalkboard"] .floating-table-badge {
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border: 2px solid var(--ch-chalk);
+  border-radius: 10px 14px 9px 12px;
+  background: var(--ch-board);
+  box-shadow: none;
+  color: var(--ch-chalk);
+  font-family: var(--ch-hand);
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+html[data-template="chalkboard"] .floating-home-core,
+html[data-template="chalkboard"] .scroll-top-button {
+  border: 2px solid var(--ch-chalk);
+  background: var(--ch-board);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  color: var(--ch-chalk);
+}
+
+html[data-template="chalkboard"] .payment-summary,
+html[data-template="chalkboard"] .payment-widget-slot {
+  background: #252827;
+}
+
+/* 칠판 홈 */
+html[data-template="chalkboard"] .chalk-since {
+  margin: 0;
+  color: var(--ch-dim);
+  font-family: var(--ch-hand);
+  font-size: 22px;
+}
+
+html[data-template="chalkboard"] .chalk-sign {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 14px;
+  text-align: center;
+}
+
+html[data-template="chalkboard"] .chalk-logo-secret {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+html[data-template="chalkboard"] .chalk-logo-secret img {
+  display: block;
+  width: 120px;
+  height: 120px;
+  filter: invert(1);
+  mix-blend-mode: screen;
+  opacity: 0.92;
+}
+
+html[data-template="chalkboard"] .chalk-sign h1 {
+  margin: 0;
+  font-family: var(--ch-hand);
+  font-size: 44px;
+  font-weight: 400;
+  line-height: 1;
+  transform: rotate(-4deg);
+}
+
+html[data-template="chalkboard"] .chalk-sign h1 span {
+  color: var(--ch-yellow);
+}
+
+html[data-template="chalkboard"] .chalk-sign p {
+  margin: 6px 0 0;
+  color: var(--ch-dim);
+  font-family: var(--ch-hand);
+  font-size: 22px;
+}
+
+html[data-template="chalkboard"] .chalk-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+/* 요청·공지 화면 위 주요 메뉴 줄: 누르는 칸 사이 8px */
+html[data-template="chalkboard"] .primary-strip {
+  gap: 8px;
+}
+
+html[data-template="chalkboard"] .chalk-menu-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 64px;
+  padding: 0 16px;
+  border: 2px solid var(--ch-yellow);
+  border-radius: 16px 10px 18px 12px;
+  color: var(--ch-yellow);
+  font-family: var(--ch-hand);
+  font-size: 36px;
+}
+
+html[data-template="chalkboard"] .chalk-menu-link strong {
+  font-weight: 400;
+}
+
+html[data-template="chalkboard"] .chalk-nav-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 50px;
+  padding: 8px 4px 0;
+  border-bottom: 1px dashed rgba(237, 235, 228, 0.25);
+  color: var(--ch-chalk);
+}
+
+html[data-template="chalkboard"] .chalk-check {
+  font-family: var(--ch-hand);
+  font-size: 26px;
+}
+
+html[data-template="chalkboard"] .chalk-nav-item[data-tone="blue"] .chalk-check { color: var(--ch-blue); }
+html[data-template="chalkboard"] .chalk-nav-item[data-tone="pink"] .chalk-check { color: var(--ch-pink); }
+html[data-template="chalkboard"] .chalk-nav-item[data-tone="yellow"] .chalk-check { color: var(--ch-yellow); }
+html[data-template="chalkboard"] .chalk-nav-item[data-tone="green"] .chalk-check { color: var(--ch-green); }
+
+html[data-template="chalkboard"] .chalk-nav-label {
+  font-family: var(--ch-hand);
+  font-size: 30px;
+}
+
+html[data-template="chalkboard"] .chalk-nav-description {
+  margin-left: auto;
+  color: var(--ch-dim);
+  font-size: 13px;
+}
+
+html[data-template="chalkboard"] .chalk-notice {
+  display: block;
+  margin-top: 22px;
+  padding: 12px;
+  border: 2px dashed var(--ch-blue);
+  border-radius: 14px;
+  color: var(--ch-blue);
+  font-family: var(--ch-hand);
+  font-size: 26px;
+  line-height: 1.15;
+  text-align: center;
+  white-space: pre-line;
+  transform: rotate(1.5deg);
+}

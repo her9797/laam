@@ -140,7 +140,8 @@ test.describe("관리자 MVP 핵심 흐름", () => {
     await mockCreateMenuItem(page, refreshedAppData);
 
     await page.goto("/menu");
-    await expect(page.getByText("아메리카노")).toBeVisible();
+    // 리스트에 설명("시원한 아메리카노")도 보이므로 이름 링크로 찾는다.
+    await expect(page.getByRole("link", { name: "아메리카노" })).toBeVisible();
 
     // The create form lives in a dialog behind this trigger now (see
     // `features/menu/MenuItemForm.tsx`); it is no longer inline on the page.

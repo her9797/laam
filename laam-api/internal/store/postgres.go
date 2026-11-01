@@ -275,6 +275,7 @@ CREATE INDEX IF NOT EXISTS idx_payment_order_option_choices_order_id ON payment_
 ALTER TABLE store_profile ADD COLUMN IF NOT EXISTS song_request_copy TEXT NOT NULL DEFAULT '';
 ALTER TABLE store_profile ADD COLUMN IF NOT EXISTS request_copy TEXT NOT NULL DEFAULT '';
 ALTER TABLE store_profile ADD COLUMN IF NOT EXISTS event_copy TEXT NOT NULL DEFAULT '';
+ALTER TABLE store_profile ADD COLUMN IF NOT EXISTS customer_template TEXT NOT NULL DEFAULT 'classic';
 UPDATE store_profile SET name = 'laam' WHERE id = 1 AND name = 'lam';
 UPDATE store_profile
 SET address = '서울 마포구 망원동 57-23'
@@ -521,6 +522,8 @@ CREATE INDEX IF NOT EXISTS idx_payment_orders_pos_order_id ON payment_orders (po
 ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS pos_moved_out_at TIMESTAMPTZ;
 ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS pos_origin_order_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_payment_orders_pos_move_candidates ON payment_orders (created_at) WHERE status IN ('READY', 'ACKNOWLEDGED') AND pos_order_id IS NOT NULL;
+ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS description_override TEXT;
+ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS custom_labels JSONB NOT NULL DEFAULT '[]'::jsonb;
 `)
 	if err != nil {
 		return err
@@ -813,10 +816,29 @@ func (r *Repository) UpdateStoreCopies(ctx context.Context, songRequestCopy stri
 	return nil
 }
 
+// UpdateStoreTemplate sets the customer screen template; only ids in
+// lamdata.CustomerTemplates are accepted.
+func (r *Repository) UpdateStoreTemplate(ctx context.Context, template string) error {
+	template = strings.TrimSpace(template)
+	if !lamdata.IsCustomerTemplate(template) {
+		return ErrInvalidInput
+	}
+
+	result, err := r.pool.Exec(ctx, `UPDATE store_profile SET customer_template = $1 WHERE id = 1`, template)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapData, error) {
 	storeInfo := lamdata.StoreInfo{}
-	if err := r.pool.QueryRow(ctx, `SELECT name, subtitle, address, song_request_copy, request_copy, event_copy FROM store_profile WHERE id = 1`).Scan(
-		&storeInfo.Name, &storeInfo.Subtitle, &storeInfo.Address, &storeInfo.SongRequestCopy, &storeInfo.RequestCopy, &storeInfo.EventCopy,
+	if err := r.pool.QueryRow(ctx, `SELECT name, subtitle, address, song_request_copy, request_copy, event_copy, customer_template FROM store_profile WHERE id = 1`).Scan(
+		&storeInfo.Name, &storeInfo.Subtitle, &storeInfo.Address, &storeInfo.SongRequestCopy, &storeInfo.RequestCopy, &storeInfo.EventCopy, &storeInfo.CustomerTemplate,
 	); err != nil {
 		return lamdata.BootstrapData{}, err
 	}
@@ -839,7 +861,7 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		return lamdata.BootstrapData{}, err
 	}
 
-	menuRows, err := r.pool.Query(ctx, `SELECT id, category_id, COALESCE(badge, ''), COALESCE(badge_color, ''), name, description, price, COALESCE(toss_image_url, ''), is_visible, toss_labels, label_colors FROM menu_items ORDER BY sort_order, id`)
+	menuRows, err := r.pool.Query(ctx, `SELECT id, category_id, COALESCE(badge, ''), COALESCE(badge_color, ''), name, description, COALESCE(description_override, ''), price, COALESCE(toss_image_url, ''), is_visible, toss_labels, label_colors, custom_labels FROM menu_items ORDER BY sort_order, id`)
 	if err != nil {
 		return lamdata.BootstrapData{}, err
 	}
@@ -849,8 +871,13 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 	for menuRows.Next() {
 		var item lamdata.MenuItem
 		var tossLabels, labelColors []string
-		if err := menuRows.Scan(&item.ID, &item.CategoryID, &item.Badge, &item.BadgeColor, &item.Name, &item.Description, &item.Price, &item.ImageURL, &item.IsVisible, &tossLabels, &labelColors); err != nil {
+		if err := menuRows.Scan(&item.ID, &item.CategoryID, &item.Badge, &item.BadgeColor, &item.Name, &item.PosDescription, &item.DescriptionOverride, &item.Price, &item.ImageURL, &item.IsVisible, &tossLabels, &labelColors, &item.CustomLabels); err != nil {
 			return lamdata.BootstrapData{}, err
+		}
+		item.DescriptionOverride = strings.TrimSpace(item.DescriptionOverride)
+		item.Description = item.PosDescription
+		if item.DescriptionOverride != "" {
+			item.Description = item.DescriptionOverride
 		}
 		for index, text := range tossLabels {
 			label := lamdata.MenuItemLabel{Text: text}
@@ -858,6 +885,10 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 				label.Color = labelColors[index]
 			}
 			item.Labels = append(item.Labels, label)
+		}
+		// Operator labels replace the Toss labels; items without any keep them.
+		if len(item.CustomLabels) > 0 {
+			item.Labels = item.CustomLabels
 		}
 		items = append(items, item)
 	}

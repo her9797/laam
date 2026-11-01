@@ -180,7 +180,7 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
                     className="menu-label-tag"
                     data-label-color={label.color || "green"}
                   >
-                    #{label.text}
+                    {label.text}
                   </span>
                 ))}
               </div>
@@ -227,7 +227,7 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
                           className="menu-label-tag"
                           data-label-color={label.color || "green"}
                         >
-                          #{label.text}
+                          {label.text}
                         </span>
                       ))}
                     </div>
