@@ -20,7 +20,6 @@ export function CategoryScreen({ store, categories, category, items }: CategoryS
         <header className="hero-card compact">
           <p className="eyebrow">BAR LAAM</p>
           <h1>{category.label}</h1>
-          <p className="hero-copy">{store.name}의 {category.label} 전체 메뉴</p>
         </header>
 
         <FloatingCategoryNav categories={categories} activeCategoryId={category.id} />

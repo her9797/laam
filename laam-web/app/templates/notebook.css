@@ -8,7 +8,7 @@ html[data-template="notebook"] {
   --nb-paper: #fbf8ef;
   --nb-marker: #ffe36e;
   --nb-hand: var(--font-gaegu), "Apple SD Gothic Neo", sans-serif;
-  --nb-sheet: min(440px, calc(100vw - 60px));
+  --nb-sheet: min(440px, calc(100vw - 16px));
   --background: #e9e3d3;
   --page-background: var(--nb-paper);
   --surface: transparent;
@@ -31,74 +31,75 @@ html[data-template="notebook"] body {
   font-family: var(--font-nanum-gothic), "Apple SD Gothic Neo", sans-serif;
 }
 
-/* 종이 한 장: 줄, 빨간 여백선. 오른쪽 50px은 인덱스 탭 자리 */
+/* 종이 한 장: 줄, 빨간 여백선. 왼쪽 끝은 스프링 고리, 위 60px은 인덱스 탭 자리 */
 html[data-template="notebook"] .page-shell {
   position: relative;
-  left: -20px;
   width: var(--nb-sheet);
-  min-height: calc(100vh - 32px);
-  margin: 18px auto 14px;
-  padding: 44px 14px 96px 52px;
+  min-height: calc(100vh - 74px);
+  margin: 60px auto 14px;
+  padding: 28px 14px 96px 46px;
   border-radius: 4px;
   background-color: var(--nb-paper);
   background-image:
-    linear-gradient(to right, transparent 40px, #e9a3a3 40px 42px, transparent 42px),
+    linear-gradient(to right, transparent 34px, #e9a3a3 34px 36px, transparent 36px),
     repeating-linear-gradient(to bottom, transparent 0 31px, #cfdcea 31px 32px);
   box-shadow: var(--shadow);
+}
+
+/* 스프링 고리: 페이지 길이와 상관없이 끝까지 이어지도록 배경으로 반복한다 */
+html[data-template="notebook"] .page-shell::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: -8px;
+  width: 30px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='30' height='32'%3E%3Ccircle cx='22' cy='16' r='3.5' fill='%23cfc7b3'/%3E%3Crect x='1' y='13' width='24' height='6' rx='3' fill='%237b8394'/%3E%3Crect x='1' y='16' width='24' height='3' rx='1.5' fill='%23565e70'/%3E%3C/svg%3E") repeat-y;
+  pointer-events: none;
+}
+
+/* 결제처럼 탭을 숨기는 화면은 탭 자리를 비워 두지 않는다 */
+html[data-template="notebook"] body:not(:has(.notebook-index-tabs)) .page-shell {
+  margin-top: 18px;
 }
 
 html[data-template="notebook"] .phone-frame {
   width: 100%;
 }
 
-html[data-template="notebook"] .notebook-spiral {
-  position: absolute;
-  top: 8px;
-  left: calc(50% - var(--nb-sheet) / 2 - 2px);
-  z-index: 5;
-  display: flex;
-  justify-content: space-between;
-  width: calc(var(--nb-sheet) - 36px);
-  pointer-events: none;
-}
-
-/* 관리자 미리보기 띠(약 60px)가 있을 때 스프링이 띠 밑에 가려지지 않게 종이 윗변에 다시 맞춘다 */
-html[data-template="notebook"] body:has(.template-preview-banner) .notebook-spiral {
-  top: 68px;
-}
-
-html[data-template="notebook"] .notebook-spiral span {
-  width: 8px;
-  height: 24px;
-  border-radius: 4px;
-  background: #7b8394;
-  box-shadow: inset -2px 0 0 #565e70;
-}
-
+/* 인덱스 탭: 종이 윗변에 붙은 가로 탭. 스크롤해도 위에 남고, 바탕을 깔아 지나가는 본문을 가린다 */
 html[data-template="notebook"] .notebook-index-tabs {
   position: fixed;
-  top: 110px;
-  left: calc(50% + var(--nb-sheet) / 2 - 20px);
+  top: 0;
+  right: 0;
+  left: 0;
   z-index: 20;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: flex-end;
   gap: 8px;
+  padding: 8px calc(50% - var(--nb-sheet) / 2 + 8px) 0;
+  background: #e9e3d3;
+}
+
+/* 관리자 미리보기 띠(약 60px)가 있을 때 탭이 띠 밑에 가려지지 않게 띠 아래로 내린다 */
+html[data-template="notebook"] body:has(.template-preview-banner) .notebook-index-tabs {
+  top: 60px;
 }
 
 html[data-template="notebook"] .notebook-index-tab {
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  min-height: 84px;
-  border-radius: 0 10px 10px 0;
-  box-shadow: 2px 2px 4px rgba(38, 50, 74, 0.14);
+  min-height: 44px;
+  margin-top: 6px;
+  border-radius: 10px 10px 0 0;
+  box-shadow: 0 -1px 3px rgba(38, 50, 74, 0.14);
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 700;
-  writing-mode: vertical-rl;
-  transition: width 120ms ease;
 }
 
 html[data-template="notebook"] .notebook-index-tab:nth-child(1) { background: #ffe36e; }
@@ -108,7 +109,8 @@ html[data-template="notebook"] .notebook-index-tab:nth-child(4) { background: #f
 html[data-template="notebook"] .notebook-index-tab:nth-child(5) { background: #e6d6f2; }
 
 html[data-template="notebook"] .notebook-index-tab.active {
-  width: 56px;
+  min-height: 50px;
+  margin-top: 0;
 }
 
 /* 머리글: 카드 대신 종이에 바로 쓴 글씨 */
@@ -140,14 +142,14 @@ html[data-template="notebook"] .section-header h2,
 html[data-template="notebook"] .payment-card h1 {
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: clamp(28px, 9vw, 38px);
+  font-size: clamp(26px, 8vw, 34px);
   font-weight: 700;
   line-height: 64px;
   word-break: keep-all;
 }
 
 html[data-template="notebook"] .section-header h2 {
-  font-size: 30px;
+  font-size: 27px;
   line-height: 48px;
 }
 
@@ -159,14 +161,20 @@ html[data-template="notebook"] .hero-meta {
   line-height: 32px;
 }
 
-/* 주요 메뉴 줄은 오른쪽 인덱스 탭이 대신한다 */
+/* 주요 메뉴 줄은 위쪽 인덱스 탭이 대신한다 */
 html[data-template="notebook"] .primary-strip {
   display: none;
 }
 
 /* 카테고리: 손으로 친 동그라미 */
+/* 스크롤해서 위에 붙을 때 고정 인덱스 탭(높이 58px) 바로 아래에 붙는다 */
 html[data-template="notebook"] .floating-subnav-shell {
+  top: 58px;
   padding: 4px 0;
+}
+
+html[data-template="notebook"] body:has(.template-preview-banner) .floating-subnav-shell {
+  top: 118px;
 }
 
 html[data-template="notebook"] .category-pill,
@@ -178,7 +186,7 @@ html[data-template="notebook"] .request-category-pill {
   background: transparent;
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 20px;
+  font-size: 18px;
 }
 
 html[data-template="notebook"] .category-pill.active,
@@ -243,7 +251,7 @@ html[data-template="notebook"] .menu-icon {
   box-shadow: 0 3px 8px rgba(38, 50, 74, 0.16);
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 24px;
+  font-size: 22px;
   transform: rotate(-3deg);
 }
 
@@ -254,12 +262,12 @@ html[data-template="notebook"] .menu-item:nth-child(even) .menu-icon {
 html[data-template="notebook"] .menu-copy h3,
 html[data-template="notebook"] .menu-detail-modal h2 {
   font-family: var(--nb-hand);
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
 }
 
 html[data-template="notebook"] .menu-detail-modal h2 {
-  font-size: 32px;
+  font-size: 29px;
 }
 
 html[data-template="notebook"] .menu-copy p:last-child,
@@ -276,13 +284,13 @@ html[data-template="notebook"] .menu-detail-price {
   border-radius: 50% 45% 52% 48%;
   color: var(--nb-red);
   font-family: var(--nb-hand);
-  font-size: 19px;
+  font-size: 17px;
   transform: rotate(-3deg);
 }
 
 html[data-template="notebook"] .menu-detail-price {
   display: inline-block;
-  font-size: 22px;
+  font-size: 20px;
 }
 
 html[data-template="notebook"] .menu-badge,
@@ -324,7 +332,7 @@ html[data-template="notebook"] .customer-menu-page-controls button {
   background: transparent;
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 18px;
+  font-size: 16px;
 }
 
 /* 모달: 테이프로 붙인 메모지 */
@@ -359,7 +367,7 @@ html[data-template="notebook"] .table-session-modal.secret-coupon-modal::before 
 
 html[data-template="notebook"] .table-session-modal-header h2 {
   font-family: var(--nb-hand);
-  font-size: 30px;
+  font-size: 27px;
 }
 
 html[data-template="notebook"] .menu-option-group {
@@ -372,7 +380,7 @@ html[data-template="notebook"] .menu-option-group legend,
 html[data-template="notebook"] .menu-option-choice {
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 19px;
+  font-size: 17px;
 }
 
 html[data-template="notebook"] .menu-option-group legend span {
@@ -383,12 +391,12 @@ html[data-template="notebook"] .menu-option-group legend span {
 html[data-template="notebook"] .menu-detail-order-success {
   color: #1f7a4a;
   font-family: var(--nb-hand);
-  font-size: 20px;
+  font-size: 18px;
 }
 
 html[data-template="notebook"] .menu-detail-order-confirm {
   font-family: var(--nb-hand);
-  font-size: 21px;
+  font-size: 19px;
 }
 
 html[data-template="notebook"] .table-session-error,
@@ -401,7 +409,7 @@ html[data-template="notebook"] .request-compose-field span,
 html[data-template="notebook"] .request-compose-fieldset-legend {
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 700;
 }
 
@@ -423,7 +431,7 @@ html[data-template="notebook"] .menu-option-quantity {
   background: transparent;
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 20px;
+  font-size: 18px;
 }
 
 html[data-template="notebook"] .request-compose-field textarea {
@@ -471,7 +479,7 @@ html[data-template="notebook"] .payment-submit {
   box-shadow: 2px 3px 0 var(--nb-ink);
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
 }
 
@@ -483,7 +491,7 @@ html[data-template="notebook"] .table-session-pill {
   background: transparent;
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 19px;
+  font-size: 17px;
 }
 
 html[data-template="notebook"] .table-session-pill.active {
@@ -496,7 +504,7 @@ html[data-template="notebook"] .request-toast {
   box-shadow: 0 6px 12px rgba(38, 50, 74, 0.2);
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 19px;
+  font-size: 17px;
 }
 
 /* 공지: 테이프 붙인 포스트잇 */
@@ -513,7 +521,7 @@ html[data-template="notebook"] .notice-item {
   box-shadow: 0 5px 12px rgba(38, 50, 74, 0.14);
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 19px;
+  font-size: 17px;
   line-height: 1.35;
   transform: rotate(-1.5deg);
 }
@@ -532,8 +540,9 @@ html[data-template="notebook"] .notice-item:nth-child(3n) {
   transform: rotate(-0.5deg);
 }
 
-/* 떠 있는 버튼: 테이프와 스티커 */
+/* 떠 있는 버튼: 테이프와 스티커. 테이블 표시는 위쪽 인덱스 탭을 가리지 않게 종이 오른쪽 위 모서리에 붙인다 */
 html[data-template="notebook"] .floating-table-badge {
+  top: calc(68px + env(safe-area-inset-top));
   min-width: 0;
   height: 44px;
   padding: 0 12px;
@@ -543,9 +552,13 @@ html[data-template="notebook"] .floating-table-badge {
   box-shadow: none;
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 18px;
+  font-size: 16px;
   letter-spacing: 0;
   transform: rotate(3deg);
+}
+
+html[data-template="notebook"] body:has(.template-preview-banner) .floating-table-badge {
+  top: calc(128px + env(safe-area-inset-top));
 }
 
 html[data-template="notebook"] .floating-home-core,
@@ -571,14 +584,14 @@ html[data-template="notebook"] .notebook-date {
   margin: 0;
   color: var(--nb-muted);
   font-family: var(--nb-hand);
-  font-size: 18px;
+  font-size: 16px;
   line-height: 32px;
 }
 
 html[data-template="notebook"] .notebook-title {
   margin: 0;
   font-family: var(--nb-hand);
-  font-size: 52px;
+  font-size: 47px;
   font-weight: 700;
   line-height: 64px;
 }
@@ -631,7 +644,7 @@ html[data-template="notebook"] .notebook-polaroid-secret {
   background: none;
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -647,7 +660,7 @@ html[data-template="notebook"] .notebook-todo-title {
   margin: 0;
   color: var(--nb-red);
   font-family: var(--nb-hand);
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   line-height: 32px;
 }
@@ -659,7 +672,7 @@ html[data-template="notebook"] .notebook-todo-item {
   min-height: 44px;
   color: var(--nb-ink);
   font-family: var(--nb-hand);
-  font-size: 21px;
+  font-size: 19px;
 }
 
 html[data-template="notebook"] .notebook-todo-item svg {
@@ -678,23 +691,30 @@ html[data-template="notebook"] .notebook-todo-item em {
   font-style: normal;
 }
 
-html[data-template="notebook"] .notebook-links {
+html[data-template="notebook"] .notebook-lead-row {
   display: flex;
-  gap: 16px;
-  margin-top: 24px;
-  font-size: 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-html[data-template="notebook"] .notebook-links a {
+html[data-template="notebook"] .notebook-social {
+  display: flex;
+  gap: 4px;
+}
+
+/* 누르는 영역은 44px이지만 공책 줄(32px) 높이를 밀어내지 않게 위아래로만 넘친다 */
+html[data-template="notebook"] .notebook-social a {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -6px 0;
   color: var(--nb-ink);
-  text-decoration: underline;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  html[data-template="notebook"] .notebook-index-tab {
-    transition: none;
-  }
+html[data-template="notebook"] .notebook-social svg {
+  width: 26px;
+  height: 26px;
 }

@@ -69,6 +69,8 @@ test("새 템플릿과 미리보기 띠에서 누르는 요소는 44px 이상이
     [notebook, 'html[data-template="notebook"] .floating-table-badge'],
     [notebook, 'html[data-template="notebook"] .notebook-polaroid-secret'],
     [chalkboard, 'html[data-template="chalkboard"] .floating-table-badge'],
+    [notebook, 'html[data-template="notebook"] .notebook-social a'],
+    [chalkboard, 'html[data-template="chalkboard"] .chalk-social a'],
     [globals, ".template-preview-banner a"],
   ] as const) {
     const rule = block(css, selector);
@@ -195,4 +197,58 @@ test("공책·칠판 본문 글꼴은 나눔고딕이다(손글씨 제목 글꼴
     assert.match(css, /font-family: var\(--font-nanum-gothic\)/, name);
     assert.doesNotMatch(css, /--font-gowun-dodum/, name);
   }
+});
+
+test("카테고리 화면 머리글에 '…전체 메뉴' 설명 문구를 두지 않는다", async () => {
+  const screen = await source("components/screens/category-screen.tsx");
+  assert.doesNotMatch(screen, /전체 메뉴/);
+  assert.doesNotMatch(screen, /hero-copy/);
+});
+
+test("모바일에서 누른 자리에 브라우저 기본 탭 하이라이트(잔상)를 그리지 않는다", async () => {
+  const css = await source("app/globals.css");
+  assert.match(css, /(^|\n)body\s*\{[^}]*-webkit-tap-highlight-color:\s*transparent/);
+});
+
+test("notebook.css: 스프링은 왼쪽, 인덱스 탭은 위에 가로로 두어 오른쪽 폭을 본문에 돌려준다", async () => {
+  const css = (await source("app/templates/notebook.css")).replace(/\/\*[\s\S]*?\*\//g, "");
+  const chrome = await source("components/templates/template-chrome.tsx");
+  assert.doesNotMatch(chrome, /notebook-spiral/, "위쪽 스프링 마크업 대신 CSS 배경 고리를 쓴다");
+  assert.doesNotMatch(css, /notebook-spiral/);
+  assert.match(css, /--nb-sheet:\s*min\(440px, calc\(100vw - 16px\)\)/);
+  assert.match(css, /html\[data-template="notebook"\] \.page-shell::before\s*\{[^}]*repeat-y/);
+  assert.match(css, /html\[data-template="notebook"\] \.notebook-index-tabs\s*\{[^}]*top:\s*0;[^}]*flex-direction:\s*row/);
+  assert.doesNotMatch(css, /writing-mode:\s*vertical-rl/);
+  assert.match(css, /body:has\(\.template-preview-banner\) \.notebook-index-tabs\s*\{[^}]*top:/, "미리보기 띠 아래로 탭을 내린다");
+});
+
+test("chalkboard.css: 바깥 여백과 나무 틀을 줄여 좁은 화면에서 본문 폭을 넓힌다", async () => {
+  const css = await source("app/templates/chalkboard.css");
+  assert.match(css, /html\[data-template="chalkboard"\] \.page-shell\s*\{[^}]*width:\s*min\(430px, calc\(100% - 16px\)\);[^}]*border:\s*6px solid/);
+});
+
+test("공책·칠판 손글씨 글자를 한 단계(약 10%) 줄인다", async () => {
+  const notebook = await source("app/templates/notebook.css");
+  const chalkboard = await source("app/templates/chalkboard.css");
+  assert.match(notebook, /\.hero-card h1,[\s\S]*?font-size:\s*clamp\(26px, 8vw, 34px\)/);
+  assert.match(chalkboard, /\.hero-card h1,[\s\S]*?font-size:\s*49px/);
+});
+
+test("공책·칠판 홈은 인스타·네이버를 이름이 붙은 아이콘 링크로 보여준다", async () => {
+  const links = await source("components/templates/social-links.tsx");
+  assert.match(links, /aria-label="인스타그램 @bar_laam"/);
+  assert.match(links, /aria-label="네이버 지도"/);
+  assert.equal(links.match(/target="_blank" rel="noreferrer"/g)?.length, 2);
+
+  const notebook = await source("components/templates/notebook-home-screen.tsx");
+  assert.match(notebook, /<SocialLinks className="notebook-social" \/>/);
+  assert.doesNotMatch(notebook, /notebook-links/);
+  const chalkboard = await source("components/templates/chalkboard-home-screen.tsx");
+  assert.match(chalkboard, /<SocialLinks className="chalk-social" \/>/);
+});
+
+test("notebook.css: 스크롤해서 위에 붙는 카테고리 바가 고정 인덱스 탭(58px) 밑에 가려지지 않는다", async () => {
+  const css = await source("app/templates/notebook.css");
+  assert.match(css, /html\[data-template="notebook"\] \.floating-subnav-shell\s*\{[^}]*top:\s*58px/);
+  assert.match(css, /body:has\(\.template-preview-banner\) \.floating-subnav-shell\s*\{[^}]*top:\s*118px/, "미리보기 띠(60px)만큼 더 내린다");
 });

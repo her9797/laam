@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { SecretCouponHotspot } from "@/components/easter-egg/secret-coupon-hotspot";
 import { TableSessionBadge } from "@/components/table/table-session-badge";
+import { SocialLinks } from "@/components/templates/social-links";
 import type { StoreInfo } from "@/data/menu-data";
 
 type NotebookHomeScreenProps = {
@@ -40,7 +41,10 @@ export function NotebookHomeScreen({ store, canEditTable }: NotebookHomeScreenPr
           {place ? ` · ${place}` : ""}
         </p>
         <h1 className="notebook-title">{store.name} 노트</h1>
-        <p className="notebook-lead">편하게 머물다 가세요.</p>
+        <div className="notebook-lead-row">
+          <p className="notebook-lead">편하게 머물다 가세요.</p>
+          <SocialLinks className="notebook-social" />
+        </div>
 
         <figure className="notebook-polaroid">
           <span className="notebook-tape" aria-hidden="true" />
@@ -66,15 +70,6 @@ export function NotebookHomeScreen({ store, canEditTable }: NotebookHomeScreenPr
             </Link>
           ))}
         </nav>
-
-        <div className="notebook-links">
-          <a href="https://www.instagram.com/bar_laam/" target="_blank" rel="noreferrer">
-            @bar_laam
-          </a>
-          <a href="https://naver.me/G9UJVTq9" target="_blank" rel="noreferrer">
-            네이버 지도
-          </a>
-        </div>
       </div>
     </main>
   );
