@@ -28,7 +28,7 @@ html[data-template="notebook"] body {
   min-width: 0;
   background: #e9e3d3;
   color: var(--nb-ink);
-  font-family: var(--font-gowun-dodum), "Apple SD Gothic Neo", sans-serif;
+  font-family: var(--font-nanum-gothic), "Apple SD Gothic Neo", sans-serif;
 }
 
 /* 종이 한 장: 줄, 빨간 여백선. 오른쪽 50px은 인덱스 탭 자리 */

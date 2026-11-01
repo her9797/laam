@@ -30,7 +30,7 @@ html[data-template="chalkboard"] body {
   min-width: 0;
   background: #2b2e2c;
   color: var(--ch-chalk);
-  font-family: var(--font-gowun-dodum), "Apple SD Gothic Neo", sans-serif;
+  font-family: var(--font-nanum-gothic), "Apple SD Gothic Neo", sans-serif;
 }
 
 /* 나무 틀을 두른 칠판 한 장 */
@@ -316,7 +316,7 @@ html[data-template="chalkboard"] .menu-option-group legend span {
 }
 
 html[data-template="chalkboard"] .menu-option-choice small {
-  font-family: var(--font-gowun-dodum), sans-serif;
+  font-family: var(--font-nanum-gothic), sans-serif;
   font-size: 12px;
 }
 

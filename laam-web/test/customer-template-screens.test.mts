@@ -185,3 +185,14 @@ test("chalkboard.css: 빈 배지 자리를 없애 사진 없는 메뉴도 이름
   const css = await source("app/templates/chalkboard.css");
   assert.match(css, /html\[data-template="chalkboard"\] \.menu-badge-placeholder\s*\{[^}]*display:\s*none/);
 });
+
+test("공책·칠판 본문 글꼴은 나눔고딕이다(손글씨 제목 글꼴은 그대로)", async () => {
+  const layout = await source("app/layout.tsx");
+  assert.match(layout, /Nanum_Gothic\(\{ weight: \["400", "700"\], preload: false, variable: "--font-nanum-gothic"/);
+  assert.doesNotMatch(layout, /Gowun_Dodum/);
+  for (const name of ["notebook", "chalkboard"]) {
+    const css = await source(`app/templates/${name}.css`);
+    assert.match(css, /font-family: var\(--font-nanum-gothic\)/, name);
+    assert.doesNotMatch(css, /--font-gowun-dodum/, name);
+  }
+});
