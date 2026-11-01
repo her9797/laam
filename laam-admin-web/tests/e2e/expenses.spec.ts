@@ -11,6 +11,8 @@ async function openExpenses(page: Page, state: ExpenseServerState, viewport = PH
   await mockDashboardData(page);
   await loginAsAdmin(page);
   await mockExpenseApi(page, state);
+  // 최근 거래처는 오늘 기준 이번 달·지난달 영수증으로 만든다. 픽스처 달(2026-09)에 날짜를 고정한다.
+  await page.clock.setFixedTime(new Date("2026-09-20T12:00:00+09:00"));
   await page.goto("/expenses?month=2026-09");
   await expect(page.getByText("98,000원").first()).toBeVisible();
 }
