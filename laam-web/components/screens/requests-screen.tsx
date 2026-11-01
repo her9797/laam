@@ -327,7 +327,8 @@ export function RequestsScreen({ store, initialCategory }: RequestsScreenProps) 
                   </label>
                   <label className="request-compose-field request-compose-field-wide">
                     <span>세부사항</span>
-                    <input
+                    <textarea
+                      rows={3}
                       value={specialForm.idealDetails}
                       onChange={(event) =>
                         setSpecialForm((current) => ({

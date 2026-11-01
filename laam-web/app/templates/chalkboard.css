@@ -103,13 +103,40 @@ html[data-template="chalkboard"] .hero-meta {
   font-size: 14px;
 }
 
+/* 영문 소제목과 제목 아래 설명은 두지 않는다 */
+html[data-template="chalkboard"] .section-kicker,
+html[data-template="chalkboard"] .hero-copy {
+  display: none;
+}
+
+/* 제목과 겹치는 본문 부제목(듣고 싶은 노래·평범한·진행 중 안내)도 두지 않는다. 제목 카드가 없는 QR 안내 화면은 그대로 둔다 */
+html[data-template="chalkboard"] .hero-card ~ .content-card > .section-header {
+  display: none;
+}
+
+/* 숨긴 부제목 아래 붙어 있던 폼 위 여백도 없애 메뉴 줄과 본문 사이를 카테고리 화면만큼으로 맞춘다 */
+html[data-template="chalkboard"] .hero-card ~ .content-card > .section-header + .request-compose-form {
+  margin-top: 0;
+}
+
 /* 카테고리: 분필 동그라미 */
+/* 메뉴 줄 아래 여백을 없애 본문 카드 안쪽 여백만 남긴다(공책과 같은 간격) */
 html[data-template="chalkboard"] .floating-subnav-shell {
+  margin-bottom: 0;
   padding: 4px 0;
 }
 
 html[data-template="chalkboard"] .category-strip {
   justify-content: flex-start;
+}
+
+/* 카테고리 줄: 남는 공간이 있으면 가운데로 모으고, 넘치면 자동 여백이 0이 되어 처음부터 옆으로 밀어 본다 */
+html[data-template="chalkboard"] .category-pill:first-child {
+  margin-left: auto;
+}
+
+html[data-template="chalkboard"] .category-pill:last-child {
+  margin-right: auto;
 }
 
 html[data-template="chalkboard"] .category-pill,
@@ -467,6 +494,8 @@ html[data-template="chalkboard"] .primary-pill,
 html[data-template="chalkboard"] .primary-pill-special,
 html[data-template="chalkboard"] .primary-pill.active,
 html[data-template="chalkboard"] .primary-pill-special.active {
+  /* 칸을 똑같이 나누면 손글씨 '특별한 요청'이 잘려서 글자 길이만큼 잡는다 */
+  flex: 1 1 auto;
   border: 2px solid transparent;
   border-radius: 48% 52% 45% 55%;
   background: transparent;
@@ -601,7 +630,9 @@ html[data-template="chalkboard"] .chalk-nav {
 
 /* 요청·공지 화면 위 주요 메뉴 줄: 누르는 칸 사이 8px */
 html[data-template="chalkboard"] .primary-strip {
+  flex-wrap: wrap;
   gap: 8px;
+  margin-bottom: 4px;
 }
 
 html[data-template="chalkboard"] .chalk-menu-link {
