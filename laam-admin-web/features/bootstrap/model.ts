@@ -65,23 +65,21 @@ export type MenuItem = {
   posDescription?: string;
   /** Operator's customer-screen description ("" = none). Optional: older APIs omit it. */
   descriptionOverride?: string;
-  /** Assigned `menuLabels` ids in display order. Optional: older APIs omit it. */
-  labelIds?: string[];
+  /** Operator-typed labels in display order ([] = none). Optional: older APIs omit it. */
+  customLabels?: MenuItemCustomLabel[];
   price: string;
   imageUrl?: string;
   isVisible: boolean;
   images?: MenuImage[];
   options?: MenuOption[];
-  /** Effective labels: the assigned `labelIds` labels if any, else the Toss labels. */
+  /** Effective labels: `customLabels` if any, else the Toss labels. */
   labels?: MenuItemLabel[];
 };
 
-/** Operator-managed label an item can be assigned (`labelIds`). */
-export type MenuLabel = {
-  id: string;
+/** Label the operator typed on the item's detail page; `color` is one of green/amber/pink/blue. */
+export type MenuItemCustomLabel = {
   text: string;
   color: string;
-  sortOrder: number;
 };
 
 // `text`는 토스플레이스 카탈로그 라벨 그대로이며 동기화가 관리한다. `color`는
@@ -104,6 +102,4 @@ export type AppData = {
   items: MenuItem[];
   requestGuides: NoticeItem[];
   notices: NoticeItem[];
-  /** Optional: older APIs omit it. */
-  menuLabels?: MenuLabel[];
 };

@@ -2,18 +2,20 @@
 
 import "@/i18n/client";
 
-import { useId, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
+import { RiAddLine, RiCloseLine } from "@remixicon/react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "@/components/states/PageStates";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-import type { AppData, MenuItem } from "@/features/bootstrap/model";
+import type { AppData, MenuItem, MenuItemCustomLabel } from "@/features/bootstrap/model";
 import { useBootstrapQuery } from "@/features/bootstrap/queries";
 
 import {
@@ -26,14 +28,18 @@ import {
   getMenuItemDisplayImage,
   MAX_MENU_ITEM_LABELS,
   MENU_LABEL_CHIP_CLASSES,
+  MENU_LABEL_COLOR_OPTIONS,
+  MENU_LABEL_TEXT_MAX_LENGTH,
   type UpdateMenuItemContentInput,
   type UpdateMenuItemRecipeInput,
 } from "./model";
 
+const SELECT_CLASS = "h-8 rounded-3xl border border-transparent bg-input/50 px-2 text-sm text-foreground";
+
 /**
  * Menu item detail screen. Name/category/price stay read-only (they come
  * from the POS catalog sync). The customer-screen description override and
- * assigned labels are editable and saved together through the admin
+ * the operator's own labels (typed here, max 5) are editable and saved together through the admin
  * `content` endpoint, which returns the full `AppData` tree. The recipe
  * fields are saved through the dedicated admin-only recipe subresource
  * (never part of the shared `AppData` bootstrap tree; see `MenuItemRecipe`
@@ -58,9 +64,10 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
   }
 
   // Seeded once from bootstrap the same way as the recipe form above.
-  const labelOrderIdPrefix = useId();
   const item = bootstrapQuery.data?.items.find((candidate) => candidate.id === menuItemId);
   const [content, setContent] = useState<UpdateMenuItemContentInput | null>(null);
+  // Label errors appear only after a save attempt, then track the input live.
+  const [showLabelErrors, setShowLabelErrors] = useState(false);
   if (content === null && item) {
     setContent(savedContent(item));
   }
@@ -86,31 +93,23 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
   const category = bootstrapQuery.data?.categories.find((candidate) => candidate.id === item.categoryId);
   const displayImage = getMenuItemDisplayImage(item);
   const options = item.options ?? [];
-  const menuLabels = [...(bootstrapQuery.data?.menuLabels ?? [])].sort((a, b) => a.sortOrder - b.sortOrder);
   const saved = savedContent(item);
-  // The form is seeded once, so a label deleted elsewhere can linger in it. Keep only ids that still
-  // exist (an old server without `menuLabels` keeps them all) so the save never 400s on a ghost id.
-  const existingLabelIds = bootstrapQuery.data?.menuLabels ? new Set(menuLabels.map((label) => label.id)) : null;
-  const pickedLabelIds = existingLabelIds ? content.labelIds.filter((id) => existingLabelIds.has(id)) : content.labelIds;
+  const trimmedLabels = content.labels.map((label) => ({ text: label.text.trim(), color: label.color }));
+  const labelErrors = labelErrorKeys(trimmedLabels);
   const isContentUnchanged =
     content.descriptionOverride === saved.descriptionOverride &&
-    pickedLabelIds.join("\n") === saved.labelIds.join("\n");
+    JSON.stringify(trimmedLabels) === JSON.stringify(saved.labels);
   const posDescription = item.posDescription ?? item.description;
-  // `item.labels` is the effective list; it only shows the Toss labels while nothing is assigned.
-  const posLabels = saved.labelIds.length === 0 ? (item.labels ?? []) : [];
-  const isLabelLimitReached = pickedLabelIds.length >= MAX_MENU_ITEM_LABELS;
+  // `item.labels` is the effective list; it only shows the Toss labels while no custom label is saved.
+  const posLabels = saved.labels.length === 0 ? (item.labels ?? []) : [];
+  const isLabelLimitReached = content.labels.length >= MAX_MENU_ITEM_LABELS;
 
-  function toggleLabel(id: string) {
-    setContent((current) =>
-      current
-        ? {
-            ...current,
-            labelIds: current.labelIds.includes(id)
-              ? current.labelIds.filter((labelId) => labelId !== id)
-              : [...current.labelIds, id],
-          }
-        : current,
-    );
+  function updateLabels(update: (labels: MenuItemCustomLabel[]) => MenuItemCustomLabel[]) {
+    setContent((current) => (current ? { ...current, labels: update(current.labels) } : current));
+  }
+
+  function changeLabel(index: number, change: Partial<MenuItemCustomLabel>) {
+    updateLabels((labels) => labels.map((label, i) => (i === index ? { ...label, ...change } : label)));
   }
 
   function handleContentSubmit(event: FormEvent<HTMLFormElement>) {
@@ -119,12 +118,17 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
       return;
     }
     setStatusMessage(null);
-    updateContentMutation.mutate({ ...content, labelIds: pickedLabelIds }, {
+    setShowLabelErrors(true);
+    if (labelErrors.some(Boolean)) {
+      return;
+    }
+    updateContentMutation.mutate({ descriptionOverride: content.descriptionOverride, labels: trimmedLabels }, {
       onSuccess: (appData: AppData) => {
         const savedItem = appData.items.find((candidate) => candidate.id === menuItemId);
         if (savedItem) {
           setContent(savedContent(savedItem));
         }
+        setShowLabelErrors(false);
         setStatusMessage(t("detailContentSaved"));
       },
       // No onError: a failed save keeps the operator's edits.
@@ -244,56 +248,85 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
               <span id="menu-item-labels-title" className="text-sm font-medium text-foreground">
                 {t("detailContentLabelsLabel")}
               </span>
-              {menuLabels.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {t("detailContentNoLabels")}{" "}
-                  <Link href="/menu/labels" className="underline underline-offset-4">
-                    {t("detailContentGoToLabels")}
-                  </Link>
-                </p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {menuLabels.map((label) => {
-                    const order = pickedLabelIds.indexOf(label.id);
-                    const isSelected = order >= 0;
-                    const orderId = `${labelOrderIdPrefix}-${label.id}-order`;
+              {content.labels.length > 0 ? (
+                <ol className="flex flex-col gap-2">
+                  {content.labels.map((label, index) => {
+                    const n = index + 1;
+                    const errorKey = showLabelErrors ? labelErrors[index] : null;
+                    const errorId = `menu-item-label-${index}-error`;
+                    const preview = label.text.trim();
                     return (
-                      <button
-                        key={label.id}
-                        type="button"
-                        aria-pressed={isSelected}
-                        aria-describedby={isSelected ? orderId : undefined}
-                        disabled={!isSelected && isLabelLimitReached}
-                        onClick={() => toggleLabel(label.id)}
-                        className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                          isSelected
-                            ? `border-current ${MENU_LABEL_CHIP_CLASSES[label.color] ?? "bg-muted text-foreground"}`
-                            : "border-border text-muted-foreground"
-                        }`}
-                      >
-                        {isSelected ? (
-                          <>
-                            <span aria-hidden="true" className="text-xs font-semibold">
-                              {order + 1}
+                      // Rows are fully controlled with no local state, so index keys stay correct on removal.
+                      <li key={index} className="flex flex-col gap-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Input
+                            aria-label={t("detailContentLabelTextAria", { n })}
+                            aria-invalid={errorKey ? true : undefined}
+                            aria-describedby={errorKey ? errorId : undefined}
+                            className="w-40"
+                            maxLength={MENU_LABEL_TEXT_MAX_LENGTH}
+                            value={label.text}
+                            onChange={(event) => changeLabel(index, { text: event.target.value })}
+                          />
+                          <select
+                            aria-label={t("detailContentLabelColorAria", { n })}
+                            className={SELECT_CLASS}
+                            value={label.color}
+                            onChange={(event) => changeLabel(index, { color: event.target.value })}
+                          >
+                            {MENU_LABEL_COLOR_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {t(option.labelKey)}
+                              </option>
+                            ))}
+                          </select>
+                          {preview ? (
+                            <span
+                              data-label-color={label.color}
+                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                MENU_LABEL_CHIP_CLASSES[label.color] ?? "bg-muted text-foreground"
+                              }`}
+                            >
+                              {preview}
                             </span>
-                            {/* hidden이어도 aria-describedby로는 읽히고, 버튼 이름(라벨 텍스트)에는 섞이지 않는다 */}
-                            <span id={orderId} hidden>
-                              {t("detailContentLabelOrder", { order: order + 1 })}
-                            </span>
-                          </>
+                          ) : null}
+                          <Button
+                            type="button"
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label={t("detailContentLabelRemoveAria", { n })}
+                            onClick={() => updateLabels((labels) => labels.filter((_, i) => i !== index))}
+                          >
+                            <RiCloseLine aria-hidden="true" />
+                          </Button>
+                        </div>
+                        {errorKey ? (
+                          <p id={errorId} className="text-xs text-destructive">
+                            {t(errorKey)}
+                          </p>
                         ) : null}
-                        {label.text}
-                      </button>
+                      </li>
                     );
                   })}
-                </div>
-              )}
+                </ol>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="self-start"
+                disabled={isLabelLimitReached}
+                onClick={() => updateLabels((labels) => [...labels, { text: "", color: MENU_LABEL_COLOR_OPTIONS[0].value }])}
+              >
+                <RiAddLine data-icon="inline-start" aria-hidden="true" />
+                {t("detailContentLabelAdd")}
+              </Button>
               {isLabelLimitReached ? (
                 <p className="text-xs text-muted-foreground">
                   {t("detailContentLabelsLimit", { max: MAX_MENU_ITEM_LABELS })}
                 </p>
               ) : null}
-              {pickedLabelIds.length === 0 ? (
+              {content.labels.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
                   {t("detailContentLabelsFallback")}
                   {posLabels.length > 0 ? (
@@ -441,5 +474,24 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
 }
 
 function savedContent(item: MenuItem): UpdateMenuItemContentInput {
-  return { descriptionOverride: item.descriptionOverride ?? "", labelIds: item.labelIds ?? [] };
+  return {
+    descriptionOverride: item.descriptionOverride ?? "",
+    labels: (item.customLabels ?? []).map((label) => ({ text: label.text, color: label.color })),
+  };
+}
+
+/** Mirrors laam-api's checks (non-empty, no case-insensitive duplicates) so the save stops before a 400. */
+function labelErrorKeys(labels: MenuItemCustomLabel[]): (string | null)[] {
+  const seen = new Set<string>();
+  return labels.map(({ text }) => {
+    if (!text) {
+      return "detailContentLabelRequired";
+    }
+    const key = text.toLowerCase();
+    if (seen.has(key)) {
+      return "detailContentLabelDuplicate";
+    }
+    seen.add(key);
+    return null;
+  });
 }

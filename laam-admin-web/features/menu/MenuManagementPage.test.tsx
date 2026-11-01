@@ -557,8 +557,8 @@ describe("MenuManagementPage", () => {
     });
   });
 
-  it("shows directly assigned labels without the Toss color picker, pointing to label management", () => {
-    // labelIds가 있으면 item.labels는 직접 붙인 라벨이다. 위치 기반 label-colors API는
+  it("shows operator-typed labels without the Toss color picker, pointing to the item detail", () => {
+    // customLabels가 있으면 item.labels는 운영자가 입력한 라벨이다. 위치 기반 label-colors API는
     // 포스 라벨 색을 바꾸므로 여기서 색을 고르면 엉뚱한 라벨이 바뀐다.
     mockBootstrap({
       data: {
@@ -566,7 +566,7 @@ describe("MenuManagementPage", () => {
         items: [
           {
             ...FIXTURE.items[0],
-            labelIds: ["label-1"],
+            customLabels: [{ text: "스무디", color: "pink" }],
             labels: [{ text: "스무디", color: "pink" }],
           },
         ],
@@ -578,7 +578,7 @@ describe("MenuManagementPage", () => {
     const menuRow = screen.getByText("아메리카노").closest("tr") as HTMLElement;
     expect(within(menuRow).getByText("스무디")).toBeInTheDocument();
     expect(within(menuRow).queryAllByRole("combobox")).toHaveLength(0);
-    expect(within(menuRow).getByRole("link", { name: "라벨 관리에서 색 변경" })).toHaveAttribute("href", "/menu/labels");
+    expect(within(menuRow).getByRole("link", { name: "상세에서 라벨 수정" })).toHaveAttribute("href", "/menu/menu-1");
   });
 
   it("does not show a delete action in the list (removed from this screen's UI)", () => {

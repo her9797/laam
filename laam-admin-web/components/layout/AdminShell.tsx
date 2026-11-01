@@ -23,7 +23,6 @@ import {
   RiMusic2Line,
   RiPaletteLine,
   RiPlayCircleLine,
-  RiPriceTag3Line,
   RiQrCodeLine,
   RiRestaurantLine,
   RiShoppingBag3Line,
@@ -114,7 +113,6 @@ const PRODUCT_NAV_GROUP: NavGroup = {
   items: [
     { href: "/menu", labelKey: "navMenu", icon: RiRestaurantLine },
     { href: "/menu/categories", labelKey: "navCategories", icon: RiFolderLine },
-    { href: "/menu/labels", labelKey: "navLabels", icon: RiPriceTag3Line },
   ],
 };
 

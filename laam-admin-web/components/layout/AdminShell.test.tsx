@@ -63,7 +63,7 @@ const TOP_LEVEL_NAV_LABELS = ["대시보드", "매장 플레이어", "이벤트�
 
 const REQUEST_GROUP_SUB_LABELS = ["손님 요청", "노래 신청", "특별 요청"];
 
-const PRODUCT_GROUP_SUB_LABELS = ["메뉴 관리", "카테고리 관리", "라벨 관리"];
+const PRODUCT_GROUP_SUB_LABELS = ["메뉴 관리", "카테고리 관리"];
 
 const LOGOUT_FAILED_MESSAGE = "로그아웃하지 못했습니다. 다시 시도해 주세요.";
 
@@ -156,6 +156,8 @@ describe("AdminShell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "상품 관리" }));
     PRODUCT_GROUP_SUB_LABELS.forEach(expectReachableLink);
+    // 라벨은 메뉴 상세에서 직접 입력하므로 별도 라벨 관리 화면이 없다.
+    expect(screen.queryByRole("link", { name: "라벨 관리" })).not.toBeInTheDocument();
   });
 
   it("exposes 상품 관리 as a collapsed dropdown that reveals its sub-links on click", () => {

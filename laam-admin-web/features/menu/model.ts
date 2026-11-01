@@ -11,7 +11,7 @@
  * `isPrimary`, `displayArea`, `focusX`, `focusY`) — not invented.
  */
 
-import type { AppData, MenuItem } from "@/features/bootstrap/model";
+import type { AppData, MenuItem, MenuItemCustomLabel } from "@/features/bootstrap/model";
 
 export type MenuItemDisplayImage = {
   src: string;
@@ -78,16 +78,10 @@ export type UpdateMenuItemRecipeInput = {
   instructions: string;
 };
 
-/** Body of `POST /menu-labels` and `PATCH /menu-labels/{id}`. */
-export type MenuLabelInput = {
-  text: string;
-  color: string;
-};
-
 /** Body of `PATCH /menu-items/{id}/content`. */
 export type UpdateMenuItemContentInput = {
   descriptionOverride: string;
-  labelIds: string[];
+  labels: MenuItemCustomLabel[];
 };
 
 // Mirror laam-api's validation limits so the UI stops before a 400.

@@ -40,7 +40,7 @@ const FIXTURE: AppData = {
       description: "바삭한 감자튀김",
       posDescription: "바삭한 감자튀김",
       descriptionOverride: "",
-      labelIds: [],
+      customLabels: [],
       labels: [{ text: "BEST" }],
       price: "5000",
       imageUrl: "https://cdn.example.com/fries.png",
@@ -68,14 +68,6 @@ const FIXTURE: AppData = {
   ],
   requestGuides: [],
   notices: [],
-  menuLabels: [
-    { id: "label-1", text: "신메뉴", color: "green", sortOrder: 0 },
-    { id: "label-2", text: "인기", color: "pink", sortOrder: 1 },
-    { id: "label-3", text: "매운맛", color: "amber", sortOrder: 2 },
-    { id: "label-4", text: "추천", color: "blue", sortOrder: 3 },
-    { id: "label-5", text: "한정", color: "green", sortOrder: 4 },
-    { id: "label-6", text: "비건", color: "green", sortOrder: 5 },
-  ],
 };
 
 const RECIPE_FIXTURE: MenuItemRecipe = {
@@ -121,8 +113,29 @@ function contentForm(): HTMLElement {
   return screen.getByRole("form", { name: "손님 화면 설명" });
 }
 
-function labelToggle(text: string): HTMLElement {
-  return within(contentForm()).getByRole("button", { name: text });
+function labelText(n: number): HTMLElement {
+  return within(contentForm()).getByRole("textbox", { name: `라벨 ${n} 글자` });
+}
+
+function labelColor(n: number): HTMLElement {
+  return within(contentForm()).getByRole("combobox", { name: `라벨 ${n} 색상` });
+}
+
+function addLabelButton(): HTMLElement {
+  return within(contentForm()).getByRole("button", { name: "라벨 추가" });
+}
+
+function contentSave(): HTMLElement {
+  return within(contentForm()).getByRole("button", { name: "저장" });
+}
+
+function addLabel(text: string, color?: string) {
+  fireEvent.click(addLabelButton());
+  const n = within(contentForm()).getAllByRole("textbox", { name: /^라벨 \d+ 글자$/ }).length;
+  fireEvent.change(labelText(n), { target: { value: text } });
+  if (color) {
+    fireEvent.change(labelColor(n), { target: { value: color } });
+  }
 }
 
 beforeEach(() => {
@@ -274,138 +287,233 @@ describe("MenuItemDetailPage customer description and labels", () => {
     expect(within(contentForm()).getByText("7/300")).toBeInTheDocument();
   });
 
-  it("falls back to the item description as the POS hint on an old server without the new fields", () => {
-    const { posDescription: _p, descriptionOverride: _d, labelIds: _l, ...oldItem } = FIXTURE.items[0];
-    const { menuLabels: _m, ...oldData } = FIXTURE;
-    mockBootstrap({ data: { ...oldData, items: [oldItem] } });
+  it("works on an old server without the new fields: empty override, no label rows, item description as POS hint", () => {
+    const { posDescription: _p, descriptionOverride: _d, customLabels: _c, ...oldItem } = FIXTURE.items[0];
+    mockBootstrap({ data: { ...FIXTURE, items: [oldItem] } });
 
     render(<MenuItemDetailPage menuItemId="menu-1" />);
 
     expect(within(contentForm()).getByLabelText("설명")).toHaveValue("");
     expect(within(contentForm()).getByText("비우면 포스 설명을 보여줘요: 바삭한 감자튀김")).toBeInTheDocument();
-    expect(within(contentForm()).getByRole("link", { name: "라벨 관리로 이동" })).toHaveAttribute(
-      "href",
-      "/menu/labels",
+    expect(within(contentForm()).queryAllByRole("textbox", { name: /^라벨 \d+ 글자$/ })).toHaveLength(0);
+    expect(addLabelButton()).toBeEnabled();
+  });
+
+  it("has no link to a separate label management screen", () => {
+    render(<MenuItemDetailPage menuItemId="menu-1" />);
+
+    expect(screen.queryByRole("link", { name: /라벨 관리/ })).not.toBeInTheDocument();
+  });
+
+  it("seeds the label rows from the saved custom labels in order, with a preview chip each", () => {
+    mockBootstrap({
+      data: itemWith({
+        customLabels: [
+          { text: "인기", color: "pink" },
+          { text: "신메뉴", color: "blue" },
+        ],
+      }),
+    });
+
+    render(<MenuItemDetailPage menuItemId="menu-1" />);
+
+    expect(labelText(1)).toHaveValue("인기");
+    expect(labelText(1)).toHaveAttribute("maxLength", "20");
+    expect(labelColor(1)).toHaveValue("pink");
+    expect(labelText(2)).toHaveValue("신메뉴");
+    expect(labelColor(2)).toHaveValue("blue");
+    expect(within(contentForm()).getByText("인기", { selector: "[data-label-color]" })).toHaveAttribute(
+      "data-label-color",
+      "pink",
+    );
+    // 직접 입력한 라벨이 있으면 포스 라벨 대체 안내는 보이지 않는다.
+    expect(within(contentForm()).queryByText("라벨을 입력하지 않으면 포스 라벨을 보여줘요.")).not.toBeInTheDocument();
+  });
+
+  it("adds a new row with green as the default color and a live preview", () => {
+    render(<MenuItemDetailPage menuItemId="menu-1" />);
+
+    fireEvent.click(addLabelButton());
+    expect(labelColor(1)).toHaveValue("green");
+    expect(Array.from((labelColor(1) as HTMLSelectElement).options).map((option) => option.value)).toEqual([
+      "green",
+      "amber",
+      "pink",
+      "blue",
+    ]);
+
+    fireEvent.change(labelText(1), { target: { value: "매운맛" } });
+    fireEvent.change(labelColor(1), { target: { value: "amber" } });
+    expect(within(contentForm()).getByText("매운맛", { selector: "[data-label-color]" })).toHaveAttribute(
+      "data-label-color",
+      "amber",
     );
   });
 
-  it("keeps save disabled while nothing has changed", () => {
+  it("removes a row and renumbers the rest", () => {
+    mockBootstrap({
+      data: itemWith({
+        customLabels: [
+          { text: "인기", color: "pink" },
+          { text: "신메뉴", color: "blue" },
+        ],
+      }),
+    });
+
     render(<MenuItemDetailPage menuItemId="menu-1" />);
 
-    expect(within(contentForm()).getByRole("button", { name: "저장" })).toBeDisabled();
+    fireEvent.click(within(contentForm()).getByRole("button", { name: "라벨 1 삭제" }));
+
+    expect(labelText(1)).toHaveValue("신메뉴");
+    expect(labelColor(1)).toHaveValue("blue");
+    expect(within(contentForm()).queryByRole("button", { name: "라벨 2 삭제" })).not.toBeInTheDocument();
+  });
+
+  it("allows at most five rows and disables adding with a hint", () => {
+    render(<MenuItemDetailPage menuItemId="menu-1" />);
+
+    expect(within(contentForm()).queryByText("라벨은 최대 5개까지 넣을 수 있어요.")).not.toBeInTheDocument();
+    for (let i = 0; i < 5; i += 1) {
+      fireEvent.click(addLabelButton());
+    }
+
+    expect(within(contentForm()).getAllByRole("textbox", { name: /^라벨 \d+ 글자$/ })).toHaveLength(5);
+    expect(addLabelButton()).toBeDisabled();
+    expect(within(contentForm()).getByText("라벨은 최대 5개까지 넣을 수 있어요.")).toBeInTheDocument();
+  });
+
+  it("keeps save disabled while nothing has changed, comparing trimmed label rows", () => {
+    mockBootstrap({ data: itemWith({ customLabels: [{ text: "인기", color: "pink" }] }) });
+
+    render(<MenuItemDetailPage menuItemId="menu-1" />);
+
+    expect(contentSave()).toBeDisabled();
 
     fireEvent.change(within(contentForm()).getByLabelText("설명"), { target: { value: "새 설명" } });
-    expect(within(contentForm()).getByRole("button", { name: "저장" })).toBeEnabled();
-
+    expect(contentSave()).toBeEnabled();
     fireEvent.change(within(contentForm()).getByLabelText("설명"), { target: { value: "" } });
-    expect(within(contentForm()).getByRole("button", { name: "저장" })).toBeDisabled();
+    expect(contentSave()).toBeDisabled();
+
+    fireEvent.change(labelText(1), { target: { value: "  인기 " } });
+    expect(contentSave()).toBeDisabled();
+
+    fireEvent.change(labelColor(1), { target: { value: "blue" } });
+    expect(contentSave()).toBeEnabled();
+    fireEvent.change(labelColor(1), { target: { value: "pink" } });
+    expect(contentSave()).toBeDisabled();
+
+    fireEvent.click(addLabelButton());
+    expect(contentSave()).toBeEnabled();
   });
 
-  it("shows the POS-label fallback hint with the current Toss labels while none are picked", () => {
+  it("shows the POS-label fallback hint with the current Toss labels while no label is entered", () => {
     render(<MenuItemDetailPage menuItemId="menu-1" />);
 
-    expect(within(contentForm()).getByText("고르지 않으면 포스 라벨을 보여줘요.")).toBeInTheDocument();
+    expect(within(contentForm()).getByText("라벨을 입력하지 않으면 포스 라벨을 보여줘요.")).toBeInTheDocument();
     expect(within(contentForm()).getByText("현재 포스 라벨: BEST")).toBeInTheDocument();
+
+    fireEvent.click(addLabelButton());
+    expect(within(contentForm()).queryByText("라벨을 입력하지 않으면 포스 라벨을 보여줘요.")).not.toBeInTheDocument();
   });
 
-  it("saves the override and labels in selection order, then shows a success message", () => {
+  it("blocks saving an empty label with an inline error and sends no request", () => {
+    render(<MenuItemDetailPage menuItemId="menu-1" />);
+
+    addLabel("   ");
+    fireEvent.click(contentSave());
+
+    expect(updateMenuItemContentMutate).not.toHaveBeenCalled();
+    expect(labelText(1)).toHaveAttribute("aria-invalid", "true");
+    expect(labelText(1)).toHaveAccessibleDescription("라벨 글자를 입력하세요.");
+
+    // 고치면 오류가 사라지고 저장된다.
+    fireEvent.change(labelText(1), { target: { value: "인기" } });
+    expect(labelText(1)).not.toHaveAttribute("aria-invalid", "true");
+    fireEvent.click(contentSave());
+    expect(updateMenuItemContentMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks saving duplicate label texts (case-insensitive, trimmed) with an inline error", () => {
+    render(<MenuItemDetailPage menuItemId="menu-1" />);
+
+    addLabel("Best");
+    addLabel(" best ", "pink");
+    fireEvent.click(contentSave());
+
+    expect(updateMenuItemContentMutate).not.toHaveBeenCalled();
+    expect(labelText(1)).not.toHaveAttribute("aria-invalid", "true");
+    expect(labelText(2)).toHaveAttribute("aria-invalid", "true");
+    expect(labelText(2)).toHaveAccessibleDescription("같은 라벨이 이미 있어요.");
+  });
+
+  it("saves the override and trimmed labels in input order, then reseeds from the response", () => {
     render(<MenuItemDetailPage menuItemId="menu-1" />);
 
     fireEvent.change(within(contentForm()).getByLabelText("설명"), { target: { value: "겉바속촉" } });
-    fireEvent.click(labelToggle("인기"));
-    fireEvent.click(labelToggle("신메뉴"));
-    expect(labelToggle("인기")).toHaveAttribute("aria-pressed", "true");
-    expect(within(contentForm()).queryByText("고르지 않으면 포스 라벨을 보여줘요.")).not.toBeInTheDocument();
-    fireEvent.click(within(contentForm()).getByRole("button", { name: "저장" }));
+    addLabel(" 인기 ", "pink");
+    addLabel("신메뉴");
+    fireEvent.click(contentSave());
 
     expect(updateMenuItemContentMutate).toHaveBeenCalledWith(
-      { descriptionOverride: "겉바속촉", labelIds: ["label-2", "label-1"] },
+      {
+        descriptionOverride: "겉바속촉",
+        labels: [
+          { text: "인기", color: "pink" },
+          { text: "신메뉴", color: "green" },
+        ],
+      },
       expect.anything(),
     );
 
     const saved = itemWith({
       description: "겉바속촉",
       descriptionOverride: "겉바속촉",
-      labelIds: ["label-2", "label-1"],
+      customLabels: [
+        { text: "인기", color: "pink" },
+        { text: "신메뉴", color: "green" },
+      ],
     });
     const onSuccess = updateMenuItemContentMutate.mock.calls[0][1].onSuccess as (data: AppData) => void;
     mockBootstrap({ data: saved });
     act(() => onSuccess(saved));
 
     expect(screen.getByRole("status")).toHaveTextContent("손님 화면 설명을 저장했어요.");
-    expect(within(contentForm()).getByRole("button", { name: "저장" })).toBeDisabled();
+    expect(labelText(1)).toHaveValue("인기");
+    expect(contentSave()).toBeDisabled();
   });
 
-  it("drops assigned label ids that no longer exist so saving cannot get stuck on a deleted label", () => {
-    // 다른 탭에서 라벨을 지우면 bootstrap에는 사라졌지만 처음 채운 입력에는 남아 있을 수 있다.
-    mockBootstrap({ data: itemWith({ labelIds: ["label-gone", "label-1"] }) });
+  it("saves an empty label list after removing every row", () => {
+    mockBootstrap({ data: itemWith({ customLabels: [{ text: "인기", color: "pink" }] }) });
 
     render(<MenuItemDetailPage menuItemId="menu-1" />);
 
-    expect(labelToggle("신메뉴")).toHaveAttribute("aria-pressed", "true");
-    fireEvent.change(within(contentForm()).getByLabelText("설명"), { target: { value: "새 설명" } });
-    fireEvent.click(within(contentForm()).getByRole("button", { name: "저장" }));
+    fireEvent.click(within(contentForm()).getByRole("button", { name: "라벨 1 삭제" }));
+    fireEvent.click(contentSave());
 
     expect(updateMenuItemContentMutate).toHaveBeenCalledWith(
-      { descriptionOverride: "새 설명", labelIds: ["label-1"] },
+      { descriptionOverride: "", labels: [] },
       expect.anything(),
     );
-  });
-
-  it("announces each picked label's selection order to assistive technology", () => {
-    render(<MenuItemDetailPage menuItemId="menu-1" />);
-
-    fireEvent.click(labelToggle("인기"));
-    fireEvent.click(labelToggle("신메뉴"));
-
-    expect(labelToggle("인기")).toHaveAccessibleDescription("1번째로 선택됨");
-    expect(labelToggle("신메뉴")).toHaveAccessibleDescription("2번째로 선택됨");
-  });
-
-  it("deselects a picked label when it is clicked again", () => {
-    mockBootstrap({ data: itemWith({ labelIds: ["label-1"] }) });
-
-    render(<MenuItemDetailPage menuItemId="menu-1" />);
-
-    expect(labelToggle("신메뉴")).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(labelToggle("신메뉴"));
-    expect(labelToggle("신메뉴")).toHaveAttribute("aria-pressed", "false");
-    fireEvent.click(within(contentForm()).getByRole("button", { name: "저장" }));
-
-    expect(updateMenuItemContentMutate).toHaveBeenCalledWith(
-      { descriptionOverride: "", labelIds: [] },
-      expect.anything(),
-    );
-  });
-
-  it("allows at most five labels and disables the rest with a hint", () => {
-    render(<MenuItemDetailPage menuItemId="menu-1" />);
-
-    expect(within(contentForm()).queryByText("라벨은 최대 5개까지 고를 수 있어요.")).not.toBeInTheDocument();
-    for (const text of ["신메뉴", "인기", "매운맛", "추천", "한정"]) {
-      fireEvent.click(labelToggle(text));
-    }
-
-    expect(labelToggle("비건")).toBeDisabled();
-    expect(labelToggle("신메뉴")).toBeEnabled();
-    expect(within(contentForm()).getByText("라벨은 최대 5개까지 고를 수 있어요.")).toBeInTheDocument();
   });
 
   it("keeps the typed input and shows the error when saving fails", () => {
     const { rerender } = render(<MenuItemDetailPage menuItemId="menu-1" />);
 
     fireEvent.change(within(contentForm()).getByLabelText("설명"), { target: { value: "실패할 설명" } });
-    fireEvent.click(within(contentForm()).getByRole("button", { name: "저장" }));
+    addLabel("인기", "blue");
+    fireEvent.click(contentSave());
 
     updateMenuItemContentMutationState.current = {
       ...idleMutation(updateMenuItemContentMutate),
       isError: true,
-      error: new Error("unknown label id"),
+      error: new Error("label text too long"),
     };
     rerender(<MenuItemDetailPage menuItemId="menu-1" />);
 
-    expect(within(contentForm()).getByRole("alert")).toHaveTextContent("unknown label id");
+    expect(within(contentForm()).getByRole("alert")).toHaveTextContent("label text too long");
     expect(within(contentForm()).getByLabelText("설명")).toHaveValue("실패할 설명");
+    expect(labelText(1)).toHaveValue("인기");
+    expect(labelColor(1)).toHaveValue("blue");
   });
 
   it("disables save while the content mutation is pending", () => {
@@ -414,6 +522,6 @@ describe("MenuItemDetailPage customer description and labels", () => {
     render(<MenuItemDetailPage menuItemId="menu-1" />);
     fireEvent.change(within(contentForm()).getByLabelText("설명"), { target: { value: "새 설명" } });
 
-    expect(within(contentForm()).getByRole("button", { name: "저장" })).toBeDisabled();
+    expect(contentSave()).toBeDisabled();
   });
 });

@@ -298,8 +298,8 @@ export function MenuManagementPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {item.labelIds?.length && item.labels?.length ? (
-                      // 직접 붙인 라벨은 라벨 관리에서 색을 정한다. 아래 색 선택은 위치 기반으로
+                    {item.customLabels?.length && item.labels?.length ? (
+                      // 운영자가 입력한 라벨은 메뉴 상세에서 고친다. 아래 색 선택은 위치 기반으로
                       // 포스 라벨 색을 바꾸므로 여기서 보여 주면 엉뚱한 라벨이 바뀐다.
                       <div className="flex min-w-0 flex-col gap-1">
                         <div className="flex flex-wrap gap-1">
@@ -312,8 +312,11 @@ export function MenuManagementPage() {
                             </span>
                           ))}
                         </div>
-                        <Link href="/menu/labels" className="text-xs text-muted-foreground underline underline-offset-4">
-                          {t("itemLabelsManagedLink")}
+                        <Link
+                          href={`/menu/${item.id}`}
+                          className="text-xs text-muted-foreground underline underline-offset-4"
+                        >
+                          {t("itemLabelsEditLink")}
                         </Link>
                       </div>
                     ) : item.labels?.length ? (
