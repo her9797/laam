@@ -76,3 +76,43 @@ test("새 템플릿과 미리보기 띠에서 누르는 요소는 44px 이상이
     assert.ok(size >= 44, `${selector}: ${size}px`);
   }
 });
+
+for (const [name, minTextPx] of [["notebook", 12], ["chalkboard", 12]] as const) {
+  test(`${name}.css: ui-ux-pro-max 검토 — 포커스 링·placeholder·터치 간격·최소 글자 크기`, async () => {
+    const css = await source(`app/templates/${name}.css`);
+    const scope = `html[data-template="${name}"]`;
+
+    // 키보드 포커스가 템플릿 배경 위에서 보이도록 2px 이상 링을 준다(입력칸 포함).
+    const focus = css.match(new RegExp(`${scope.replace(/[[\]"]/g, "\\$&")} :focus-visible[^{]*\\{([^}]*)\\}`));
+    assert.ok(focus, "템플릿 전용 :focus-visible 규칙이 있어야 한다");
+    assert.match(focus[1], /outline:\s*[3-4]px solid/);
+    assert.doesNotMatch(css, /outline:\s*none/, "포커스 링을 지우는 규칙이 없어야 한다");
+
+    // 입력칸 안내 문구도 본문 대비(4.5:1)를 지키는 색을 쓴다.
+    assert.match(css, /::placeholder\s*\{[^}]*color:/);
+
+    // 페이지 이동 버튼·선택칸도 44px 이상.
+    assert.match(css, /\.customer-menu-page-controls button[^{]*\{[^}]*min-height:\s*44px/);
+    assert.match(css, /\.request-compose-field select[^{]*\{[^}]*min-height:\s*44px/);
+
+    // 12px 미만 글자가 없어야 한다.
+    for (const match of css.matchAll(/font-size:\s*([\d.]+)px/g)) {
+      assert.ok(Number(match[1]) >= minTextPx, `font-size ${match[1]}px`);
+    }
+  });
+}
+
+test("누르는 요소가 붙어 있는 목록은 8px 이상 간격을 둔다", async () => {
+  const notebook = await source("app/templates/notebook.css");
+  const chalkboard = await source("app/templates/chalkboard.css");
+  const gapOf = (css: string, selector: string) => {
+    const start = css.indexOf(`${selector} {`);
+    assert.ok(start >= 0, `${selector} 규칙이 있어야 한다`);
+    const block = css.slice(start, css.indexOf("}", start));
+    return Number(block.match(/(?:row-)?gap:\s*(\d+)px/)?.[1] ?? 0);
+  };
+  assert.ok(gapOf(notebook, 'html[data-template="notebook"] .notebook-index-tabs') >= 8);
+  assert.ok(gapOf(notebook, 'html[data-template="notebook"] .notebook-todo') >= 8);
+  assert.ok(gapOf(chalkboard, 'html[data-template="chalkboard"] .chalk-nav') >= 8);
+  assert.ok(gapOf(chalkboard, 'html[data-template="chalkboard"] .primary-strip') >= 8);
+});

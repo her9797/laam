@@ -75,7 +75,7 @@ html[data-template="notebook"] .notebook-index-tabs {
   z-index: 20;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 html[data-template="notebook"] .notebook-index-tab {
@@ -148,7 +148,7 @@ html[data-template="notebook"] .hero-copy,
 html[data-template="notebook"] .hero-meta {
   margin-top: 0;
   color: var(--muted-strong);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 32px;
 }
 
@@ -247,7 +247,7 @@ html[data-template="notebook"] .menu-detail-modal h2 {
 html[data-template="notebook"] .menu-copy p:last-child,
 html[data-template="notebook"] .menu-detail-description {
   color: var(--nb-muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
 }
 
@@ -280,6 +280,7 @@ html[data-template="notebook"] .menu-label-tag[data-label-color] {
 }
 
 html[data-template="notebook"] .customer-menu-page-controls button {
+  min-height: 44px;
   border-color: var(--nb-ink);
   background: transparent;
   color: var(--nb-ink);
@@ -376,6 +377,7 @@ html[data-template="notebook"] .request-compose-field input,
 html[data-template="notebook"] .request-compose-field select,
 html[data-template="notebook"] .request-compose-field textarea,
 html[data-template="notebook"] .menu-option-quantity {
+  min-height: 44px;
   border: 0;
   border-bottom: 2px solid var(--nb-ink);
   border-radius: 0;
@@ -393,7 +395,31 @@ html[data-template="notebook"] .request-compose-field input:focus,
 html[data-template="notebook"] .request-compose-field select:focus,
 html[data-template="notebook"] .request-compose-field textarea:focus {
   border-color: var(--nb-red);
-  outline: none;
+}
+
+/* 키보드 포커스: 밝은 종이 위에서 보이는 빨간 펜 링(classic의 흰 링 대신) */
+html[data-template="notebook"] :focus-visible,
+html[data-template="notebook"] .menu-item-button:focus-visible {
+  outline: 3px solid var(--nb-red);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+html[data-template="notebook"] .request-compose-field input::placeholder,
+html[data-template="notebook"] .request-compose-field textarea::placeholder {
+  color: var(--nb-muted);
+  opacity: 1;
+}
+
+/* WebKit은 기본 모양(menulist) 선택칸에 높이를 적용하지 않는다. 템플릿에서만 기본 모양을 끄고 화살표를 직접 그려 44px를 맞춘다. */
+html[data-template="notebook"] .request-compose-field select {
+  height: 44px;
+  padding-right: 36px;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2326324a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-position: right 12px center;
+  background-repeat: no-repeat;
 }
 
 /* 버튼: 형광펜 칠한 종이 버튼 */
@@ -520,7 +546,7 @@ html[data-template="notebook"] .notebook-title {
 
 html[data-template="notebook"] .notebook-lead {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 32px;
 }
 
@@ -574,6 +600,7 @@ html[data-template="notebook"] .notebook-polaroid-secret {
 html[data-template="notebook"] .notebook-todo {
   display: flex;
   flex-direction: column;
+  gap: 8px;
   margin-top: 26px;
 }
 
@@ -590,7 +617,7 @@ html[data-template="notebook"] .notebook-todo-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 48px;
+  min-height: 44px;
   color: var(--nb-ink);
   font-family: var(--nb-hand);
   font-size: 21px;
