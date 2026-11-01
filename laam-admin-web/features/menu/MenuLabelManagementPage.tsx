@@ -182,7 +182,10 @@ export function MenuLabelManagementPage() {
                   }
                   onDelete={() => {
                     // 앞서 실패한 삭제 오류가 다른 라벨의 확인창에 남지 않게 비운다.
-                    deleteMutation.reset();
+                    // 진행 중인 삭제는 비우지 않는다(결과·대기 상태를 잃지 않게).
+                    if (!deleteMutation.isPending) {
+                      deleteMutation.reset();
+                    }
                     setPendingDeleteId(label.id);
                   }}
                 />

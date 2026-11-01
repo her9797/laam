@@ -68,6 +68,7 @@ beforeEach(() => {
   createMenuLabelMutate.mockClear();
   updateMenuLabelMutate.mockClear();
   deleteMenuLabelMutate.mockClear();
+  deleteMenuLabelReset.mockClear();
   refetchMock.mockClear();
   createMenuLabelMutationState.current = idleMutation(createMenuLabelMutate);
   updateMenuLabelMutationState.current = idleMutation(updateMenuLabelMutate);
@@ -227,15 +228,22 @@ describe("MenuLabelManagementPage", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
+  it("does not clear an in-flight delete when another label's confirm dialog is opened", () => {
+    deleteMenuLabelMutationState.current = { ...idleMutation(deleteMenuLabelMutate), isPending: true };
+    render(<MenuLabelManagementPage />);
+
+    fireEvent.click(within(labelRow("인기")).getByRole("button", { name: "삭제" }));
+    expect(deleteMenuLabelReset).not.toHaveBeenCalled();
+  });
+
   it("clears a previous delete error whenever the confirm dialog is opened", () => {
-    deleteMenuLabelReset.mockClear();
     render(<MenuLabelManagementPage />);
 
     fireEvent.click(within(labelRow("인기")).getByRole("button", { name: "삭제" }));
     expect(deleteMenuLabelReset).toHaveBeenCalledTimes(1);
   });
 
-  it("surfaces a failed delete inside the still-open confirm dialog", () => {
+  it("shows a delete failure inside the confirm dialog that is still open", () => {
     deleteMenuLabelMutationState.current = {
       ...idleMutation(deleteMenuLabelMutate),
       isError: true,
