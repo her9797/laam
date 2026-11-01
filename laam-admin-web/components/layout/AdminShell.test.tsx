@@ -59,7 +59,7 @@ import i18n from "@/i18n/client";
 
 import { AdminShell } from "./AdminShell";
 
-const TOP_LEVEL_NAV_LABELS = ["대시보드", "매장 플레이어", "이벤트·공지", "안내 문구"];
+const TOP_LEVEL_NAV_LABELS = ["대시보드", "매장 플레이어", "이벤트·공지", "안내 문구", "손님 화면 템플릿"];
 
 const REQUEST_GROUP_SUB_LABELS = ["손님 요청", "노래 신청", "특별 요청"];
 

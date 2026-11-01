@@ -11,6 +11,8 @@ export type StoreInfo = {
   songRequestCopy: string;
   requestCopy: string;
   eventCopy: string;
+  /** Customer screen template id (`classic`/`notebook`/`chalkboard`). Optional: older APIs omit it, and an unknown value must not crash the admin. */
+  customerTemplate?: string;
 };
 
 export type MenuCategory = {

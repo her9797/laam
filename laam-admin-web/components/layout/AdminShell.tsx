@@ -21,6 +21,7 @@ import {
   RiLogoutBoxRLine,
   RiMegaphoneLine,
   RiMusic2Line,
+  RiPaletteLine,
   RiPlayCircleLine,
   RiQrCodeLine,
   RiRestaurantLine,
@@ -151,6 +152,7 @@ const BOTTOM_NAV_ITEMS: NavItem[] = [
   { href: "/notices", labelKey: "navNotices", icon: RiMegaphoneLine },
   { href: "/coupons", labelKey: "navCoupons", icon: RiCoupon3Line },
   { href: "/store-copy", labelKey: "navStoreCopy", icon: RiFileTextLine },
+  { href: "/store-template", labelKey: "navStoreTemplate", icon: RiPaletteLine },
   // A standalone top-level item, not folded into any of the grouped
   // dropdowns above — this is an operational diagnostics screen, not a
   // guest-request/order/product management concern.
