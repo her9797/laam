@@ -199,10 +199,23 @@ test("공책·칠판 본문 글꼴은 나눔고딕이다(손글씨 제목 글꼴
   }
 });
 
-test("카테고리 화면 머리글에 '…전체 메뉴' 설명 문구를 두지 않는다", async () => {
+test("카테고리 화면 설명 '…전체 메뉴'는 클래식에만 보이고 공책·칠판은 hero-copy 숨김으로 가린다", async () => {
   const screen = await source("components/screens/category-screen.tsx");
-  assert.doesNotMatch(screen, /전체 메뉴/);
-  assert.doesNotMatch(screen, /hero-copy/);
+  assert.match(screen, /<p className="hero-copy">\{store\.name\}의 \{category\.label\} 전체 메뉴<\/p>/);
+});
+
+for (const name of ["notebook", "chalkboard"]) {
+  test(`${name}.css: 카테고리 줄은 남는 공간이 있으면 가운데 정렬하고, 넘치면 처음부터 옆으로 밀어 본다`, async () => {
+    const css = await source(`app/templates/${name}.css`);
+    const scope = `html\\[data-template="${name}"\\]`;
+    assert.match(css, new RegExp(`${scope} \\.category-pill:first-child\\s*\\{\\s*margin-left:\\s*auto`));
+    assert.match(css, new RegExp(`${scope} \\.category-pill:last-child\\s*\\{\\s*margin-right:\\s*auto`));
+  });
+}
+
+test("chalkboard.css: 카테고리 줄과 메뉴 목록 사이 간격을 공책과 같게 줄인다", async () => {
+  const css = await source("app/templates/chalkboard.css");
+  assert.match(css, /html\[data-template="chalkboard"\] \.floating-subnav-shell\s*\{[^}]*margin-bottom:\s*0/);
 });
 
 test("모바일에서 누른 자리에 브라우저 기본 탭 하이라이트(잔상)를 그리지 않는다", async () => {
@@ -251,4 +264,45 @@ test("notebook.css: 스크롤해서 위에 붙는 카테고리 바가 고정 인
   const css = await source("app/templates/notebook.css");
   assert.match(css, /html\[data-template="notebook"\] \.floating-subnav-shell\s*\{[^}]*top:\s*58px/);
   assert.match(css, /body:has\(\.template-preview-banner\) \.floating-subnav-shell\s*\{[^}]*top:\s*118px/, "미리보기 띠(60px)만큼 더 내린다");
+});
+
+test("공책·칠판 홈의 네이버 아이콘은 클래식 홈과 같은 네이버 지도 주소로 간다", async () => {
+  const home = await source("components/screens/home-screen.tsx");
+  const links = await source("components/templates/social-links.tsx");
+  const classicUrl = home.match(/href="(https:\/\/map\.naver\.com\/[^"]+)"/)?.[1];
+  assert.ok(classicUrl, "클래식 홈의 네이버 지도 주소");
+  assert.ok(links.includes(`href="${classicUrl}"`), "아이콘도 같은 주소를 쓴다");
+  assert.doesNotMatch(links, /naver\.me/);
+});
+
+for (const name of ["notebook", "chalkboard"]) {
+  test(`${name}.css: 영문 소제목(music request 등)과 제목 아래 설명 문구를 숨긴다`, async () => {
+    const css = await source(`app/templates/${name}.css`);
+    const scope = `html\\[data-template="${name}"\\]`;
+    assert.match(css, new RegExp(`${scope} \\.section-kicker,\\s*${scope} \\.hero-copy\\s*\\{\\s*display:\\s*none`));
+  });
+}
+
+test("chalkboard.css: 위쪽 메뉴 줄은 글자 길이만큼 칸을 잡아 '특별한 요청'이 잘리지 않는다", async () => {
+  const css = await source("app/templates/chalkboard.css");
+  assert.match(css, /html\[data-template="chalkboard"\] \.primary-pill,[^{]*\{[^}]*flex:\s*1 1 auto/);
+  assert.match(css, /html\[data-template="chalkboard"\] \.primary-strip\s*\{[^}]*flex-wrap:\s*wrap/, "아주 좁은 화면에서는 다음 줄로 내린다");
+});
+
+test("특별한 요청의 이상형 세부사항은 여러 줄 입력이라 긴 안내 문구가 잘리지 않는다", async () => {
+  const screen = await source("components/screens/requests-screen.tsx");
+  assert.match(screen, /<span>세부사항<\/span>\s*<textarea\s+rows=\{3\}/, "폴드 접힘(280px)에서도 안내 문구가 다 보이게 3줄");
+});
+
+for (const name of ["notebook", "chalkboard"]) {
+  test(`${name}.css: 제목 카드 뒤 본문의 겹치는 부제목(듣고 싶은 노래 등)을 숨기고, 제목 카드가 없는 화면은 둔다`, async () => {
+    const css = await source(`app/templates/${name}.css`);
+    assert.match(css, new RegExp(`html\\[data-template="${name}"\\] \\.hero-card ~ \\.content-card > \\.section-header\\s*\\{\\s*display:\\s*none`));
+  });
+}
+
+test("chalkboard.css: 메뉴 줄과 본문 사이를 카테고리 화면처럼 줄인다(숨긴 부제목 뒤 폼 여백 제거, 메뉴 줄 아래 여백 축소)", async () => {
+  const css = await source("app/templates/chalkboard.css");
+  assert.match(css, /html\[data-template="chalkboard"\] \.hero-card ~ \.content-card > \.section-header \+ \.request-compose-form\s*\{\s*margin-top:\s*0/);
+  assert.match(css, /html\[data-template="chalkboard"\] \.primary-strip\s*\{[^}]*margin-bottom:\s*4px/);
 });

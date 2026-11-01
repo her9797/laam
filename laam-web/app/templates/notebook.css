@@ -161,6 +161,17 @@ html[data-template="notebook"] .hero-meta {
   line-height: 32px;
 }
 
+/* 영문 소제목과 제목 아래 설명은 두지 않는다(종이 폭을 본문에 쓴다) */
+html[data-template="notebook"] .section-kicker,
+html[data-template="notebook"] .hero-copy {
+  display: none;
+}
+
+/* 제목과 겹치는 본문 부제목(듣고 싶은 노래·평범한·진행 중 안내)도 두지 않는다. 제목 카드가 없는 QR 안내 화면은 그대로 둔다 */
+html[data-template="notebook"] .hero-card ~ .content-card > .section-header {
+  display: none;
+}
+
 /* 주요 메뉴 줄은 위쪽 인덱스 탭이 대신한다 */
 html[data-template="notebook"] .primary-strip {
   display: none;
@@ -175,6 +186,15 @@ html[data-template="notebook"] .floating-subnav-shell {
 
 html[data-template="notebook"] body:has(.template-preview-banner) .floating-subnav-shell {
   top: 118px;
+}
+
+/* 카테고리 줄: 남는 공간이 있으면 가운데로 모으고, 넘치면 자동 여백이 0이 되어 처음부터 옆으로 밀어 본다 */
+html[data-template="notebook"] .category-pill:first-child {
+  margin-left: auto;
+}
+
+html[data-template="notebook"] .category-pill:last-child {
+  margin-right: auto;
 }
 
 html[data-template="notebook"] .category-pill,
