@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { SecretCouponHotspot } from "@/components/easter-egg/secret-coupon-hotspot";
 import { TableSessionBadge } from "@/components/table/table-session-badge";
+import { SocialLinks } from "@/components/templates/social-links";
 import type { NoticeItem, StoreInfo } from "@/data/menu-data";
 
 type ChalkboardHomeScreenProps = {
@@ -32,6 +33,7 @@ export function ChalkboardHomeScreen({ store, canEditTable, notice }: Chalkboard
             Bar Laam <span aria-hidden="true">↘</span>
           </h1>
           <p>지하 1층, 우리들의 아지트</p>
+          <SocialLinks className="chalk-social" />
         </header>
 
         <nav className="chalk-nav" aria-label="손님 메뉴 안내">

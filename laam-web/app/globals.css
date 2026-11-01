@@ -32,6 +32,8 @@ body {
   background: var(--page-background);
   color: var(--text);
   font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  /* 모바일 브라우저가 누른 자리에 그리는 기본 하이라이트가 잔상처럼 남지 않게 끈다 */
+  -webkit-tap-highlight-color: transparent;
 }
 
 a {

@@ -15,40 +15,29 @@ const NOTEBOOK_TABS = [
 
 const HIDDEN_PATHS = ["/access-required", "/checkout", "/payments"];
 
-/** 템플릿마다 모든 화면에 깔리는 장식과 공통 내비. classic은 지금 화면 그대로라 아무것도 그리지 않는다. */
+/** 템플릿마다 모든 화면에 깔리는 공통 내비. classic은 지금 화면 그대로라 아무것도 그리지 않는다. */
 export function TemplateChrome({ template }: { template: CustomerTemplate }) {
   const pathname = usePathname() ?? "/";
 
-  if (template !== "notebook") {
+  if (template !== "notebook" || HIDDEN_PATHS.some((path) => pathname.startsWith(path))) {
     return null;
   }
 
-  const showTabs = !HIDDEN_PATHS.some((path) => pathname.startsWith(path));
-
   return (
-    <>
-      <div className="notebook-spiral" aria-hidden="true">
-        {Array.from({ length: 12 }, (_, index) => (
-          <span key={index} />
-        ))}
-      </div>
-      {showTabs ? (
-        <nav className="notebook-index-tabs" aria-label="주요 메뉴">
-          {NOTEBOOK_TABS.map((tab) => {
-            const active = pathname === tab.match || pathname.startsWith(`${tab.match}/`);
-            return (
-              <Link
-                key={tab.href}
-                href={tab.href}
-                className={active ? "notebook-index-tab active" : "notebook-index-tab"}
-                aria-current={active ? "page" : undefined}
-              >
-                {tab.label}
-              </Link>
-            );
-          })}
-        </nav>
-      ) : null}
-    </>
+    <nav className="notebook-index-tabs" aria-label="주요 메뉴">
+      {NOTEBOOK_TABS.map((tab) => {
+        const active = pathname === tab.match || pathname.startsWith(`${tab.match}/`);
+        return (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            className={active ? "notebook-index-tab active" : "notebook-index-tab"}
+            aria-current={active ? "page" : undefined}
+          >
+            {tab.label}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }
