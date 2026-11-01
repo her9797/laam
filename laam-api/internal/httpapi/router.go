@@ -36,6 +36,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 	registerTossPlaceWebhookRoutes(mux, repository, cfg)
 	registerExpenseRoutes(mux, repository, cfg)
 	registerPaymentBillRoutes(mux, repository, cfg)
+	registerStoreTemplateRoutes(mux, repository, cfg)
 
 	mux.HandleFunc("/api/v1/bootstrap", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {

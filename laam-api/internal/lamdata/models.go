@@ -1,12 +1,23 @@
 package lamdata
 
+import "slices"
+
+// CustomerTemplates lists the customer screen templates laam-web can render.
+// Adding a template is one entry here; the DB column defaults to "classic".
+var CustomerTemplates = []string{"classic", "notebook", "chalkboard"}
+
+func IsCustomerTemplate(id string) bool {
+	return slices.Contains(CustomerTemplates, id)
+}
+
 type StoreInfo struct {
-	Name            string `json:"name"`
-	Subtitle        string `json:"subtitle"`
-	Address         string `json:"address"`
-	SongRequestCopy string `json:"songRequestCopy"`
-	RequestCopy     string `json:"requestCopy"`
-	EventCopy       string `json:"eventCopy"`
+	Name             string `json:"name"`
+	Subtitle         string `json:"subtitle"`
+	Address          string `json:"address"`
+	SongRequestCopy  string `json:"songRequestCopy"`
+	RequestCopy      string `json:"requestCopy"`
+	EventCopy        string `json:"eventCopy"`
+	CustomerTemplate string `json:"customerTemplate"`
 }
 
 type MenuCategory struct {

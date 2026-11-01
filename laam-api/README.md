@@ -59,6 +59,8 @@ laam-api
 - `POST|DELETE /api/v1/admin/expense-receipts/{id}/image`
 - `GET /api/v1/admin/expense-receipts/{id}/image-url`
 - `GET /api/v1/admin/expenses/summary`
+- `PATCH /api/v1/admin/store-template` (손님 화면 템플릿 `classic`·`notebook`·`chalkboard` 저장, 전체 bootstrap 반환)
+- `POST /api/v1/admin/store-template/preview` (저장 전 미리보기용 30분 서명 링크 `{ "url" }` 반환)
 
 ## 실행 방법
 

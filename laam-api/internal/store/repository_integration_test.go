@@ -223,6 +223,47 @@ func TestRepository_UpdateStoreCopies(t *testing.T) {
 	})
 }
 
+func TestRepository_UpdateStoreTemplate(t *testing.T) {
+	repo := resetDB(t)
+	ctx := context.Background()
+
+	currentTemplate := func() string {
+		t.Helper()
+		data, err := repo.GetBootstrapData(ctx)
+		if err != nil {
+			t.Fatalf("GetBootstrapData() error = %v", err)
+		}
+		return data.Store.CustomerTemplate
+	}
+
+	if got := currentTemplate(); got != "classic" {
+		t.Fatalf("default CustomerTemplate = %q, want %q", got, "classic")
+	}
+
+	if err := repo.UpdateStoreTemplate(ctx, " chalkboard "); err != nil {
+		t.Fatalf("UpdateStoreTemplate() error = %v", err)
+	}
+	if got := currentTemplate(); got != "chalkboard" {
+		t.Errorf("CustomerTemplate = %q, want %q", got, "chalkboard")
+	}
+
+	for _, value := range []string{"", "  ", "neon", "Classic"} {
+		if err := repo.UpdateStoreTemplate(ctx, value); !errors.Is(err, ErrInvalidInput) {
+			t.Errorf("UpdateStoreTemplate(%q) error = %v, want ErrInvalidInput", value, err)
+		}
+	}
+	if got := currentTemplate(); got != "chalkboard" {
+		t.Errorf("CustomerTemplate after rejected updates = %q, want %q", got, "chalkboard")
+	}
+
+	if _, err := testPool.Exec(ctx, `DELETE FROM store_profile`); err != nil {
+		t.Fatalf("delete store_profile: %v", err)
+	}
+	if err := repo.UpdateStoreTemplate(ctx, "notebook"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("UpdateStoreTemplate(no row) error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestRepository_UpdateCategoryVisibility(t *testing.T) {
 	repo := resetDB(t)
 	ctx := context.Background()

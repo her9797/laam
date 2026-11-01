@@ -275,6 +275,7 @@ CREATE INDEX IF NOT EXISTS idx_payment_order_option_choices_order_id ON payment_
 ALTER TABLE store_profile ADD COLUMN IF NOT EXISTS song_request_copy TEXT NOT NULL DEFAULT '';
 ALTER TABLE store_profile ADD COLUMN IF NOT EXISTS request_copy TEXT NOT NULL DEFAULT '';
 ALTER TABLE store_profile ADD COLUMN IF NOT EXISTS event_copy TEXT NOT NULL DEFAULT '';
+ALTER TABLE store_profile ADD COLUMN IF NOT EXISTS customer_template TEXT NOT NULL DEFAULT 'classic';
 UPDATE store_profile SET name = 'laam' WHERE id = 1 AND name = 'lam';
 UPDATE store_profile
 SET address = '서울 마포구 망원동 57-23'
@@ -813,10 +814,29 @@ func (r *Repository) UpdateStoreCopies(ctx context.Context, songRequestCopy stri
 	return nil
 }
 
+// UpdateStoreTemplate sets the customer screen template; only ids in
+// lamdata.CustomerTemplates are accepted.
+func (r *Repository) UpdateStoreTemplate(ctx context.Context, template string) error {
+	template = strings.TrimSpace(template)
+	if !lamdata.IsCustomerTemplate(template) {
+		return ErrInvalidInput
+	}
+
+	result, err := r.pool.Exec(ctx, `UPDATE store_profile SET customer_template = $1 WHERE id = 1`, template)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapData, error) {
 	storeInfo := lamdata.StoreInfo{}
-	if err := r.pool.QueryRow(ctx, `SELECT name, subtitle, address, song_request_copy, request_copy, event_copy FROM store_profile WHERE id = 1`).Scan(
-		&storeInfo.Name, &storeInfo.Subtitle, &storeInfo.Address, &storeInfo.SongRequestCopy, &storeInfo.RequestCopy, &storeInfo.EventCopy,
+	if err := r.pool.QueryRow(ctx, `SELECT name, subtitle, address, song_request_copy, request_copy, event_copy, customer_template FROM store_profile WHERE id = 1`).Scan(
+		&storeInfo.Name, &storeInfo.Subtitle, &storeInfo.Address, &storeInfo.SongRequestCopy, &storeInfo.RequestCopy, &storeInfo.EventCopy, &storeInfo.CustomerTemplate,
 	); err != nil {
 		return lamdata.BootstrapData{}, err
 	}
