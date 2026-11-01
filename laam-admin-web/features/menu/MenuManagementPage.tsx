@@ -38,7 +38,7 @@ import { useDebouncedValue } from "@/hooks/use-debounced-value";
 import { CatalogResyncButton } from "./CatalogResyncButton";
 import { BADGE_COLOR_OPTIONS, MenuItemForm } from "./MenuItemForm";
 import { buildMenuListSearchParams, parseMenuListQuery, type MenuListQuery } from "./list-query-url";
-import { filterItemsByCategory, getMenuItemDisplayImage } from "./model";
+import { MENU_LABEL_CHIP_CLASSES, filterItemsByCategory, getMenuItemDisplayImage } from "./model";
 import { useUpdateMenuItemLabelColorsMutation, useUpdateMenuItemVisibilityMutation } from "./queries";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -298,7 +298,25 @@ export function MenuManagementPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {item.labels?.length ? (
+                    {item.labelIds?.length && item.labels?.length ? (
+                      // 직접 붙인 라벨은 라벨 관리에서 색을 정한다. 아래 색 선택은 위치 기반으로
+                      // 포스 라벨 색을 바꾸므로 여기서 보여 주면 엉뚱한 라벨이 바뀐다.
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <div className="flex flex-wrap gap-1">
+                          {item.labels.map((label, index) => (
+                            <span
+                              key={`${label.text}-${index}`}
+                              className={`rounded-3xl px-2 py-0.5 text-xs ${MENU_LABEL_CHIP_CLASSES[label.color ?? ""] ?? "bg-muted text-foreground"}`}
+                            >
+                              {label.text}
+                            </span>
+                          ))}
+                        </div>
+                        <Link href="/menu/labels" className="text-xs text-muted-foreground underline underline-offset-4">
+                          {t("itemLabelsManagedLink")}
+                        </Link>
+                      </div>
+                    ) : item.labels?.length ? (
                       <div className="flex min-w-0 flex-col gap-1">
                         {item.labels.map((label, index) => (
                           <div key={`${label.text}-${index}`} className="flex items-center gap-1">

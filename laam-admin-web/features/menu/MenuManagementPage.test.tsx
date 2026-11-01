@@ -557,6 +557,30 @@ describe("MenuManagementPage", () => {
     });
   });
 
+  it("shows directly assigned labels without the Toss color picker, pointing to label management", () => {
+    // labelIds가 있으면 item.labels는 직접 붙인 라벨이다. 위치 기반 label-colors API는
+    // 포스 라벨 색을 바꾸므로 여기서 색을 고르면 엉뚱한 라벨이 바뀐다.
+    mockBootstrap({
+      data: {
+        ...FIXTURE,
+        items: [
+          {
+            ...FIXTURE.items[0],
+            labelIds: ["label-1"],
+            labels: [{ text: "스무디", color: "pink" }],
+          },
+        ],
+      },
+    });
+
+    render(<MenuManagementPage />);
+
+    const menuRow = screen.getByText("아메리카노").closest("tr") as HTMLElement;
+    expect(within(menuRow).getByText("스무디")).toBeInTheDocument();
+    expect(within(menuRow).queryAllByRole("combobox")).toHaveLength(0);
+    expect(within(menuRow).getByRole("link", { name: "라벨 관리에서 색 변경" })).toHaveAttribute("href", "/menu/labels");
+  });
+
   it("does not show a delete action in the list (removed from this screen's UI)", () => {
     render(<MenuManagementPage />);
 
