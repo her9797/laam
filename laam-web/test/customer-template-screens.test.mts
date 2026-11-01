@@ -149,3 +149,21 @@ test("chalkboard.css: 사진이 있는 메뉴는 목록에 썸네일을 보여�
   assert.match(css, /\.menu-icon:not\(:has\(\.menu-icon-image\)\)\s*\{[^}]*display:\s*none/);
   assert.match(css, /\.menu-item:has\(\.menu-icon-image\)\s*\{[^}]*grid-template-columns:/);
 });
+
+for (const name of ["notebook", "chalkboard"]) {
+  test(`${name}.css: 320px보다 좁은 화면(폴드 접힘 280px)에서도 잘리지 않게 body 최소 폭을 풀어 준다`, async () => {
+    const css = await source(`app/templates/${name}.css`);
+    assert.match(css, new RegExp(`html\\[data-template="${name}"\\] body\\s*\\{[^}]*min-width:\\s*0`));
+  });
+}
+
+test("chalkboard.css: 사진이 있는 메뉴는 가격을 설명 아래로 내려 좁은 화면에서도 이름이 끊기지 않는다", async () => {
+  const css = await source("app/templates/chalkboard.css");
+  assert.match(css, /\.menu-item:has\(\.menu-icon-image\)\s*\{[^}]*grid-template-columns:\s*64px minmax\(0, 1fr\);/);
+  assert.match(css, /\.menu-item:has\(\.menu-icon-image\) \.menu-side\s*\{[^}]*grid-column:\s*2/);
+});
+
+test("미리보기 띠는 좁은 화면에서 줄바꿈되어 종료 버튼이 잘리지 않는다", async () => {
+  const css = await source("app/globals.css");
+  assert.match(css, /\.template-preview-banner\s*\{[^}]*flex-wrap:\s*wrap/);
+});

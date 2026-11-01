@@ -26,6 +26,8 @@ html[data-template="chalkboard"] {
 }
 
 html[data-template="chalkboard"] body {
+  /* 공통 CSS의 최소 폭 320px을 풀어 폴드 접힘(280px) 같은 좁은 화면에서 잘리지 않게 한다 */
+  min-width: 0;
   background: #2b2e2c;
   color: var(--ch-chalk);
   font-family: var(--font-gowun-dodum), "Apple SD Gothic Neo", sans-serif;
@@ -149,9 +151,27 @@ html[data-template="chalkboard"] .menu-icon:not(:has(.menu-icon-image)) {
   display: none;
 }
 
+/* 사진·설명·가격 3칸은 좁은 화면에서 설명 칸이 너무 좁아져 이름이 끊긴다. 가격은 설명 아래로 내린다. */
 html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) {
-  grid-template-columns: 64px minmax(0, 1fr) auto;
+  grid-template-columns: 64px minmax(0, 1fr);
+  row-gap: 6px;
+  align-items: start;
+}
+
+html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) .menu-side {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 8px;
+}
+
+html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) .menu-side .menu-badge {
+  margin: 0;
+}
+
+html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) .menu-badge-placeholder {
+  display: none;
 }
 
 html[data-template="chalkboard"] .menu-icon {

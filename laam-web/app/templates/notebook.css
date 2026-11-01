@@ -24,6 +24,8 @@ html[data-template="notebook"] {
 }
 
 html[data-template="notebook"] body {
+  /* 공통 CSS의 최소 폭 320px을 풀어 폴드 접힘(280px) 같은 좁은 화면에서 잘리지 않게 한다 */
+  min-width: 0;
   background: #e9e3d3;
   color: var(--nb-ink);
   font-family: var(--font-gowun-dodum), "Apple SD Gothic Neo", sans-serif;
