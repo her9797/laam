@@ -142,3 +142,10 @@ for (const name of ["notebook", "chalkboard"]) {
     assert.match(css, new RegExp(`${scope} \\.menu-title-row h3[^{]*\\{[^}]*word-break:\\s*keep-all`));
   });
 }
+
+test("chalkboard.css: 사진이 있는 메뉴는 목록에 썸네일을 보여주고, 사진이 없을 때만 글자 자리를 숨긴다", async () => {
+  const css = (await source("app/templates/chalkboard.css")).replace(/\/\*[\s\S]*?\*\//g, "");
+  assert.doesNotMatch(css, /\.menu-icon\s*\{[^}]*display:\s*none/, "사진까지 통째로 숨기면 안 된다");
+  assert.match(css, /\.menu-icon:not\(:has\(\.menu-icon-image\)\)\s*\{[^}]*display:\s*none/);
+  assert.match(css, /\.menu-item:has\(\.menu-icon-image\)\s*\{[^}]*grid-template-columns:/);
+});

@@ -144,8 +144,28 @@ html[data-template="chalkboard"] .notice-item + .notice-item {
   border-top: 2px dotted var(--line);
 }
 
-html[data-template="chalkboard"] .menu-icon {
+/* 사진이 있는 메뉴만 분필 액자 썸네일을 보여주고, 사진이 없으면 칠판 메뉴판처럼 글씨만 둔다(첫 글자 자리는 숨김) */
+html[data-template="chalkboard"] .menu-icon:not(:has(.menu-icon-image)) {
   display: none;
+}
+
+html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) {
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+html[data-template="chalkboard"] .menu-icon {
+  width: 64px;
+  height: 64px;
+  padding: 3px;
+  border: 2px solid var(--ch-chalk);
+  border-radius: 10px 14px 9px 12px;
+  background: transparent;
+  box-sizing: border-box;
+}
+
+html[data-template="chalkboard"] .menu-icon-image {
+  border-radius: 6px;
 }
 
 html[data-template="chalkboard"] .menu-copy h3 {
