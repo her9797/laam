@@ -274,12 +274,25 @@ export function MenuManagementPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Link
-                      href={`/menu/${item.id}`}
-                      className="text-foreground underline underline-offset-4 hover:font-bold"
-                    >
-                      {item.name}
-                    </Link>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <Link
+                        href={`/menu/${item.id}`}
+                        className="text-foreground underline underline-offset-4 hover:font-bold"
+                      >
+                        {item.name}
+                      </Link>
+                      {/* 손님 화면에 실제로 보이는 설명. 관리자가 덮어쓴 설명이면 포스 설명과 구분해 표시한다. */}
+                      {item.description ? (
+                        <span className="line-clamp-2 max-w-72 text-xs whitespace-pre-line text-muted-foreground">
+                          {item.descriptionOverride ? (
+                            <span className="mr-1 rounded-3xl bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
+                              {t("itemDescriptionOverridden")}
+                            </span>
+                          ) : null}
+                          {item.description}
+                        </span>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell>{category?.label ?? item.categoryId}</TableCell>
                   <TableCell>{item.price}</TableCell>
