@@ -116,3 +116,29 @@ test("누르는 요소가 붙어 있는 목록은 8px 이상 간격을 둔다", 
   assert.ok(gapOf(chalkboard, 'html[data-template="chalkboard"] .chalk-nav') >= 8);
   assert.ok(gapOf(chalkboard, 'html[data-template="chalkboard"] .primary-strip') >= 8);
 });
+
+for (const name of ["notebook", "chalkboard"]) {
+  test(`${name}.css: 관리자가 고른 라벨 색 4가지를 템플릿 톤으로 구분해 보여준다`, async () => {
+    const css = await source(`app/templates/${name}.css`);
+    const colors = new Set<string>();
+    for (const color of ["green", "amber", "pink", "blue"]) {
+      const rule = css.match(
+        new RegExp(`html\\[data-template="${name}"\\] \\.menu-label-tag\\[data-label-color="${color}"\\]\\s*\\{([^}]*)\\}`),
+      );
+      assert.ok(rule, `${color} 라벨 규칙이 있어야 한다`);
+      const value = rule[1].match(/(?:^|;|\s)color:\s*([^;]+);/)?.[1]?.trim();
+      assert.ok(value, `${color} 라벨 글자색`);
+      colors.add(value);
+    }
+    assert.equal(colors.size, 4, "네 색이 서로 달라야 한다");
+  });
+}
+
+for (const name of ["notebook", "chalkboard"]) {
+  test(`${name}.css: 라벨이 많아도 메뉴 이름을 글자 단위로 끊지 않고 라벨을 다음 줄로 내린다`, async () => {
+    const css = await source(`app/templates/${name}.css`);
+    const scope = `html\\[data-template="${name}"\\]`;
+    assert.match(css, new RegExp(`${scope} \\.menu-title-row[^{]*\\{[^}]*flex-wrap:\\s*wrap`));
+    assert.match(css, new RegExp(`${scope} \\.menu-title-row h3[^{]*\\{[^}]*word-break:\\s*keep-all`));
+  });
+}

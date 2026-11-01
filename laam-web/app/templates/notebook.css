@@ -284,6 +284,27 @@ html[data-template="notebook"] .menu-label-tag[data-label-color] {
   letter-spacing: 0;
 }
 
+/* 라벨이 여러 개면 이름이 한 글자씩 끊기지 않게, 자리가 모자랄 때 라벨을 다음 줄로 내린다(classic은 nowrap 유지) */
+html[data-template="notebook"] .menu-title-row {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+html[data-template="notebook"] .menu-title-row h3,
+html[data-template="notebook"] .menu-title-row h2 {
+  word-break: keep-all;
+}
+
+html[data-template="notebook"] .menu-title-row .menu-labels {
+  flex-shrink: 1;
+}
+
+/* 관리자가 고른 라벨 색(초록·주황·분홍·파랑)을 펜 색으로 구분한다. 색이 없으면 카드가 green으로 넘긴다. */
+html[data-template="notebook"] .menu-label-tag[data-label-color="green"] { border-color: #1f7a4a; color: #1f7a4a; }
+html[data-template="notebook"] .menu-label-tag[data-label-color="amber"] { border-color: #8a5a00; color: #8a5a00; }
+html[data-template="notebook"] .menu-label-tag[data-label-color="pink"] { border-color: #b0336e; color: #b0336e; }
+html[data-template="notebook"] .menu-label-tag[data-label-color="blue"] { border-color: #2756a8; color: #2756a8; }
+
 html[data-template="notebook"] .customer-menu-page-controls button {
   min-height: 44px;
   border-color: var(--nb-ink);
