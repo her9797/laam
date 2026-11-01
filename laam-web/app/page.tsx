@@ -2,8 +2,10 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { HomeScreen } from "@/components/screens/home-screen";
-import { getQrCookieName, getStaffCookieName, isQrSessionValid, isStaffSessionValid } from "@/lib/auth";
+import { getQrCookieName, getStaffCookieName, isStaffSessionValid } from "@/lib/auth";
 import { getCustomerTemplateContext } from "@/lib/customer-template-context";
+import { PREVIEW_COOKIE_NAME } from "@/lib/customer-template";
+import { canViewCustomerPage } from "@/lib/preview-request";
 import {
   getAppData,
   getFeaturedCategoryFromData,
@@ -17,7 +19,7 @@ export default async function HomePage() {
   const cookieStore = await cookies();
   const qrSession = cookieStore.get(getQrCookieName())?.value;
   const staffSession = cookieStore.get(getStaffCookieName())?.value;
-  if (!isQrSessionValid(qrSession)) {
+  if (!canViewCustomerPage(qrSession, cookieStore.get(PREVIEW_COOKIE_NAME)?.value)) {
     redirect("/access-required");
   }
 

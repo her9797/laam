@@ -1617,9 +1617,14 @@ body:has(.menu-detail-modal) .content-card {
 .template-preview-banner a {
   display: inline-flex;
   align-items: center;
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 12px;
   border-radius: 999px;
   background: #1c1a17;
   color: #ffffff;
+}
+
+/* 미리보기 띠가 오른쪽 위 테이블 표시를 가리지 않게 미리보기 중에만 아래로 내린다. */
+body:has(.template-preview-banner) .floating-table-badge {
+  top: calc(64px + env(safe-area-inset-top));
 }

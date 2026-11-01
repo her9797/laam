@@ -55,3 +55,24 @@ for (const name of ["notebook", "chalkboard"]) {
     assert.ok(count > 20, "템플릿 CSS 규칙이 있어야 한다");
   });
 }
+
+test("새 템플릿과 미리보기 띠에서 누르는 요소는 44px 이상이다", async () => {
+  const notebook = await source("app/templates/notebook.css");
+  const chalkboard = await source("app/templates/chalkboard.css");
+  const globals = await source("app/globals.css");
+  const block = (css: string, selector: string) => {
+    const start = css.indexOf(`${selector} {`);
+    assert.ok(start >= 0, `${selector} 규칙이 있어야 한다`);
+    return css.slice(start, css.indexOf("}", start));
+  };
+  for (const [css, selector] of [
+    [notebook, 'html[data-template="notebook"] .floating-table-badge'],
+    [notebook, 'html[data-template="notebook"] .notebook-polaroid-secret'],
+    [chalkboard, 'html[data-template="chalkboard"] .floating-table-badge'],
+    [globals, ".template-preview-banner a"],
+  ] as const) {
+    const rule = block(css, selector);
+    const size = Number(rule.match(/(?:min-)?height:\s*(\d+)px/)?.[1] ?? 0);
+    assert.ok(size >= 44, `${selector}: ${size}px`);
+  }
+});

@@ -470,7 +470,7 @@ html[data-template="notebook"] .notice-item:nth-child(3n) {
 /* 떠 있는 버튼: 테이프와 스티커 */
 html[data-template="notebook"] .floating-table-badge {
   min-width: 0;
-  height: 32px;
+  height: 44px;
   padding: 0 12px;
   border: 0;
   border-radius: 0;
@@ -560,7 +560,7 @@ html[data-template="notebook"] .notebook-polaroid figcaption {
 }
 
 html[data-template="notebook"] .notebook-polaroid-secret {
-  min-height: 32px;
+  min-height: 44px;
   padding: 0 6px;
   border: 0;
   background: none;

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { registerHooks } from "node:module";
 import test from "node:test";
 
@@ -24,6 +25,8 @@ const writeRoutes = [
   ["secret-coupons/vinyl-laam/claim", await import("../app/api/secret-coupons/[id]/claim/route.ts"), { params: Promise.resolve({ id: "vinyl-laam" }) }],
 ] as const;
 const { createPreviewCookieValue } = await import("../lib/customer-template.ts");
+const { canViewCustomerPage } = await import("../lib/preview-request.ts");
+const { isQrSessionValid } = await import("../lib/auth.ts");
 hooks.deregister();
 
 const QR_SECRET = "test-qr-secret";
@@ -55,22 +58,27 @@ function qrSession(expiresAt: number) {
   return `${payload}.${createHmac("sha256", SESSION_SECRET).update(payload).digest("hex")}`;
 }
 
-test("유효한 미리보기 링크는 QR 세션과 미리보기 쿠키를 30분으로 심고 홈으로 보낸다", async (t) => {
+test("유효한 미리보기 링크는 주문할 수 있는 QR 세션 없이 30분짜리 미리보기 쿠키만 심고 홈으로 보낸다", async (t) => {
   withEnv(t);
   const response = await enterRoute.GET(new NextRequest(previewUrl("notebook", nowSeconds() + 600)));
 
   assert.equal(new URL(response.headers.get("location") ?? "").pathname, "/");
-  const qrCookie = response.cookies.get("lam_qr_session");
   const previewCookie = response.cookies.get("lam_template_preview");
-  assert.ok(qrCookie?.value);
-  assert.equal(qrCookie?.maxAge, 1800);
-  assert.equal(qrCookie?.httpOnly, true);
   assert.match(previewCookie?.value ?? "", /^notebook\.\d+\.[0-9a-f]{64}$/);
   assert.equal(previewCookie?.maxAge, 1800);
   assert.equal(previewCookie?.httpOnly, true);
+  // 미리보기 쿠키를 지워도 주문 가능한 세션이 남지 않고, 직원·손님의 기존 QR 세션도 덮지 않는다.
+  assert.equal(response.cookies.get("lam_qr_session"), undefined);
+});
 
-  const qrExpiresAt = Number(qrCookie?.value.split(".")[2]);
-  assert.ok(qrExpiresAt <= nowSeconds() + 1800, "미리보기 QR 세션은 8시간이 아니라 30분짜리여야 한다");
+test("미리보기 쿠키는 QR 세션 없이도 손님 화면을 열게 하지만 QR 세션을 대신하지는 않는다", async (t) => {
+  withEnv(t);
+  const preview = createPreviewCookieValue("notebook", nowSeconds() + 600, SESSION_SECRET);
+  assert.equal(canViewCustomerPage(undefined, preview), true);
+  assert.equal(canViewCustomerPage(qrSession(nowSeconds() + 600), undefined), true);
+  assert.equal(canViewCustomerPage(undefined, undefined), false);
+  assert.equal(canViewCustomerPage(undefined, preview.replace("notebook", "chalkboard")), false);
+  assert.equal(isQrSessionValid(preview), false);
 });
 
 test("서명이 틀리거나 만료됐거나 모르는 템플릿이면 쿠키 없이 접근 안내로 보낸다", async (t) => {
@@ -95,7 +103,7 @@ test("QR 서명 비밀값이 없으면 미리보기 입장을 막는다", async 
   assert.equal(new URL(response.headers.get("location") ?? "").pathname, "/access-required");
 });
 
-test("미리보기 종료는 미리보기 쿠키와 QR 세션을 지우고 직원 쿠키는 남긴다", async (t) => {
+test("미리보기 종료는 미리보기 쿠키만 지우고 QR·직원 세션은 남긴다", async (t) => {
   withEnv(t);
   const request = new NextRequest("https://guest.example.com/preview/exit", {
     headers: {
@@ -104,20 +112,18 @@ test("미리보기 종료는 미리보기 쿠키와 QR 세션을 지우고 직�
   });
   const response = await exitRoute.GET(request);
 
-  assert.equal(new URL(response.headers.get("location") ?? "").pathname, "/access-required");
+  assert.equal(new URL(response.headers.get("location") ?? "").pathname, "/");
   assert.equal(response.cookies.get("lam_template_preview")?.value, "");
-  assert.equal(response.cookies.get("lam_qr_session")?.value, "");
+  assert.equal(response.cookies.get("lam_qr_session"), undefined);
   assert.equal(response.cookies.get("lam_staff_session"), undefined);
 });
 
-test("미리보기가 아닌 손님이 종료 주소를 열어도 QR 세션은 지우지 않는다", async (t) => {
-  withEnv(t);
-  const request = new NextRequest("https://guest.example.com/preview/exit", {
-    headers: { cookie: `lam_qr_session=${qrSession(nowSeconds() + 600)}` },
+for (const page of ["page", "menu/page", "menu/[category]/page", "song-requests/page", "requests/page", "special-requests/page", "events/page"]) {
+  test(`app/${page}.tsx: 미리보기 쿠키로도 열 수 있다`, async () => {
+    const source = await readFile(new URL(`../app/${page}.tsx`, import.meta.url), "utf8");
+    assert.match(source, /canViewCustomerPage\(qrSession, cookieStore\.get\(PREVIEW_COOKIE_NAME\)\?\.value\)/);
   });
-  const response = await exitRoute.GET(request);
-  assert.equal(response.cookies.get("lam_qr_session"), undefined);
-});
+}
 
 for (const [path, route, context] of writeRoutes) {
   test(`${path}: 미리보기 중에는 서버로 보내지 않고 403으로 거절한다`, async (t) => {

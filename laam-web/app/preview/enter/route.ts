@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { createQrSessionValue, getQrCookieName, getSessionSecret } from "@/lib/auth";
+import { getSessionSecret } from "@/lib/auth";
 import {
   PREVIEW_COOKIE_NAME,
   PREVIEW_MAX_AGE_SECONDS,
@@ -23,20 +23,19 @@ export function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/access-required", origin));
   }
 
+  // QR 세션은 주지 않는다. 미리보기 쿠키는 화면만 열고(canViewCustomerPage), 주문·요청 API는
+  // QR 세션을 요구하므로 쿠키를 지워도 주문 가능한 세션이 남지 않는다.
   const response = NextResponse.redirect(new URL("/", origin));
-  const options = {
-    httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: PREVIEW_MAX_AGE_SECONDS,
-  };
-  // 미리보기 QR 세션도 30분만 산다. 종료하지 않고 떠나도 주문 가능한 세션이 남지 않는다.
-  response.cookies.set(getQrCookieName(), createQrSessionValue(PREVIEW_MAX_AGE_SECONDS), options);
   response.cookies.set(
     PREVIEW_COOKIE_NAME,
     createPreviewCookieValue(template, now + PREVIEW_MAX_AGE_SECONDS, getSessionSecret()),
-    options,
+    {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: PREVIEW_MAX_AGE_SECONDS,
+    },
   );
   return response;
 }
