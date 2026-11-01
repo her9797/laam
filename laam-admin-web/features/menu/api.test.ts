@@ -2,7 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchJson } from "@/lib/api/fetch-json";
 
-import { getMenuItemRecipe, resyncCatalog, updateMenuItemLabelColors, updateMenuItemRecipe } from "./api";
+import {
+  createMenuLabel,
+  deleteMenuLabel,
+  getMenuItemRecipe,
+  resyncCatalog,
+  updateMenuItemContent,
+  updateMenuItemLabelColors,
+  updateMenuItemRecipe,
+  updateMenuLabel,
+} from "./api";
 
 vi.mock("@/lib/api/fetch-json", () => ({ fetchJson: vi.fn() }));
 
@@ -69,6 +78,50 @@ describe("updateMenuItemLabelColors", () => {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ colors: ["green", "amber"] }),
+    });
+  });
+});
+
+describe("menu label and content endpoints", () => {
+  beforeEach(() => {
+    vi.mocked(fetchJson)
+      .mockReset()
+      .mockResolvedValue({ store: {}, categories: [], items: [], requestGuides: [], notices: [] });
+  });
+
+  it("POSTs a new label's text and color", async () => {
+    await createMenuLabel({ text: "신메뉴", color: "green" });
+
+    expect(fetchJson).toHaveBeenCalledWith("/api/admin/menu-labels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "신메뉴", color: "green" }),
+    });
+  });
+
+  it("PATCHes a label by id", async () => {
+    await updateMenuLabel("label-1", { text: "인기", color: "pink" });
+
+    expect(fetchJson).toHaveBeenCalledWith("/api/admin/menu-labels/label-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "인기", color: "pink" }),
+    });
+  });
+
+  it("DELETEs a label by id", async () => {
+    await deleteMenuLabel("label-1");
+
+    expect(fetchJson).toHaveBeenCalledWith("/api/admin/menu-labels/label-1", { method: "DELETE" });
+  });
+
+  it("PATCHes a menu item's description override and label ids", async () => {
+    await updateMenuItemContent("menu-1", { descriptionOverride: "새 설명", labelIds: ["label-2", "label-1"] });
+
+    expect(fetchJson).toHaveBeenCalledWith("/api/admin/menu-items/menu-1/content", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ descriptionOverride: "새 설명", labelIds: ["label-2", "label-1"] }),
     });
   });
 });

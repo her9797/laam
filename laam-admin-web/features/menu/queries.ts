@@ -6,19 +6,25 @@ import { bootstrapKeys } from "@/features/bootstrap/queries";
 import {
   createCategory,
   createMenuItem,
+  createMenuLabel,
   deleteCategory,
   deleteMenuItem,
+  deleteMenuLabel,
   getMenuItemRecipe,
   resyncCatalog,
   updateCategoryVisibility,
+  updateMenuItemContent,
   updateMenuItemLabelColors,
   updateMenuItemRecipe,
   updateMenuItemVisibility,
+  updateMenuLabel,
   uploadMenuItemImage,
 } from "./api";
 import type {
   CreateCategoryInput,
   CreateMenuItemInput,
+  MenuLabelInput,
+  UpdateMenuItemContentInput,
   UpdateMenuItemRecipeInput,
   UploadMenuItemImageInput,
 } from "./model";
@@ -99,6 +105,38 @@ export function useUploadMenuItemImageMutation() {
   const applyBootstrapUpdate = useApplyBootstrapUpdate();
   return useMutation({
     mutationFn: (input: UploadMenuItemImageInput) => uploadMenuItemImage(input),
+    onSuccess: applyBootstrapUpdate,
+  });
+}
+
+export function useCreateMenuLabelMutation() {
+  const applyBootstrapUpdate = useApplyBootstrapUpdate();
+  return useMutation({
+    mutationFn: (input: MenuLabelInput) => createMenuLabel(input),
+    onSuccess: applyBootstrapUpdate,
+  });
+}
+
+export function useUpdateMenuLabelMutation() {
+  const applyBootstrapUpdate = useApplyBootstrapUpdate();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: MenuLabelInput }) => updateMenuLabel(id, input),
+    onSuccess: applyBootstrapUpdate,
+  });
+}
+
+export function useDeleteMenuLabelMutation() {
+  const applyBootstrapUpdate = useApplyBootstrapUpdate();
+  return useMutation({
+    mutationFn: (id: string) => deleteMenuLabel(id),
+    onSuccess: applyBootstrapUpdate,
+  });
+}
+
+export function useUpdateMenuItemContentMutation(menuItemId: string) {
+  const applyBootstrapUpdate = useApplyBootstrapUpdate();
+  return useMutation({
+    mutationFn: (input: UpdateMenuItemContentInput) => updateMenuItemContent(menuItemId, input),
     onSuccess: applyBootstrapUpdate,
   });
 }

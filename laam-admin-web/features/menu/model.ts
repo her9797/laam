@@ -78,6 +78,38 @@ export type UpdateMenuItemRecipeInput = {
   instructions: string;
 };
 
+/** Body of `POST /menu-labels` and `PATCH /menu-labels/{id}`. */
+export type MenuLabelInput = {
+  text: string;
+  color: string;
+};
+
+/** Body of `PATCH /menu-items/{id}/content`. */
+export type UpdateMenuItemContentInput = {
+  descriptionOverride: string;
+  labelIds: string[];
+};
+
+// Mirror laam-api's validation limits so the UI stops before a 400.
+export const MENU_LABEL_TEXT_MAX_LENGTH = 20;
+export const DESCRIPTION_OVERRIDE_MAX_LENGTH = 300;
+export const MAX_MENU_ITEM_LABELS = 5;
+
+/** The server's label color allow-list, sharing the badge palette's i18n keys. */
+export const MENU_LABEL_COLOR_OPTIONS = [
+  { value: "green", labelKey: "badgeGreen" },
+  { value: "amber", labelKey: "badgeAmber" },
+  { value: "pink", labelKey: "badgePink" },
+  { value: "blue", labelKey: "badgeBlue" },
+] as const;
+
+export const MENU_LABEL_CHIP_CLASSES: Record<string, string> = {
+  green: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  amber: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  pink: "bg-pink-500/15 text-pink-700 dark:text-pink-300",
+  blue: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+};
+
 export type MenuImageDisplayArea = "home" | "menu" | "both";
 
 export type UploadMenuItemImageInput = {

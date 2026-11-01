@@ -23,6 +23,7 @@ import {
   RiMusic2Line,
   RiPaletteLine,
   RiPlayCircleLine,
+  RiPriceTag3Line,
   RiQrCodeLine,
   RiRestaurantLine,
   RiShoppingBag3Line,
@@ -106,13 +107,14 @@ const REQUEST_NAV_GROUP: NavGroup = {
 };
 
 // A labeled sub-section rather than its own link — "상품 관리" has no page
-// of its own, only the two management screens nested under it.
+// of its own, only the management screens nested under it.
 const PRODUCT_NAV_GROUP: NavGroup = {
   labelKey: "navProducts",
   icon: RiShoppingBag3Line,
   items: [
     { href: "/menu", labelKey: "navMenu", icon: RiRestaurantLine },
     { href: "/menu/categories", labelKey: "navCategories", icon: RiFolderLine },
+    { href: "/menu/labels", labelKey: "navLabels", icon: RiPriceTag3Line },
   ],
 };
 

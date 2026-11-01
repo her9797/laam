@@ -6,6 +6,8 @@ import type {
   CreateCategoryInput,
   CreateMenuItemInput,
   MenuItemRecipe,
+  MenuLabelInput,
+  UpdateMenuItemContentInput,
   UpdateMenuItemRecipeInput,
   UploadMenuItemImageInput,
 } from "./model";
@@ -13,6 +15,7 @@ import type {
 const CATEGORIES_PATH = "/api/admin/categories";
 const MENU_ITEMS_PATH = "/api/admin/menu-items";
 const CATALOG_SYNC_PATH = "/api/admin/catalog-sync";
+const MENU_LABELS_PATH = "/api/admin/menu-labels";
 
 /**
  * Every one of these calls `laam-api`'s admin category/menu-item endpoints
@@ -74,6 +77,40 @@ export function updateMenuItemLabelColors(id: string, colors: string[]): Promise
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ colors }),
+  });
+}
+
+export function createMenuLabel(input: MenuLabelInput): Promise<AppData> {
+  return fetchJson<AppData>(MENU_LABELS_PATH, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateMenuLabel(id: string, input: MenuLabelInput): Promise<AppData> {
+  return fetchJson<AppData>(`${MENU_LABELS_PATH}/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+/** The server also drops the label from every item that had it. */
+export function deleteMenuLabel(id: string): Promise<AppData> {
+  return fetchJson<AppData>(`${MENU_LABELS_PATH}/${id}`, { method: "DELETE" });
+}
+
+/**
+ * Saves the operator's customer-screen description and assigned labels
+ * together. `descriptionOverride: ""` falls back to the POS description and
+ * `labelIds: []` falls back to the Toss labels.
+ */
+export function updateMenuItemContent(id: string, input: UpdateMenuItemContentInput): Promise<AppData> {
+  return fetchJson<AppData>(`${MENU_ITEMS_PATH}/${id}/content`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
   });
 }
 
