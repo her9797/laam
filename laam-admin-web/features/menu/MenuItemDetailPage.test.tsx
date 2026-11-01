@@ -344,7 +344,7 @@ describe("MenuItemDetailPage customer description and labels", () => {
       "pink",
     );
     // 직접 입력한 라벨이 있으면 포스 라벨 대체 안내는 보이지 않는다.
-    expect(within(contentForm()).queryByText("라벨을 입력하지 않으면 포스 라벨을 보여줘요.")).not.toBeInTheDocument();
+    expect(within(contentForm()).queryByText("라벨을 입력하지 않으면 포스 설명에 적은 도수(ABV)를 라벨로 보여줘요.")).not.toBeInTheDocument();
   });
 
   it("adds a new row with green as the default color and a live preview", () => {
@@ -426,11 +426,11 @@ describe("MenuItemDetailPage customer description and labels", () => {
   it("shows the POS-label fallback hint with the current Toss labels while no label is entered", () => {
     render(<MenuItemDetailPage menuItemId="menu-1" />);
 
-    expect(within(contentForm()).getByText("라벨을 입력하지 않으면 포스 라벨을 보여줘요.")).toBeInTheDocument();
-    expect(within(contentForm()).getByText("현재 포스 라벨: BEST")).toBeInTheDocument();
+    expect(within(contentForm()).getByText("라벨을 입력하지 않으면 포스 설명에 적은 도수(ABV)를 라벨로 보여줘요.")).toBeInTheDocument();
+    expect(within(contentForm()).getByText("포스에서 가져온 라벨: BEST")).toBeInTheDocument();
 
     fireEvent.click(addLabelButton());
-    expect(within(contentForm()).queryByText("라벨을 입력하지 않으면 포스 라벨을 보여줘요.")).not.toBeInTheDocument();
+    expect(within(contentForm()).queryByText("라벨을 입력하지 않으면 포스 설명에 적은 도수(ABV)를 라벨로 보여줘요.")).not.toBeInTheDocument();
   });
 
   it("blocks saving an empty label with an inline error and sends no request", () => {

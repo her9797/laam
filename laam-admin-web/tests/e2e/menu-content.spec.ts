@@ -60,7 +60,7 @@ test.describe("메뉴 라벨과 손님 화면 설명", () => {
     await page.goto("/menu/menu-1");
     const contentForm = page.getByRole("form", { name: "손님 화면 설명" });
     await expect(contentForm.getByText("비우면 포스 설명을 보여줘요: 시원한 아메리카노")).toBeVisible();
-    await expect(contentForm.getByText("라벨을 입력하지 않으면 포스 라벨을 보여줘요.")).toBeVisible();
+    await expect(contentForm.getByText("라벨을 입력하지 않으면 포스 설명에 적은 도수(ABV)를 라벨로 보여줘요.")).toBeVisible();
     const save = contentForm.getByRole("button", { name: "저장" });
     await expect(save).toBeDisabled();
 
