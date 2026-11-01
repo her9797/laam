@@ -61,6 +61,18 @@ type updateMenuItemLabelColorsRequest struct {
 	Colors []string `json:"colors"`
 }
 
+type menuLabelRequest struct {
+	Text  string `json:"text"`
+	Color string `json:"color"`
+}
+
+// updateMenuItemContentRequest: a missing field means "clear it" — absent
+// descriptionOverride is "" and absent labelIds is no labels.
+type updateMenuItemContentRequest struct {
+	DescriptionOverride string   `json:"descriptionOverride"`
+	LabelIDs            []string `json:"labelIds"`
+}
+
 type updateCustomerRequestStatusRequest struct {
 	Status string `json:"status"`
 }

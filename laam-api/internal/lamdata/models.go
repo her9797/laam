@@ -10,6 +10,14 @@ func IsCustomerTemplate(id string) bool {
 	return slices.Contains(CustomerTemplates, id)
 }
 
+// MenuLabelColors lists the colors an operator can pick for a menu label;
+// laam-web and laam-admin-web render exactly these.
+var MenuLabelColors = []string{"green", "amber", "pink", "blue"}
+
+func IsMenuLabelColor(color string) bool {
+	return slices.Contains(MenuLabelColors, color)
+}
+
 type StoreInfo struct {
 	Name             string `json:"name"`
 	Subtitle         string `json:"subtitle"`
@@ -39,6 +47,23 @@ type MenuItem struct {
 	Images      []MenuImage     `json:"images,omitempty"`
 	Options     []MenuOption    `json:"options,omitempty"`
 	Labels      []MenuItemLabel `json:"labels,omitempty"`
+
+	// Description above is the effective text: DescriptionOverride when the
+	// operator set one, otherwise PosDescription (the Toss catalog text).
+	PosDescription      string `json:"posDescription"`
+	DescriptionOverride string `json:"descriptionOverride"`
+	// LabelIDs are the operator-assigned menu labels in display order; when
+	// non-empty, Labels shows them instead of the Toss labels.
+	LabelIDs []string `json:"labelIds"`
+}
+
+// MenuLabel is an operator-managed label that can be assigned to menu items
+// instead of the Toss catalog labels.
+type MenuLabel struct {
+	ID        string `json:"id"`
+	Text      string `json:"text"`
+	Color     string `json:"color"`
+	SortOrder int    `json:"sortOrder"`
 }
 
 // MenuItemLabel pairs a Toss Place catalog label (in the order Toss gives
@@ -277,6 +302,7 @@ type BootstrapData struct {
 	Items         []MenuItem     `json:"items"`
 	RequestGuides []NoticeItem   `json:"requestGuides"`
 	Notices       []NoticeItem   `json:"notices"`
+	MenuLabels    []MenuLabel    `json:"menuLabels"`
 }
 
 type MenuData struct {
