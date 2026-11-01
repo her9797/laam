@@ -61,8 +61,7 @@ laam-api
 - `GET /api/v1/admin/expenses/summary`
 - `PATCH /api/v1/admin/store-template` (손님 화면 템플릿 `classic`·`notebook`·`chalkboard` 저장, 전체 bootstrap 반환)
 - `POST /api/v1/admin/store-template/preview` (저장 전 미리보기용 30분 서명 링크 `{ "url" }` 반환)
-- `POST /api/v1/admin/menu-labels`, `PATCH|DELETE /api/v1/admin/menu-labels/{id}` (운영자 메뉴 라벨 `{ "text", "color" }`, 색은 `green`·`amber`·`pink`·`blue`, 텍스트 중복 시 `409`, 전체 bootstrap 반환)
-- `PATCH /api/v1/admin/menu-items/{id}/content` (`{ "descriptionOverride", "labelIds" }`로 설명 덮어쓰기·라벨 지정, 빠진 필드는 비움, 토스 카탈로그 동기화가 덮어쓰지 않음, 전체 bootstrap 반환)
+- `PATCH /api/v1/admin/menu-items/{id}/content` (`{ "descriptionOverride", "labels": [{ "text", "color" }] }`로 설명 덮어쓰기와 메뉴별 자유 입력 라벨 지정. 설명은 300자 이하(빈 값은 해제), 라벨은 최대 5개·텍스트 1~20자·메뉴 안에서 대소문자 무시 중복 불가, 색은 `green`·`amber`·`pink`·`blue` 중 필수. 빠진 필드는 비움(`labels` 생략 시 라벨 해제 → 토스 라벨 표시), 토스 카탈로그 동기화가 덮어쓰지 않음, 전체 bootstrap 반환)
 
 ## 실행 방법
 

@@ -2,11 +2,9 @@ package store
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/her9797/laam/laam-api/internal/lamdata"
 )
@@ -17,115 +15,39 @@ const (
 	maxMenuItemLabels               = 5
 )
 
-// normalizeMenuLabel trims the label text and color; it rejects text outside
-// 1..20 runes and colors outside lamdata.MenuLabelColors (an empty color too,
-// so a PATCH that omits it never silently resets the label to green).
-func normalizeMenuLabel(text string, color string) (string, string, error) {
-	text = strings.TrimSpace(text)
-	color = strings.TrimSpace(color)
-	if text == "" || utf8.RuneCountInString(text) > maxMenuLabelTextRunes || !lamdata.IsMenuLabelColor(color) {
-		return "", "", ErrInvalidInput
-	}
-	return text, color, nil
-}
-
-// CreateMenuLabel adds an operator-managed label at the end of the list.
-// Text is unique case-insensitively (idx_menu_labels_text → ErrAlreadyExists).
-func (r *Repository) CreateMenuLabel(ctx context.Context, text string, color string) error {
-	text, color, err := normalizeMenuLabel(text, color)
-	if err != nil {
-		return err
-	}
-	_, err = r.pool.Exec(ctx, `
-		INSERT INTO menu_labels (id, text, color, sort_order)
-		SELECT $1, $2, $3, COALESCE(MAX(sort_order), 0) + 1 FROM menu_labels
-	`, nextID("label"), text, color)
-	return classifyError(err)
-}
-
-func (r *Repository) UpdateMenuLabel(ctx context.Context, id string, text string, color string) error {
-	text, color, err := normalizeMenuLabel(text, color)
-	if err != nil {
-		return err
-	}
-	tag, err := r.pool.Exec(ctx, `UPDATE menu_labels SET text = $2, color = $3 WHERE id = $1`, id, text, color)
-	if err != nil {
-		return classifyError(err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
-// DeleteMenuLabel removes a label; its menu item assignments go with it
-// (menu_item_labels ON DELETE CASCADE).
-func (r *Repository) DeleteMenuLabel(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM menu_labels WHERE id = $1`, id)
-	if err != nil {
-		return classifyError(err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
 // UpdateMenuItemContent sets the operator description override ("" clears
-// it to NULL) and replaces the item's label assignments with labelIDs in
-// order, all in one transaction. Catalog sync never writes either, so they
-// survive every Toss resync.
-func (r *Repository) UpdateMenuItemContent(ctx context.Context, id string, descriptionOverride string, labelIDs []string) error {
+// it to NULL) and replaces the item's free-text labels with labels in order.
+// Each label is trimmed; text must be 1..20 runes and unique within the item
+// case-insensitively, and color one of lamdata.MenuLabelColors (empty is
+// rejected so a missing color never turns into a default). Catalog sync never
+// writes either column, so they survive every Toss resync.
+func (r *Repository) UpdateMenuItemContent(ctx context.Context, id string, descriptionOverride string, labels []lamdata.MenuItemLabel) error {
 	descriptionOverride = strings.TrimSpace(descriptionOverride)
-	if utf8.RuneCountInString(descriptionOverride) > maxMenuDescriptionOverrideRunes || len(labelIDs) > maxMenuItemLabels {
+	if utf8.RuneCountInString(descriptionOverride) > maxMenuDescriptionOverrideRunes || len(labels) > maxMenuItemLabels {
 		return ErrInvalidInput
 	}
-	ids := make([]string, 0, len(labelIDs))
-	seen := make(map[string]bool, len(labelIDs))
-	for _, labelID := range labelIDs {
-		labelID = strings.TrimSpace(labelID)
-		if labelID == "" || seen[labelID] {
+	normalized := make([]lamdata.MenuItemLabel, 0, len(labels))
+	seen := make(map[string]bool, len(labels))
+	for _, label := range labels {
+		text, color := strings.TrimSpace(label.Text), strings.TrimSpace(label.Color)
+		key := strings.ToLower(text)
+		if text == "" || utf8.RuneCountInString(text) > maxMenuLabelTextRunes || !lamdata.IsMenuLabelColor(color) || seen[key] {
 			return ErrInvalidInput
 		}
-		seen[labelID] = true
-		ids = append(ids, labelID)
+		seen[key] = true
+		normalized = append(normalized, lamdata.MenuItemLabel{Text: text, Color: color})
 	}
-
-	tx, err := r.pool.Begin(ctx)
+	labelsJSON, err := json.Marshal(normalized)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
 
-	tag, err := tx.Exec(ctx, `UPDATE menu_items SET description_override = $2 WHERE id = $1`, id, nullable(descriptionOverride))
+	tag, err := r.pool.Exec(ctx, `UPDATE menu_items SET description_override = $2, custom_labels = $3::jsonb WHERE id = $1`, id, nullable(descriptionOverride), string(labelsJSON))
 	if err != nil {
 		return classifyError(err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM menu_item_labels WHERE menu_item_id = $1`, id); err != nil {
-		return err
-	}
-	// The join drops unknown label ids, so a short row count means at least
-	// one id does not exist.
-	tag, err = tx.Exec(ctx, `
-		INSERT INTO menu_item_labels (menu_item_id, label_id, sort_order)
-		SELECT $1, l.id, ids.ord - 1
-		FROM unnest($2::text[]) WITH ORDINALITY AS ids(id, ord)
-		JOIN menu_labels l ON l.id = ids.id
-	`, id, ids)
-	// 23503: a label was deleted after the join saw it. Treat it like an
-	// unknown id (400) instead of a server error.
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-		return ErrInvalidInput
-	}
-	if err != nil {
-		return classifyError(err)
-	}
-	if tag.RowsAffected() != int64(len(ids)) {
-		return ErrInvalidInput
-	}
-	return tx.Commit(ctx)
+	return nil
 }

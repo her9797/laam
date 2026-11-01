@@ -1,5 +1,7 @@
 package httpapi
 
+import "github.com/her9797/laam/laam-api/internal/lamdata"
+
 type createCategoryRequest struct {
 	ID        string `json:"id"`
 	Label     string `json:"label"`
@@ -61,16 +63,11 @@ type updateMenuItemLabelColorsRequest struct {
 	Colors []string `json:"colors"`
 }
 
-type menuLabelRequest struct {
-	Text  string `json:"text"`
-	Color string `json:"color"`
-}
-
 // updateMenuItemContentRequest: a missing field means "clear it" — absent
-// descriptionOverride is "" and absent labelIds is no labels.
+// descriptionOverride is "" and absent labels is no labels.
 type updateMenuItemContentRequest struct {
-	DescriptionOverride string   `json:"descriptionOverride"`
-	LabelIDs            []string `json:"labelIds"`
+	DescriptionOverride string                  `json:"descriptionOverride"`
+	Labels              []lamdata.MenuItemLabel `json:"labels"`
 }
 
 type updateCustomerRequestStatusRequest struct {

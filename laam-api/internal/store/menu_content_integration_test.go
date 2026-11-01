@@ -24,17 +24,6 @@ func seedMenuContentItem(t *testing.T, ctx context.Context) string {
 	return "fries"
 }
 
-func menuLabelIDByText(t *testing.T, data lamdata.BootstrapData, text string) string {
-	t.Helper()
-	for _, label := range data.MenuLabels {
-		if label.Text == text {
-			return label.ID
-		}
-	}
-	t.Fatalf("menu label %q not found in %+v", text, data.MenuLabels)
-	return ""
-}
-
 func mustBootstrap(t *testing.T, repo *Repository, ctx context.Context) lamdata.BootstrapData {
 	t.Helper()
 	data, err := repo.GetBootstrapData(ctx)
@@ -44,170 +33,77 @@ func mustBootstrap(t *testing.T, repo *Repository, ctx context.Context) lamdata.
 	return data
 }
 
-func TestRepository_MenuLabelLifecycle(t *testing.T) {
-	repo := resetDB(t)
-	ctx := context.Background()
-
-	if data := mustBootstrap(t, repo, ctx); data.MenuLabels == nil || len(data.MenuLabels) != 0 {
-		t.Fatalf("MenuLabels on empty state = %#v, want empty non-nil slice", data.MenuLabels)
-	}
-
-	if err := repo.CreateMenuLabel(ctx, "  시그니처  ", "green"); err != nil {
-		t.Fatalf("CreateMenuLabel() error = %v", err)
-	}
-	if err := repo.CreateMenuLabel(ctx, "인기", "pink"); err != nil {
-		t.Fatalf("CreateMenuLabel() error = %v", err)
-	}
-	if err := repo.CreateMenuLabel(ctx, strings.Repeat("가", 20), "blue"); err != nil {
-		t.Fatalf("CreateMenuLabel(20 runes) error = %v", err)
-	}
-
-	data := mustBootstrap(t, repo, ctx)
-	if len(data.MenuLabels) != 3 {
-		t.Fatalf("MenuLabels = %+v, want 3", data.MenuLabels)
-	}
-	first, second := data.MenuLabels[0], data.MenuLabels[1]
-	if first.ID == "" || first.Text != "시그니처" || first.Color != "green" || second.Text != "인기" || second.Color != "pink" {
-		t.Fatalf("MenuLabels = %+v, want 시그니처/green then 인기/pink", data.MenuLabels)
-	}
-	if !(first.SortOrder < second.SortOrder && second.SortOrder < data.MenuLabels[2].SortOrder) {
-		t.Fatalf("sort orders = %d,%d,%d, want ascending", first.SortOrder, second.SortOrder, data.MenuLabels[2].SortOrder)
-	}
-
-	t.Run("invalid input is rejected", func(t *testing.T) {
-		cases := []struct{ text, color string }{
-			{"", "green"},
-			{"   ", "green"},
-			{strings.Repeat("가", 21), "green"},
-			{"정상", "red"},
-			{"정상", ""},
-		}
-		for _, c := range cases {
-			if err := repo.CreateMenuLabel(ctx, c.text, c.color); !errors.Is(err, ErrInvalidInput) {
-				t.Errorf("CreateMenuLabel(%q, %q) error = %v, want ErrInvalidInput", c.text, c.color, err)
-			}
-		}
-	})
-
-	t.Run("duplicate text is rejected case-insensitively", func(t *testing.T) {
-		if err := repo.CreateMenuLabel(ctx, "Best", "green"); err != nil {
-			t.Fatalf("CreateMenuLabel(Best) error = %v", err)
-		}
-		if err := repo.CreateMenuLabel(ctx, " best ", "green"); !errors.Is(err, ErrAlreadyExists) {
-			t.Errorf("CreateMenuLabel(best) error = %v, want ErrAlreadyExists", err)
-		}
-	})
-
-	t.Run("update changes text and color", func(t *testing.T) {
-		if err := repo.UpdateMenuLabel(ctx, first.ID, " 대표 ", "blue"); err != nil {
-			t.Fatalf("UpdateMenuLabel() error = %v", err)
-		}
-		data := mustBootstrap(t, repo, ctx)
-		if got := data.MenuLabels[0]; got.ID != first.ID || got.Text != "대표" || got.Color != "blue" {
-			t.Fatalf("MenuLabels[0] after update = %+v", got)
-		}
-		if err := repo.UpdateMenuLabel(ctx, first.ID, "인기", "green"); !errors.Is(err, ErrAlreadyExists) {
-			t.Errorf("UpdateMenuLabel(duplicate) error = %v, want ErrAlreadyExists", err)
-		}
-		if err := repo.UpdateMenuLabel(ctx, first.ID, "대표", "red"); !errors.Is(err, ErrInvalidInput) {
-			t.Errorf("UpdateMenuLabel(bad color) error = %v, want ErrInvalidInput", err)
-		}
-		if err := repo.UpdateMenuLabel(ctx, "missing", "새 라벨", "green"); !errors.Is(err, ErrNotFound) {
-			t.Errorf("UpdateMenuLabel(unknown) error = %v, want ErrNotFound", err)
-		}
-	})
-
-	t.Run("delete removes the label and its assignments", func(t *testing.T) {
-		itemID := seedMenuContentItem(t, ctx)
-		if err := repo.UpdateMenuItemContent(ctx, itemID, "", []string{second.ID}); err != nil {
-			t.Fatalf("UpdateMenuItemContent() error = %v", err)
-		}
-		if err := repo.DeleteMenuLabel(ctx, second.ID); err != nil {
-			t.Fatalf("DeleteMenuLabel() error = %v", err)
-		}
-		data := mustBootstrap(t, repo, ctx)
-		for _, label := range data.MenuLabels {
-			if label.ID == second.ID {
-				t.Fatalf("deleted label still listed: %+v", data.MenuLabels)
-			}
-		}
-		if got := data.Items[0].LabelIDs; got == nil || len(got) != 0 {
-			t.Fatalf("LabelIDs after label delete = %#v, want empty", got)
-		}
-		if err := repo.DeleteMenuLabel(ctx, second.ID); !errors.Is(err, ErrNotFound) {
-			t.Errorf("DeleteMenuLabel(unknown) error = %v, want ErrNotFound", err)
-		}
-	})
-}
-
 func TestRepository_UpdateMenuItemContent(t *testing.T) {
 	repo := resetDB(t)
 	ctx := context.Background()
 	itemID := seedMenuContentItem(t, ctx)
 	tossLabels := []lamdata.MenuItemLabel{{Text: "추천", Color: "amber"}}
 
-	data := mustBootstrap(t, repo, ctx)
-	item := data.Items[0]
+	item := mustBootstrap(t, repo, ctx).Items[0]
 	if item.Description != "토스 설명" || item.PosDescription != "토스 설명" || item.DescriptionOverride != "" {
 		t.Fatalf("initial descriptions = %q / %q / %q", item.Description, item.PosDescription, item.DescriptionOverride)
 	}
-	if item.LabelIDs == nil || len(item.LabelIDs) != 0 {
-		t.Fatalf("initial LabelIDs = %#v, want empty non-nil slice", item.LabelIDs)
+	if item.CustomLabels == nil || len(item.CustomLabels) != 0 {
+		t.Fatalf("initial CustomLabels = %#v, want empty non-nil slice", item.CustomLabels)
 	}
 	if !reflect.DeepEqual(item.Labels, tossLabels) {
 		t.Fatalf("initial Labels = %+v, want Toss labels %+v", item.Labels, tossLabels)
 	}
 
-	if err := repo.CreateMenuLabel(ctx, "시그니처", "pink"); err != nil {
-		t.Fatalf("CreateMenuLabel() error = %v", err)
-	}
-	if err := repo.CreateMenuLabel(ctx, "신규", "blue"); err != nil {
-		t.Fatalf("CreateMenuLabel() error = %v", err)
-	}
-	data = mustBootstrap(t, repo, ctx)
-	signature, fresh := menuLabelIDByText(t, data, "시그니처"), menuLabelIDByText(t, data, "신규")
-
-	if err := repo.UpdateMenuItemContent(ctx, itemID, "  운영자 설명  ", []string{fresh, signature}); err != nil {
+	input := []lamdata.MenuItemLabel{{Text: "  신규 ", Color: " blue "}, {Text: strings.Repeat("가", 20), Color: "pink"}}
+	if err := repo.UpdateMenuItemContent(ctx, itemID, "  운영자 설명  ", input); err != nil {
 		t.Fatalf("UpdateMenuItemContent() error = %v", err)
 	}
-	data = mustBootstrap(t, repo, ctx)
-	item = data.Items[0]
+	item = mustBootstrap(t, repo, ctx).Items[0]
 	if item.Description != "운영자 설명" || item.PosDescription != "토스 설명" || item.DescriptionOverride != "운영자 설명" {
 		t.Fatalf("descriptions after override = %q / %q / %q", item.Description, item.PosDescription, item.DescriptionOverride)
 	}
-	if !reflect.DeepEqual(item.LabelIDs, []string{fresh, signature}) {
-		t.Fatalf("LabelIDs = %v, want [%s %s]", item.LabelIDs, fresh, signature)
+	want := []lamdata.MenuItemLabel{{Text: "신규", Color: "blue"}, {Text: strings.Repeat("가", 20), Color: "pink"}}
+	if !reflect.DeepEqual(item.CustomLabels, want) {
+		t.Fatalf("CustomLabels = %+v, want trimmed %+v", item.CustomLabels, want)
 	}
-	wantAssigned := []lamdata.MenuItemLabel{{Text: "신규", Color: "blue"}, {Text: "시그니처", Color: "pink"}}
-	if !reflect.DeepEqual(item.Labels, wantAssigned) {
-		t.Fatalf("Labels = %+v, want assigned %+v", item.Labels, wantAssigned)
+	if !reflect.DeepEqual(item.Labels, want) {
+		t.Fatalf("Labels = %+v, want custom labels %+v", item.Labels, want)
 	}
 
 	t.Run("invalid input is rejected and keeps the previous content", func(t *testing.T) {
+		six := make([]lamdata.MenuItemLabel, 6)
+		for index := range six {
+			six[index] = lamdata.MenuItemLabel{Text: string(rune('a' + index)), Color: "green"}
+		}
 		cases := map[string]struct {
 			description string
-			labelIDs    []string
+			labels      []lamdata.MenuItemLabel
 		}{
-			"description over 300 runes": {strings.Repeat("가", 301), nil},
-			"more than five labels":      {"", []string{"a", "b", "c", "d", "e", "f"}},
-			"duplicate label ids":        {"", []string{signature, signature}},
-			"unknown label id":           {"", []string{signature, "missing"}},
-			"blank label id":             {"", []string{" "}},
+			"description over 300 runes":              {strings.Repeat("가", 301), nil},
+			"more than five labels":                   {"", six},
+			"blank text":                              {"", []lamdata.MenuItemLabel{{Text: "  ", Color: "green"}}},
+			"text over 20 runes":                      {"", []lamdata.MenuItemLabel{{Text: strings.Repeat("가", 21), Color: "green"}}},
+			"unknown color":                           {"", []lamdata.MenuItemLabel{{Text: "인기", Color: "red"}}},
+			"empty color":                             {"", []lamdata.MenuItemLabel{{Text: "인기"}}},
+			"duplicate text ignoring case and spaces": {"", []lamdata.MenuItemLabel{{Text: "Best", Color: "green"}, {Text: " best ", Color: "blue"}}},
 		}
 		for name, c := range cases {
-			if err := repo.UpdateMenuItemContent(ctx, itemID, c.description, c.labelIDs); !errors.Is(err, ErrInvalidInput) {
+			if err := repo.UpdateMenuItemContent(ctx, itemID, c.description, c.labels); !errors.Is(err, ErrInvalidInput) {
 				t.Errorf("%s: error = %v, want ErrInvalidInput", name, err)
 			}
 		}
 		item := mustBootstrap(t, repo, ctx).Items[0]
-		if item.DescriptionOverride != "운영자 설명" || !reflect.DeepEqual(item.LabelIDs, []string{fresh, signature}) {
-			t.Fatalf("content changed after rejected updates: %q %v", item.DescriptionOverride, item.LabelIDs)
+		if item.DescriptionOverride != "운영자 설명" || !reflect.DeepEqual(item.CustomLabels, want) {
+			t.Fatalf("content changed after rejected updates: %q %+v", item.DescriptionOverride, item.CustomLabels)
 		}
 	})
 
-	t.Run("300 runes is accepted", func(t *testing.T) {
-		if err := repo.UpdateMenuItemContent(ctx, itemID, strings.Repeat("가", 300), []string{signature}); err != nil {
-			t.Fatalf("UpdateMenuItemContent(300 runes) error = %v", err)
+	t.Run("300 runes and five labels are accepted", func(t *testing.T) {
+		five := make([]lamdata.MenuItemLabel, 5)
+		for index := range five {
+			five[index] = lamdata.MenuItemLabel{Text: string(rune('a' + index)), Color: "amber"}
+		}
+		if err := repo.UpdateMenuItemContent(ctx, itemID, strings.Repeat("가", 300), five); err != nil {
+			t.Fatalf("UpdateMenuItemContent(300 runes, 5 labels) error = %v", err)
+		}
+		if got := mustBootstrap(t, repo, ctx).Items[0].CustomLabels; !reflect.DeepEqual(got, five) {
+			t.Fatalf("CustomLabels = %+v, want %+v", got, five)
 		}
 	})
 
@@ -222,15 +118,16 @@ func TestRepository_UpdateMenuItemContent(t *testing.T) {
 			t.Fatalf("UpdateMenuItemContent(clear) error = %v", err)
 		}
 		item := mustBootstrap(t, repo, ctx).Items[0]
-		if item.Description != "토스 설명" || item.DescriptionOverride != "" || len(item.LabelIDs) != 0 || item.LabelIDs == nil {
-			t.Fatalf("after clear = %q / %q / %#v", item.Description, item.DescriptionOverride, item.LabelIDs)
+		if item.Description != "토스 설명" || item.DescriptionOverride != "" || item.CustomLabels == nil || len(item.CustomLabels) != 0 {
+			t.Fatalf("after clear = %q / %q / %#v", item.Description, item.DescriptionOverride, item.CustomLabels)
 		}
 		if !reflect.DeepEqual(item.Labels, tossLabels) {
 			t.Fatalf("Labels after clear = %+v, want Toss labels %+v", item.Labels, tossLabels)
 		}
 		var isNull bool
-		if err := testPool.QueryRow(ctx, `SELECT description_override IS NULL FROM menu_items WHERE id = $1`, itemID).Scan(&isNull); err != nil || !isNull {
-			t.Fatalf("description_override IS NULL = %v, err = %v; want NULL", isNull, err)
+		var stored string
+		if err := testPool.QueryRow(ctx, `SELECT description_override IS NULL, custom_labels::text FROM menu_items WHERE id = $1`, itemID).Scan(&isNull, &stored); err != nil || !isNull || stored != "[]" {
+			t.Fatalf("description_override IS NULL = %v, custom_labels = %q, err = %v; want NULL and []", isNull, stored, err)
 		}
 	})
 }
@@ -239,11 +136,8 @@ func TestRepository_SyncTossCatalogKeepsMenuContentOverrides(t *testing.T) {
 	repo := resetDB(t)
 	ctx := context.Background()
 	itemID := seedMenuContentItem(t, ctx)
-	if err := repo.CreateMenuLabel(ctx, "시그니처", "pink"); err != nil {
-		t.Fatalf("CreateMenuLabel() error = %v", err)
-	}
-	labelID := menuLabelIDByText(t, mustBootstrap(t, repo, ctx), "시그니처")
-	if err := repo.UpdateMenuItemContent(ctx, itemID, "운영자 설명", []string{labelID}); err != nil {
+	custom := []lamdata.MenuItemLabel{{Text: "시그니처", Color: "pink"}}
+	if err := repo.UpdateMenuItemContent(ctx, itemID, "운영자 설명", custom); err != nil {
 		t.Fatalf("UpdateMenuItemContent() error = %v", err)
 	}
 
@@ -260,10 +154,10 @@ func TestRepository_SyncTossCatalogKeepsMenuContentOverrides(t *testing.T) {
 	if item.ID != itemID || item.PosDescription != "새 토스 설명" || item.Description != "운영자 설명" || item.DescriptionOverride != "운영자 설명" {
 		t.Fatalf("after sync = id:%q pos:%q effective:%q override:%q", item.ID, item.PosDescription, item.Description, item.DescriptionOverride)
 	}
-	if !reflect.DeepEqual(item.LabelIDs, []string{labelID}) {
-		t.Fatalf("LabelIDs after sync = %v, want [%s]", item.LabelIDs, labelID)
+	if !reflect.DeepEqual(item.CustomLabels, custom) {
+		t.Fatalf("CustomLabels after sync = %+v, want %+v", item.CustomLabels, custom)
 	}
-	if want := []lamdata.MenuItemLabel{{Text: "시그니처", Color: "pink"}}; !reflect.DeepEqual(item.Labels, want) {
-		t.Fatalf("Labels after sync = %+v, want %+v", item.Labels, want)
+	if !reflect.DeepEqual(item.Labels, custom) {
+		t.Fatalf("Labels after sync = %+v, want %+v", item.Labels, custom)
 	}
 }

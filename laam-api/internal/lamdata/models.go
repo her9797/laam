@@ -52,23 +52,16 @@ type MenuItem struct {
 	// operator set one, otherwise PosDescription (the Toss catalog text).
 	PosDescription      string `json:"posDescription"`
 	DescriptionOverride string `json:"descriptionOverride"`
-	// LabelIDs are the operator-assigned menu labels in display order; when
-	// non-empty, Labels shows them instead of the Toss labels.
-	LabelIDs []string `json:"labelIds"`
-}
-
-// MenuLabel is an operator-managed label that can be assigned to menu items
-// instead of the Toss catalog labels.
-type MenuLabel struct {
-	ID        string `json:"id"`
-	Text      string `json:"text"`
-	Color     string `json:"color"`
-	SortOrder int    `json:"sortOrder"`
+	// CustomLabels are the operator's free-text labels for this item in
+	// display order (always an array); when non-empty, Labels shows them
+	// instead of the Toss labels.
+	CustomLabels []MenuItemLabel `json:"customLabels"`
 }
 
 // MenuItemLabel pairs a Toss Place catalog label (in the order Toss gives
 // it) with the color an operator assigned to that position. Text always
 // comes from Toss; Color is admin-set and empty until they pick one.
+// MenuItem.CustomLabels reuses it for operator-written labels (color required).
 type MenuItemLabel struct {
 	Text  string `json:"text"`
 	Color string `json:"color,omitempty"`
@@ -302,7 +295,6 @@ type BootstrapData struct {
 	Items         []MenuItem     `json:"items"`
 	RequestGuides []NoticeItem   `json:"requestGuides"`
 	Notices       []NoticeItem   `json:"notices"`
-	MenuLabels    []MenuLabel    `json:"menuLabels"`
 }
 
 type MenuData struct {

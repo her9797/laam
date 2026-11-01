@@ -423,7 +423,7 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 				return
 			}
 
-			if err := repository.UpdateMenuItemContent(r.Context(), menuItemID, payload.DescriptionOverride, payload.LabelIDs); err != nil {
+			if err := repository.UpdateMenuItemContent(r.Context(), menuItemID, payload.DescriptionOverride, payload.Labels); err != nil {
 				writeStoreError(w, err)
 				return
 			}
@@ -551,79 +551,6 @@ func NewMux(repository *store.Repository, cfg config.Config, syncer *catalogsync
 		}
 
 		writeJSON(w, http.StatusCreated, bootstrap)
-	}))
-
-	mux.HandleFunc("/api/v1/admin/menu-labels", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
-		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
-			return
-		}
-
-		if r.Method != http.MethodPost {
-			writeMethodNotAllowed(w)
-			return
-		}
-
-		var payload menuLabelRequest
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-
-		if err := repository.CreateMenuLabel(r.Context(), payload.Text, payload.Color); err != nil {
-			writeStoreError(w, err)
-			return
-		}
-
-		bootstrap, err := repository.GetBootstrapData(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		writeJSON(w, http.StatusCreated, bootstrap)
-	}))
-
-	mux.HandleFunc("/api/v1/admin/menu-labels/", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {
-		if !requireAdminAuth(w, r, cfg.AdminAPIToken) {
-			return
-		}
-
-		if r.Method != http.MethodPatch && r.Method != http.MethodDelete {
-			writeMethodNotAllowed(w)
-			return
-		}
-
-		id, ok := parseResourceID(r.URL.Path, "/api/v1/admin/menu-labels/")
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-
-		if r.Method == http.MethodDelete {
-			if err := repository.DeleteMenuLabel(r.Context(), id); err != nil {
-				writeStoreError(w, err)
-				return
-			}
-		} else {
-			var payload menuLabelRequest
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				writeError(w, http.StatusBadRequest, err)
-				return
-			}
-
-			if err := repository.UpdateMenuLabel(r.Context(), id, payload.Text, payload.Color); err != nil {
-				writeStoreError(w, err)
-				return
-			}
-		}
-
-		bootstrap, err := repository.GetBootstrapData(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, bootstrap)
 	}))
 
 	mux.HandleFunc("/api/v1/admin/catalog-sync", withCORS(cfg.AllowedOrigin, func(w http.ResponseWriter, r *http.Request) {

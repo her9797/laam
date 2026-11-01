@@ -523,20 +523,7 @@ ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS pos_moved_out_at TIMESTAMPTZ
 ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS pos_origin_order_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_payment_orders_pos_move_candidates ON payment_orders (created_at) WHERE status IN ('READY', 'ACKNOWLEDGED') AND pos_order_id IS NOT NULL;
 ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS description_override TEXT;
-CREATE TABLE IF NOT EXISTS menu_labels (
-  id TEXT PRIMARY KEY,
-  text TEXT NOT NULL,
-  color TEXT NOT NULL DEFAULT 'green',
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_labels_text ON menu_labels (lower(text));
-CREATE TABLE IF NOT EXISTS menu_item_labels (
-  menu_item_id TEXT NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
-  label_id TEXT NOT NULL REFERENCES menu_labels(id) ON DELETE CASCADE,
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (menu_item_id, label_id)
-);
+ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS custom_labels JSONB NOT NULL DEFAULT '[]'::jsonb;
 `)
 	if err != nil {
 		return err
@@ -874,7 +861,7 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		return lamdata.BootstrapData{}, err
 	}
 
-	menuRows, err := r.pool.Query(ctx, `SELECT id, category_id, COALESCE(badge, ''), COALESCE(badge_color, ''), name, description, COALESCE(description_override, ''), price, COALESCE(toss_image_url, ''), is_visible, toss_labels, label_colors FROM menu_items ORDER BY sort_order, id`)
+	menuRows, err := r.pool.Query(ctx, `SELECT id, category_id, COALESCE(badge, ''), COALESCE(badge_color, ''), name, description, COALESCE(description_override, ''), price, COALESCE(toss_image_url, ''), is_visible, toss_labels, label_colors, custom_labels FROM menu_items ORDER BY sort_order, id`)
 	if err != nil {
 		return lamdata.BootstrapData{}, err
 	}
@@ -884,7 +871,7 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 	for menuRows.Next() {
 		var item lamdata.MenuItem
 		var tossLabels, labelColors []string
-		if err := menuRows.Scan(&item.ID, &item.CategoryID, &item.Badge, &item.BadgeColor, &item.Name, &item.PosDescription, &item.DescriptionOverride, &item.Price, &item.ImageURL, &item.IsVisible, &tossLabels, &labelColors); err != nil {
+		if err := menuRows.Scan(&item.ID, &item.CategoryID, &item.Badge, &item.BadgeColor, &item.Name, &item.PosDescription, &item.DescriptionOverride, &item.Price, &item.ImageURL, &item.IsVisible, &tossLabels, &labelColors, &item.CustomLabels); err != nil {
 			return lamdata.BootstrapData{}, err
 		}
 		item.DescriptionOverride = strings.TrimSpace(item.DescriptionOverride)
@@ -892,13 +879,16 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		if item.DescriptionOverride != "" {
 			item.Description = item.DescriptionOverride
 		}
-		item.LabelIDs = make([]string, 0)
 		for index, text := range tossLabels {
 			label := lamdata.MenuItemLabel{Text: text}
 			if index < len(labelColors) {
 				label.Color = labelColors[index]
 			}
 			item.Labels = append(item.Labels, label)
+		}
+		// Operator labels replace the Toss labels; items without any keep them.
+		if len(item.CustomLabels) > 0 {
+			item.Labels = item.CustomLabels
 		}
 		items = append(items, item)
 	}
@@ -930,62 +920,6 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		items[index].Images = imagesByMenuItem[items[index].ID]
 	}
 
-	labelRows, err := r.pool.Query(ctx, `SELECT id, text, color, sort_order FROM menu_labels ORDER BY sort_order, created_at, id`)
-	if err != nil {
-		return lamdata.BootstrapData{}, err
-	}
-	defer labelRows.Close()
-
-	menuLabels := make([]lamdata.MenuLabel, 0)
-	for labelRows.Next() {
-		var label lamdata.MenuLabel
-		if err := labelRows.Scan(&label.ID, &label.Text, &label.Color, &label.SortOrder); err != nil {
-			return lamdata.BootstrapData{}, err
-		}
-		menuLabels = append(menuLabels, label)
-	}
-	if err := labelRows.Err(); err != nil {
-		return lamdata.BootstrapData{}, err
-	}
-
-	itemIndex := make(map[string]int, len(items))
-	for index := range items {
-		itemIndex[items[index].ID] = index
-	}
-
-	assignedRows, err := r.pool.Query(ctx, `
-		SELECT mil.menu_item_id, l.id, l.text, l.color
-		FROM menu_item_labels mil
-		JOIN menu_labels l ON l.id = mil.label_id
-		ORDER BY mil.menu_item_id, mil.sort_order, l.id
-	`)
-	if err != nil {
-		return lamdata.BootstrapData{}, err
-	}
-	defer assignedRows.Close()
-
-	assignedLabels := make(map[string][]lamdata.MenuItemLabel)
-	for assignedRows.Next() {
-		var menuItemID, labelID string
-		var label lamdata.MenuItemLabel
-		if err := assignedRows.Scan(&menuItemID, &labelID, &label.Text, &label.Color); err != nil {
-			return lamdata.BootstrapData{}, err
-		}
-		index, ok := itemIndex[menuItemID]
-		if !ok {
-			continue
-		}
-		items[index].LabelIDs = append(items[index].LabelIDs, labelID)
-		assignedLabels[menuItemID] = append(assignedLabels[menuItemID], label)
-	}
-	if err := assignedRows.Err(); err != nil {
-		return lamdata.BootstrapData{}, err
-	}
-	// Assigned labels replace the Toss labels; items without any keep them.
-	for menuItemID, labels := range assignedLabels {
-		items[itemIndex[menuItemID]].Labels = labels
-	}
-
 	optionRows, err := r.pool.Query(ctx, `
 		SELECT mio.menu_item_id, mo.id, mo.title, mo.is_required, mo.min_choices, mo.max_choices
 		FROM menu_item_options mio
@@ -997,6 +931,10 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 	}
 	defer optionRows.Close()
 
+	itemIndex := make(map[string]int, len(items))
+	for index := range items {
+		itemIndex[items[index].ID] = index
+	}
 	optionIndex := make(map[string]int)
 	for optionRows.Next() {
 		var menuItemID, optionID, optionTitle string
@@ -1098,7 +1036,6 @@ func (r *Repository) GetBootstrapData(ctx context.Context) (lamdata.BootstrapDat
 		Items:         items,
 		RequestGuides: requestGuides,
 		Notices:       notices,
-		MenuLabels:    menuLabels,
 	}, nil
 }
 

@@ -8,26 +8,20 @@ import (
 	"testing"
 )
 
-const menuLabelsPath = "/api/v1/admin/menu-labels"
+type menuContentLabel struct {
+	Text  string `json:"text"`
+	Color string `json:"color"`
+}
 
 type menuContentBootstrap struct {
 	Items []struct {
-		ID                  string   `json:"id"`
-		Description         string   `json:"description"`
-		PosDescription      string   `json:"posDescription"`
-		DescriptionOverride string   `json:"descriptionOverride"`
-		LabelIDs            []string `json:"labelIds"`
-		Labels              []struct {
-			Text  string `json:"text"`
-			Color string `json:"color"`
-		} `json:"labels"`
+		ID                  string             `json:"id"`
+		Description         string             `json:"description"`
+		PosDescription      string             `json:"posDescription"`
+		DescriptionOverride string             `json:"descriptionOverride"`
+		CustomLabels        []menuContentLabel `json:"customLabels"`
+		Labels              []menuContentLabel `json:"labels"`
 	} `json:"items"`
-	MenuLabels []struct {
-		ID        string `json:"id"`
-		Text      string `json:"text"`
-		Color     string `json:"color"`
-		SortOrder int    `json:"sortOrder"`
-	} `json:"menuLabels"`
 }
 
 func decodeMenuContentBootstrap(t *testing.T, body []byte) menuContentBootstrap {
@@ -39,118 +33,17 @@ func decodeMenuContentBootstrap(t *testing.T, body []byte) menuContentBootstrap 
 	return data
 }
 
-func (data menuContentBootstrap) labelID(t *testing.T, text string) string {
-	t.Helper()
-	for _, label := range data.MenuLabels {
-		if label.Text == text {
-			return label.ID
-		}
-	}
-	t.Fatalf("menu label %q not found in %+v", text, data.MenuLabels)
-	return ""
-}
-
-func TestRouter_AdminMenuLabels(t *testing.T) {
+func TestRouter_AdminMenuLabelsRouteRemoved(t *testing.T) {
 	handler := resetServer(t)
-
-	t.Run("without auth is rejected", func(t *testing.T) {
-		for _, method := range []string{http.MethodPost, http.MethodPatch, http.MethodDelete} {
-			path := menuLabelsPath
-			if method != http.MethodPost {
-				path += "/any"
-			}
-			if rec := doRequest(t, handler, method, path, []byte(`{"text":"a"}`), nil); rec.Code != http.StatusUnauthorized {
-				t.Errorf("%s %s status = %d, want %d", method, path, rec.Code, http.StatusUnauthorized)
-			}
+	for _, path := range []string{"/api/v1/admin/menu-labels", "/api/v1/admin/menu-labels/any"} {
+		if rec := doRequest(t, handler, http.MethodPost, path, []byte(`{"text":"a","color":"green"}`), adminHeaders()); rec.Code != http.StatusNotFound {
+			t.Errorf("POST %s status = %d, want %d", path, rec.Code, http.StatusNotFound)
 		}
-	})
-
-	t.Run("wrong method is rejected", func(t *testing.T) {
-		if rec := doRequest(t, handler, http.MethodGet, menuLabelsPath, nil, adminHeaders()); rec.Code != http.StatusMethodNotAllowed {
-			t.Errorf("GET collection status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
-		}
-		if rec := doRequest(t, handler, http.MethodPut, menuLabelsPath+"/any", nil, adminHeaders()); rec.Code != http.StatusMethodNotAllowed {
-			t.Errorf("PUT item status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
-		}
-	})
-
-	rec := doRequest(t, handler, http.MethodPost, menuLabelsPath, []byte(`{"text":" 시그니처 ","color":"pink"}`), adminHeaders())
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("POST status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
 	}
-	data := decodeMenuContentBootstrap(t, rec.Body.Bytes())
-	if len(data.MenuLabels) != 1 || data.MenuLabels[0].ID == "" || data.MenuLabels[0].Text != "시그니처" || data.MenuLabels[0].Color != "pink" {
-		t.Fatalf("menuLabels after POST = %+v", data.MenuLabels)
+	rec := doRequest(t, handler, http.MethodGet, "/api/v1/bootstrap", nil, nil)
+	if strings.Contains(rec.Body.String(), `"menuLabels"`) || strings.Contains(rec.Body.String(), `"labelIds"`) {
+		t.Errorf("bootstrap still exposes shared label fields: %s", rec.Body.String())
 	}
-	signatureID := data.MenuLabels[0].ID
-
-	// 색은 4색 중 하나여야 한다. 빠지면 초록으로 바꿔 받지 않고 400으로 거절한다.
-	if rec = doRequest(t, handler, http.MethodPost, menuLabelsPath, []byte(`{"text":"인기"}`), adminHeaders()); rec.Code != http.StatusBadRequest {
-		t.Fatalf("POST without color status = %d, want 400, body = %s", rec.Code, rec.Body.String())
-	}
-	rec = doRequest(t, handler, http.MethodPost, menuLabelsPath, []byte(`{"text":"인기","color":"green"}`), adminHeaders())
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("POST 인기 status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-	if got := decodeMenuContentBootstrap(t, rec.Body.Bytes()).MenuLabels; len(got) != 2 || got[1].Color != "green" {
-		t.Fatalf("menuLabels after POST 인기 = %+v", got)
-	}
-
-	t.Run("POST validation", func(t *testing.T) {
-		cases := map[string]struct {
-			body []byte
-			want int
-		}{
-			"invalid json":   {[]byte(`{`), http.StatusBadRequest},
-			"empty text":     {[]byte(`{"text":"  "}`), http.StatusBadRequest},
-			"too long text":  {[]byte(`{"text":"` + strings.Repeat("가", 21) + `"}`), http.StatusBadRequest},
-			"unknown color":  {[]byte(`{"text":"새 라벨","color":"red"}`), http.StatusBadRequest},
-			"duplicate text": {[]byte(`{"text":"시그니처","color":"blue"}`), http.StatusConflict},
-		}
-		for name, c := range cases {
-			if rec := doRequest(t, handler, http.MethodPost, menuLabelsPath, c.body, adminHeaders()); rec.Code != c.want {
-				t.Errorf("%s: status = %d, want %d, body = %s", name, rec.Code, c.want, rec.Body.String())
-			}
-		}
-	})
-
-	t.Run("PATCH", func(t *testing.T) {
-		rec := doRequest(t, handler, http.MethodPatch, menuLabelsPath+"/"+signatureID, []byte(`{"text":"대표","color":"blue"}`), adminHeaders())
-		if rec.Code != http.StatusOK {
-			t.Fatalf("PATCH status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
-		}
-		if got := decodeMenuContentBootstrap(t, rec.Body.Bytes()).MenuLabels[0]; got.ID != signatureID || got.Text != "대표" || got.Color != "blue" {
-			t.Fatalf("menuLabels[0] after PATCH = %+v", got)
-		}
-		cases := map[string]struct {
-			path string
-			body string
-			want int
-		}{
-			"unknown id":     {menuLabelsPath + "/missing", `{"text":"없음","color":"green"}`, http.StatusNotFound},
-			"duplicate text": {menuLabelsPath + "/" + signatureID, `{"text":"인기","color":"green"}`, http.StatusConflict},
-			"unknown color":  {menuLabelsPath + "/" + signatureID, `{"text":"대표","color":"red"}`, http.StatusBadRequest},
-			"invalid json":   {menuLabelsPath + "/" + signatureID, `{`, http.StatusBadRequest},
-		}
-		for name, c := range cases {
-			if rec := doRequest(t, handler, http.MethodPatch, c.path, []byte(c.body), adminHeaders()); rec.Code != c.want {
-				t.Errorf("%s: status = %d, want %d, body = %s", name, rec.Code, c.want, rec.Body.String())
-			}
-		}
-	})
-
-	t.Run("DELETE", func(t *testing.T) {
-		if rec := doRequest(t, handler, http.MethodDelete, menuLabelsPath+"/missing", nil, adminHeaders()); rec.Code != http.StatusNotFound {
-			t.Errorf("DELETE unknown status = %d, want %d", rec.Code, http.StatusNotFound)
-		}
-		rec := doRequest(t, handler, http.MethodDelete, menuLabelsPath+"/"+signatureID, nil, adminHeaders())
-		if rec.Code != http.StatusOK {
-			t.Fatalf("DELETE status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
-		}
-		if got := decodeMenuContentBootstrap(t, rec.Body.Bytes()).MenuLabels; len(got) != 1 || got[0].Text != "인기" {
-			t.Fatalf("menuLabels after DELETE = %+v", got)
-		}
-	})
 }
 
 func TestRouter_AdminMenuItemContent(t *testing.T) {
@@ -164,22 +57,19 @@ func TestRouter_AdminMenuItemContent(t *testing.T) {
 	if _, err := testPool.Exec(t.Context(), `UPDATE menu_items SET toss_labels = ARRAY['추천'], label_colors = ARRAY['amber'] WHERE id = $1`, itemID); err != nil {
 		t.Fatalf("seed toss labels: %v", err)
 	}
-	doRequest(t, handler, http.MethodPost, menuLabelsPath, []byte(`{"text":"시그니처","color":"pink"}`), adminHeaders())
-	rec = doRequest(t, handler, http.MethodPost, menuLabelsPath, []byte(`{"text":"신규","color":"blue"}`), adminHeaders())
-	labels := decodeMenuContentBootstrap(t, rec.Body.Bytes())
-	signatureID, freshID := labels.labelID(t, "시그니처"), labels.labelID(t, "신규")
 	contentPath := "/api/v1/admin/menu-items/" + itemID + "/content"
+	tossLabels := []menuContentLabel{{Text: "추천", Color: "amber"}}
 
 	t.Run("bootstrap before override keeps Toss content", func(t *testing.T) {
 		rec := doRequest(t, handler, http.MethodGet, "/api/v1/bootstrap", nil, nil)
-		if !strings.Contains(rec.Body.String(), `"labelIds":[]`) {
-			t.Errorf("bootstrap item labelIds is not an empty array: %s", rec.Body.String())
+		if !strings.Contains(rec.Body.String(), `"customLabels":[]`) {
+			t.Errorf("bootstrap item customLabels is not an empty array: %s", rec.Body.String())
 		}
 		item := decodeMenuContentBootstrap(t, rec.Body.Bytes()).Items[0]
 		if item.Description != "crispy" || item.PosDescription != "crispy" || item.DescriptionOverride != "" {
 			t.Errorf("descriptions = %q / %q / %q", item.Description, item.PosDescription, item.DescriptionOverride)
 		}
-		if len(item.Labels) != 1 || item.Labels[0].Text != "추천" || item.Labels[0].Color != "amber" {
+		if !reflect.DeepEqual(item.Labels, tossLabels) {
 			t.Errorf("labels = %+v, want Toss label 추천/amber", item.Labels)
 		}
 	})
@@ -198,7 +88,10 @@ func TestRouter_AdminMenuItemContent(t *testing.T) {
 		}
 	})
 
-	body, _ := json.Marshal(map[string]any{"descriptionOverride": "  바삭한 감자  ", "labelIds": []string{freshID, signatureID}})
+	body, _ := json.Marshal(map[string]any{
+		"descriptionOverride": "  바삭한 감자  ",
+		"labels":              []map[string]string{{"text": " 신규 ", "color": "blue"}, {"text": "시그니처", "color": "pink"}},
+	})
 	rec = doRequest(t, handler, http.MethodPatch, contentPath, body, adminHeaders())
 	if rec.Code != http.StatusOK {
 		t.Fatalf("PATCH content status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -207,33 +100,35 @@ func TestRouter_AdminMenuItemContent(t *testing.T) {
 	if item.Description != "바삭한 감자" || item.PosDescription != "crispy" || item.DescriptionOverride != "바삭한 감자" {
 		t.Fatalf("descriptions after PATCH = %q / %q / %q", item.Description, item.PosDescription, item.DescriptionOverride)
 	}
-	if !reflect.DeepEqual(item.LabelIDs, []string{freshID, signatureID}) {
-		t.Fatalf("labelIds = %v, want [%s %s]", item.LabelIDs, freshID, signatureID)
-	}
-	if len(item.Labels) != 2 || item.Labels[0].Text != "신규" || item.Labels[0].Color != "blue" || item.Labels[1].Text != "시그니처" || item.Labels[1].Color != "pink" {
-		t.Fatalf("labels after PATCH = %+v, want assigned labels in order", item.Labels)
+	want := []menuContentLabel{{Text: "신규", Color: "blue"}, {Text: "시그니처", Color: "pink"}}
+	if !reflect.DeepEqual(item.CustomLabels, want) || !reflect.DeepEqual(item.Labels, want) {
+		t.Fatalf("after PATCH customLabels = %+v, labels = %+v, want %+v", item.CustomLabels, item.Labels, want)
 	}
 
 	t.Run("public menu uses the effective content", func(t *testing.T) {
 		rec := doRequest(t, handler, http.MethodGet, "/api/v1/menu", nil, nil)
 		item := decodeMenuContentBootstrap(t, rec.Body.Bytes()).Items[0]
-		if item.Description != "바삭한 감자" || len(item.Labels) != 2 || item.Labels[0].Text != "신규" {
+		if item.Description != "바삭한 감자" || !reflect.DeepEqual(item.Labels, want) {
 			t.Errorf("menu item = %+v", item)
 		}
 	})
 
 	t.Run("validation", func(t *testing.T) {
-		six := []string{"a", "b", "c", "d", "e", "f"}
+		label := func(text, color string) map[string]string { return map[string]string{"text": text, "color": color} }
+		six := []map[string]string{label("a", "green"), label("b", "green"), label("c", "green"), label("d", "green"), label("e", "green"), label("f", "green")}
 		cases := map[string]struct {
 			path string
 			body any
 			want int
 		}{
-			"too long description": {contentPath, map[string]any{"descriptionOverride": strings.Repeat("가", 301), "labelIds": []string{}}, http.StatusBadRequest},
-			"too many labels":      {contentPath, map[string]any{"descriptionOverride": "", "labelIds": six}, http.StatusBadRequest},
-			"duplicate labels":     {contentPath, map[string]any{"labelIds": []string{signatureID, signatureID}}, http.StatusBadRequest},
-			"unknown label":        {contentPath, map[string]any{"labelIds": []string{"missing"}}, http.StatusBadRequest},
-			"unknown item":         {"/api/v1/admin/menu-items/missing/content", map[string]any{"labelIds": []string{}}, http.StatusNotFound},
+			"too long description": {contentPath, map[string]any{"descriptionOverride": strings.Repeat("가", 301)}, http.StatusBadRequest},
+			"too many labels":      {contentPath, map[string]any{"labels": six}, http.StatusBadRequest},
+			"blank text":           {contentPath, map[string]any{"labels": []map[string]string{label("  ", "green")}}, http.StatusBadRequest},
+			"too long text":        {contentPath, map[string]any{"labels": []map[string]string{label(strings.Repeat("가", 21), "green")}}, http.StatusBadRequest},
+			"unknown color":        {contentPath, map[string]any{"labels": []map[string]string{label("인기", "red")}}, http.StatusBadRequest},
+			"missing color":        {contentPath, map[string]any{"labels": []map[string]string{{"text": "인기"}}}, http.StatusBadRequest},
+			"duplicate text":       {contentPath, map[string]any{"labels": []map[string]string{label("Best", "green"), label(" BEST ", "blue")}}, http.StatusBadRequest},
+			"unknown item":         {"/api/v1/admin/menu-items/missing/content", map[string]any{"labels": []any{}}, http.StatusNotFound},
 		}
 		for name, c := range cases {
 			body, _ := json.Marshal(c.body)
@@ -244,28 +139,25 @@ func TestRouter_AdminMenuItemContent(t *testing.T) {
 		if rec := doRequest(t, handler, http.MethodPatch, contentPath, []byte(`{`), adminHeaders()); rec.Code != http.StatusBadRequest {
 			t.Errorf("invalid json status = %d, want %d", rec.Code, http.StatusBadRequest)
 		}
-	})
-
-	t.Run("deleting a label removes its assignment", func(t *testing.T) {
-		rec := doRequest(t, handler, http.MethodDelete, menuLabelsPath+"/"+freshID, nil, adminHeaders())
-		if rec.Code != http.StatusOK {
-			t.Fatalf("DELETE label status = %d, body = %s", rec.Code, rec.Body.String())
-		}
-		if got := decodeMenuContentBootstrap(t, rec.Body.Bytes()).Items[0].LabelIDs; !reflect.DeepEqual(got, []string{signatureID}) {
-			t.Fatalf("labelIds after label delete = %v, want [%s]", got, signatureID)
+		item := decodeMenuContentBootstrap(t, doRequest(t, handler, http.MethodGet, "/api/v1/bootstrap", nil, nil).Body.Bytes()).Items[0]
+		if item.DescriptionOverride != "바삭한 감자" || !reflect.DeepEqual(item.CustomLabels, want) {
+			t.Errorf("content changed after rejected PATCHes: %q %+v", item.DescriptionOverride, item.CustomLabels)
 		}
 	})
 
-	t.Run("missing fields clear the override and assignments", func(t *testing.T) {
+	t.Run("missing fields clear the override and labels", func(t *testing.T) {
 		rec := doRequest(t, handler, http.MethodPatch, contentPath, []byte(`{}`), adminHeaders())
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 		}
-		item := decodeMenuContentBootstrap(t, rec.Body.Bytes()).Items[0]
-		if item.Description != "crispy" || item.DescriptionOverride != "" || len(item.LabelIDs) != 0 {
-			t.Fatalf("after clear = %q / %q / %v", item.Description, item.DescriptionOverride, item.LabelIDs)
+		if !strings.Contains(rec.Body.String(), `"customLabels":[]`) {
+			t.Errorf("customLabels after clear is not an empty array: %s", rec.Body.String())
 		}
-		if len(item.Labels) != 1 || item.Labels[0].Text != "추천" || item.Labels[0].Color != "amber" {
+		item := decodeMenuContentBootstrap(t, rec.Body.Bytes()).Items[0]
+		if item.Description != "crispy" || item.DescriptionOverride != "" {
+			t.Fatalf("after clear = %q / %q", item.Description, item.DescriptionOverride)
+		}
+		if !reflect.DeepEqual(item.Labels, tossLabels) {
 			t.Fatalf("labels after clear = %+v, want Toss label fallback", item.Labels)
 		}
 	})
