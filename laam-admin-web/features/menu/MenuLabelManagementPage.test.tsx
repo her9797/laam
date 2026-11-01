@@ -13,9 +13,10 @@ vi.mock("@/features/bootstrap/queries", () => ({
 const createMenuLabelMutate = vi.fn();
 const updateMenuLabelMutate = vi.fn();
 const deleteMenuLabelMutate = vi.fn();
+const deleteMenuLabelReset = vi.fn();
 
 function idleMutation(mutate: ReturnType<typeof vi.fn>) {
-  return { mutate, isPending: false, isError: false, error: null as unknown, variables: undefined as unknown };
+  return { mutate, reset: deleteMenuLabelReset, isPending: false, isError: false, error: null as unknown, variables: undefined as unknown };
 }
 
 const createMenuLabelMutationState = { current: idleMutation(createMenuLabelMutate) };
@@ -224,6 +225,14 @@ describe("MenuLabelManagementPage", () => {
     const onSuccess = deleteMenuLabelMutate.mock.calls[0][1].onSuccess as () => void;
     act(() => onSuccess());
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("clears a previous delete error whenever the confirm dialog is opened", () => {
+    deleteMenuLabelReset.mockClear();
+    render(<MenuLabelManagementPage />);
+
+    fireEvent.click(within(labelRow("인기")).getByRole("button", { name: "삭제" }));
+    expect(deleteMenuLabelReset).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces a failed delete inside the still-open confirm dialog", () => {

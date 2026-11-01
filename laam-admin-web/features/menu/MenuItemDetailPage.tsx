@@ -2,7 +2,7 @@
 
 import "@/i18n/client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
 import { useTranslation } from "react-i18next";
@@ -58,6 +58,7 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
   }
 
   // Seeded once from bootstrap the same way as the recipe form above.
+  const labelOrderIdPrefix = useId();
   const item = bootstrapQuery.data?.items.find((candidate) => candidate.id === menuItemId);
   const [content, setContent] = useState<UpdateMenuItemContentInput | null>(null);
   if (content === null && item) {
@@ -87,13 +88,17 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
   const options = item.options ?? [];
   const menuLabels = [...(bootstrapQuery.data?.menuLabels ?? [])].sort((a, b) => a.sortOrder - b.sortOrder);
   const saved = savedContent(item);
+  // The form is seeded once, so a label deleted elsewhere can linger in it. Keep only ids that still
+  // exist (an old server without `menuLabels` keeps them all) so the save never 400s on a ghost id.
+  const existingLabelIds = bootstrapQuery.data?.menuLabels ? new Set(menuLabels.map((label) => label.id)) : null;
+  const pickedLabelIds = existingLabelIds ? content.labelIds.filter((id) => existingLabelIds.has(id)) : content.labelIds;
   const isContentUnchanged =
     content.descriptionOverride === saved.descriptionOverride &&
-    content.labelIds.join("\n") === saved.labelIds.join("\n");
+    pickedLabelIds.join("\n") === saved.labelIds.join("\n");
   const posDescription = item.posDescription ?? item.description;
   // `item.labels` is the effective list; it only shows the Toss labels while nothing is assigned.
   const posLabels = saved.labelIds.length === 0 ? (item.labels ?? []) : [];
-  const isLabelLimitReached = content.labelIds.length >= MAX_MENU_ITEM_LABELS;
+  const isLabelLimitReached = pickedLabelIds.length >= MAX_MENU_ITEM_LABELS;
 
   function toggleLabel(id: string) {
     setContent((current) =>
@@ -114,7 +119,7 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
       return;
     }
     setStatusMessage(null);
-    updateContentMutation.mutate(content, {
+    updateContentMutation.mutate({ ...content, labelIds: pickedLabelIds }, {
       onSuccess: (appData: AppData) => {
         const savedItem = appData.items.find((candidate) => candidate.id === menuItemId);
         if (savedItem) {
@@ -249,13 +254,15 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {menuLabels.map((label) => {
-                    const order = content.labelIds.indexOf(label.id);
+                    const order = pickedLabelIds.indexOf(label.id);
                     const isSelected = order >= 0;
+                    const orderId = `${labelOrderIdPrefix}-${label.id}-order`;
                     return (
                       <button
                         key={label.id}
                         type="button"
                         aria-pressed={isSelected}
+                        aria-describedby={isSelected ? orderId : undefined}
                         disabled={!isSelected && isLabelLimitReached}
                         onClick={() => toggleLabel(label.id)}
                         className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
@@ -265,9 +272,15 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
                         }`}
                       >
                         {isSelected ? (
-                          <span aria-hidden="true" className="text-xs font-semibold">
-                            {order + 1}
-                          </span>
+                          <>
+                            <span aria-hidden="true" className="text-xs font-semibold">
+                              {order + 1}
+                            </span>
+                            {/* hidden이어도 aria-describedby로는 읽히고, 버튼 이름(라벨 텍스트)에는 섞이지 않는다 */}
+                            <span id={orderId} hidden>
+                              {t("detailContentLabelOrder", { order: order + 1 })}
+                            </span>
+                          </>
                         ) : null}
                         {label.text}
                       </button>
@@ -280,7 +293,7 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
                   {t("detailContentLabelsLimit", { max: MAX_MENU_ITEM_LABELS })}
                 </p>
               ) : null}
-              {content.labelIds.length === 0 ? (
+              {pickedLabelIds.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
                   {t("detailContentLabelsFallback")}
                   {posLabels.length > 0 ? (

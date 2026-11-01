@@ -84,12 +84,16 @@ func TestRouter_AdminMenuLabels(t *testing.T) {
 	}
 	signatureID := data.MenuLabels[0].ID
 
-	rec = doRequest(t, handler, http.MethodPost, menuLabelsPath, []byte(`{"text":"인기"}`), adminHeaders())
+	// 색은 4색 중 하나여야 한다. 빠지면 초록으로 바꿔 받지 않고 400으로 거절한다.
+	if rec = doRequest(t, handler, http.MethodPost, menuLabelsPath, []byte(`{"text":"인기"}`), adminHeaders()); rec.Code != http.StatusBadRequest {
+		t.Fatalf("POST without color status = %d, want 400, body = %s", rec.Code, rec.Body.String())
+	}
+	rec = doRequest(t, handler, http.MethodPost, menuLabelsPath, []byte(`{"text":"인기","color":"green"}`), adminHeaders())
 	if rec.Code != http.StatusCreated {
-		t.Fatalf("POST without color status = %d, body = %s", rec.Code, rec.Body.String())
+		t.Fatalf("POST 인기 status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 	if got := decodeMenuContentBootstrap(t, rec.Body.Bytes()).MenuLabels; len(got) != 2 || got[1].Color != "green" {
-		t.Fatalf("menuLabels after POST without color = %+v, want default green", got)
+		t.Fatalf("menuLabels after POST 인기 = %+v", got)
 	}
 
 	t.Run("POST validation", func(t *testing.T) {
@@ -123,8 +127,8 @@ func TestRouter_AdminMenuLabels(t *testing.T) {
 			body string
 			want int
 		}{
-			"unknown id":     {menuLabelsPath + "/missing", `{"text":"없음"}`, http.StatusNotFound},
-			"duplicate text": {menuLabelsPath + "/" + signatureID, `{"text":"인기"}`, http.StatusConflict},
+			"unknown id":     {menuLabelsPath + "/missing", `{"text":"없음","color":"green"}`, http.StatusNotFound},
+			"duplicate text": {menuLabelsPath + "/" + signatureID, `{"text":"인기","color":"green"}`, http.StatusConflict},
 			"unknown color":  {menuLabelsPath + "/" + signatureID, `{"text":"대표","color":"red"}`, http.StatusBadRequest},
 			"invalid json":   {menuLabelsPath + "/" + signatureID, `{`, http.StatusBadRequest},
 		}

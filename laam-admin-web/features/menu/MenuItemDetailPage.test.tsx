@@ -336,6 +336,32 @@ describe("MenuItemDetailPage customer description and labels", () => {
     expect(within(contentForm()).getByRole("button", { name: "저장" })).toBeDisabled();
   });
 
+  it("drops assigned label ids that no longer exist so saving cannot get stuck on a deleted label", () => {
+    // 다른 탭에서 라벨을 지우면 bootstrap에는 사라졌지만 처음 채운 입력에는 남아 있을 수 있다.
+    mockBootstrap({ data: itemWith({ labelIds: ["label-gone", "label-1"] }) });
+
+    render(<MenuItemDetailPage menuItemId="menu-1" />);
+
+    expect(labelToggle("신메뉴")).toHaveAttribute("aria-pressed", "true");
+    fireEvent.change(within(contentForm()).getByLabelText("설명"), { target: { value: "새 설명" } });
+    fireEvent.click(within(contentForm()).getByRole("button", { name: "저장" }));
+
+    expect(updateMenuItemContentMutate).toHaveBeenCalledWith(
+      { descriptionOverride: "새 설명", labelIds: ["label-1"] },
+      expect.anything(),
+    );
+  });
+
+  it("announces each picked label's selection order to assistive technology", () => {
+    render(<MenuItemDetailPage menuItemId="menu-1" />);
+
+    fireEvent.click(labelToggle("인기"));
+    fireEvent.click(labelToggle("신메뉴"));
+
+    expect(labelToggle("인기")).toHaveAccessibleDescription("1번째로 선택됨");
+    expect(labelToggle("신메뉴")).toHaveAccessibleDescription("2번째로 선택됨");
+  });
+
   it("deselects a picked label when it is clicked again", () => {
     mockBootstrap({ data: itemWith({ labelIds: ["label-1"] }) });
 

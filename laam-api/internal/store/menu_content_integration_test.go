@@ -52,7 +52,7 @@ func TestRepository_MenuLabelLifecycle(t *testing.T) {
 		t.Fatalf("MenuLabels on empty state = %#v, want empty non-nil slice", data.MenuLabels)
 	}
 
-	if err := repo.CreateMenuLabel(ctx, "  시그니처  ", ""); err != nil {
+	if err := repo.CreateMenuLabel(ctx, "  시그니처  ", "green"); err != nil {
 		t.Fatalf("CreateMenuLabel() error = %v", err)
 	}
 	if err := repo.CreateMenuLabel(ctx, "인기", "pink"); err != nil {
@@ -80,6 +80,7 @@ func TestRepository_MenuLabelLifecycle(t *testing.T) {
 			{"   ", "green"},
 			{strings.Repeat("가", 21), "green"},
 			{"정상", "red"},
+			{"정상", ""},
 		}
 		for _, c := range cases {
 			if err := repo.CreateMenuLabel(ctx, c.text, c.color); !errors.Is(err, ErrInvalidInput) {
@@ -92,7 +93,7 @@ func TestRepository_MenuLabelLifecycle(t *testing.T) {
 		if err := repo.CreateMenuLabel(ctx, "Best", "green"); err != nil {
 			t.Fatalf("CreateMenuLabel(Best) error = %v", err)
 		}
-		if err := repo.CreateMenuLabel(ctx, " best ", ""); !errors.Is(err, ErrAlreadyExists) {
+		if err := repo.CreateMenuLabel(ctx, " best ", "green"); !errors.Is(err, ErrAlreadyExists) {
 			t.Errorf("CreateMenuLabel(best) error = %v, want ErrAlreadyExists", err)
 		}
 	})

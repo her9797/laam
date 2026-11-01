@@ -180,7 +180,11 @@ export function MenuLabelManagementPage() {
                   onSave={(input, onSaved) =>
                     updateMutation.mutate({ id: label.id, input }, { onSuccess: onSaved })
                   }
-                  onDelete={() => setPendingDeleteId(label.id)}
+                  onDelete={() => {
+                    // 앞서 실패한 삭제 오류가 다른 라벨의 확인창에 남지 않게 비운다.
+                    deleteMutation.reset();
+                    setPendingDeleteId(label.id);
+                  }}
                 />
               );
             })}
