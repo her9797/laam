@@ -3,7 +3,13 @@ import { redirect } from "next/navigation";
 
 import { HomeScreen } from "@/components/screens/home-screen";
 import { getQrCookieName, getStaffCookieName, isQrSessionValid, isStaffSessionValid } from "@/lib/auth";
-import { getAppData, getFeaturedCategoryFromData, getFeaturedItemsFromData } from "@/services/app-service";
+import { getCustomerTemplateContext } from "@/lib/customer-template-context";
+import {
+  getAppData,
+  getFeaturedCategoryFromData,
+  getFeaturedItemsFromData,
+  getVisibleNoticesFromData,
+} from "@/services/app-service";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +22,7 @@ export default async function HomePage() {
   }
 
   const appData = await getAppData();
+  const { template } = await getCustomerTemplateContext();
 
   return (
     <HomeScreen
@@ -23,6 +30,8 @@ export default async function HomePage() {
       featuredCategory={getFeaturedCategoryFromData(appData)}
       featuredItems={getFeaturedItemsFromData(appData)}
       canEditTable={isStaffSessionValid(staffSession)}
+      template={template}
+      notices={getVisibleNoticesFromData(appData)}
     />
   );
 }

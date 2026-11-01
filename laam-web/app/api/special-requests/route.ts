@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { getQrCookieName, isQrSessionValid } from "@/lib/auth";
+import { rejectPreviewWrite } from "@/lib/preview-request";
 
 const API_BASE_URL =
   process.env.API_BASE_URL ??
@@ -8,6 +9,10 @@ const API_BASE_URL =
   "http://localhost:9090";
 
 export async function POST(request: NextRequest) {
+  const previewBlocked = rejectPreviewWrite(request);
+  if (previewBlocked) {
+    return previewBlocked;
+  }
   if (!isQrSessionValid(request.cookies.get(getQrCookieName())?.value)) {
     return NextResponse.json({ error: "QR 입장이 필요합니다." }, { status: 401 });
   }

@@ -1590,3 +1590,36 @@ body:has(.menu-detail-modal) .content-card {
   place-items: center;
   margin-top: 22px;
 }
+
+/* 관리자 템플릿 미리보기 띠. 미리보기 쿠키가 있을 때만 렌더되며 모든 템플릿 위에 같은 모양으로 뜬다. */
+.template-preview-banner {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  background: #ffe45c;
+  color: #1c1a17;
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.template-preview-banner small {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.template-preview-banner a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #1c1a17;
+  color: #ffffff;
+}

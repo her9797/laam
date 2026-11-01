@@ -105,6 +105,8 @@ laam
 - Next.js App Router 기반 구조
 - `screens`, `navigation`, `services` 중심 분리
 - API 실패 시 로컬 목 데이터 fallback 지원
+- 손님 화면 템플릿: 관리자 "손님 화면 템플릿"에서 `classic`(기본 다크)·`notebook`(공책)·`chalkboard`(칠판) 중 고른다. 값은 bootstrap의 `store.customerTemplate`으로 오고, 없거나 모르는 값이면 `classic`이다. 템플릿 스타일은 `app/templates/*.css`에 `html[data-template]` 범위로만 둔다.
+- 템플릿 미리보기: 관리자가 발급한 30분짜리 서명 링크(`/preview/enter`)로 그 브라우저에서만 다른 템플릿을 본다. 서명은 `QR_SIGNING_SECRET`을 쓰므로 `laam-api`와 같은 값이어야 한다. 미리보기 중에는 주문·요청·결제·쿠폰 API가 403으로 막히고, `/preview/exit`로 끝낸다.
 
 ### `laam-admin-web`
 

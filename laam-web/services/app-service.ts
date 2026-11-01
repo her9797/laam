@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import {
   categories as fallbackCategories,
   type MenuImage,
@@ -76,7 +78,7 @@ function isAppData(payload: unknown): payload is AppData {
   );
 }
 
-export async function getAppData(): Promise<AppData> {
+async function loadAppData(): Promise<AppData> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/v1/bootstrap`, {
       cache: "no-store",
@@ -99,6 +101,12 @@ export async function getAppData(): Promise<AppData> {
     return getFallbackAppData();
   }
 }
+
+/**
+ * 한 요청 안에서는 레이아웃(템플릿 결정)과 페이지가 같은 bootstrap 응답을 쓴다.
+ * 요청마다 새로 받는 동작(no-store)은 그대로다.
+ */
+export const getAppData = cache(loadAppData);
 
 export function normalizeAppDataImages(appData: AppData): AppData {
   return {

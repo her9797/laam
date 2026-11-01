@@ -7,7 +7,7 @@ const QR_COOKIE = "lam_qr_session";
 const STAFF_COOKIE = "lam_staff_session";
 const QR_MAX_AGE_SECONDS = 60 * 60 * 8;
 
-function getSessionSecret() {
+export function getSessionSecret() {
   return process.env.SESSION_SECRET ?? "lam-dev-session-secret";
 }
 
@@ -51,8 +51,8 @@ function verifySessionValue(value: string | undefined, expectedKind: SessionKind
   }
 }
 
-export function createQrSessionValue() {
-  return createSessionValue("qr", QR_MAX_AGE_SECONDS);
+export function createQrSessionValue(maxAgeSeconds = QR_MAX_AGE_SECONDS) {
+  return createSessionValue("qr", maxAgeSeconds);
 }
 
 export function createStaffSessionValue() {
