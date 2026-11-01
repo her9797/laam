@@ -143,10 +143,11 @@ for (const name of ["notebook", "chalkboard"]) {
   });
 }
 
-test("chalkboard.css: 사진이 있는 메뉴는 목록에 썸네일을 보여주고, 사진이 없을 때만 글자 자리를 숨긴다", async () => {
+test("chalkboard.css: 글자 자리는 기본으로 숨기고 사진이 있을 때만 썸네일을 보여준다(:has 미지원 브라우저는 예전처럼 글씨만)", async () => {
   const css = (await source("app/templates/chalkboard.css")).replace(/\/\*[\s\S]*?\*\//g, "");
-  assert.doesNotMatch(css, /\.menu-icon\s*\{[^}]*display:\s*none/, "사진까지 통째로 숨기면 안 된다");
-  assert.match(css, /\.menu-icon:not\(:has\(\.menu-icon-image\)\)\s*\{[^}]*display:\s*none/);
+  assert.match(css, /html\[data-template="chalkboard"\] \.menu-icon\s*\{[^}]*display:\s*none/);
+  assert.match(css, /\.menu-icon:has\(\.menu-icon-image\)\s*\{[^}]*display:\s*grid/);
+  assert.doesNotMatch(css, /:not\(:has\(/, "미지원 브라우저에서 무시되면 글자 자리가 다시 나타난다");
   assert.match(css, /\.menu-item:has\(\.menu-icon-image\)\s*\{[^}]*grid-template-columns:/);
 });
 

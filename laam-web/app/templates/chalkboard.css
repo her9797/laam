@@ -146,9 +146,14 @@ html[data-template="chalkboard"] .notice-item + .notice-item {
   border-top: 2px dotted var(--line);
 }
 
-/* 사진이 있는 메뉴만 분필 액자 썸네일을 보여주고, 사진이 없으면 칠판 메뉴판처럼 글씨만 둔다(첫 글자 자리는 숨김) */
-html[data-template="chalkboard"] .menu-icon:not(:has(.menu-icon-image)) {
+/* 사진이 있는 메뉴만 분필 액자 썸네일을 보여주고, 사진이 없으면 칠판 메뉴판처럼 글씨만 둔다.
+   기본은 숨기고 :has로 다시 켜서, :has를 모르는 오래된 브라우저에서도 예전처럼 글씨만 깔끔하게 나온다. */
+html[data-template="chalkboard"] .menu-icon {
   display: none;
+}
+
+html[data-template="chalkboard"] .menu-icon:has(.menu-icon-image) {
+  display: grid;
 }
 
 /* 사진·설명·가격 3칸은 좁은 화면에서 설명 칸이 너무 좁아져 이름이 끊긴다. 가격은 설명 아래로 내린다. */
