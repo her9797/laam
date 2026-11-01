@@ -2,7 +2,7 @@
 
 import "@/i18n/client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
 import { RiAddLine, RiCloseLine } from "@remixicon/react";
@@ -71,6 +71,15 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
   if (content === null && item) {
     setContent(savedContent(item));
   }
+  // 라벨 줄을 지우면 그 버튼이 사라지므로 포커스를 "라벨 추가"로 옮긴다(Enter 연타로 연달아 지워지지 않게).
+  const addLabelButtonRef = useRef<HTMLButtonElement>(null);
+  const focusAddAfterRemoveRef = useRef(false);
+  useEffect(() => {
+    if (focusAddAfterRemoveRef.current) {
+      focusAddAfterRemoveRef.current = false;
+      addLabelButtonRef.current?.focus();
+    }
+  }, [content?.labels]);
 
   if (bootstrapQuery.isError) {
     return (
@@ -295,7 +304,10 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
                             size="icon-sm"
                             variant="ghost"
                             aria-label={t("detailContentLabelRemoveAria", { n })}
-                            onClick={() => updateLabels((labels) => labels.filter((_, i) => i !== index))}
+                            onClick={() => {
+                              focusAddAfterRemoveRef.current = true;
+                              updateLabels((labels) => labels.filter((_, i) => i !== index));
+                            }}
                           >
                             <RiCloseLine aria-hidden="true" />
                           </Button>
@@ -311,6 +323,7 @@ export function MenuItemDetailPage({ menuItemId }: { menuItemId: string }) {
                 </ol>
               ) : null}
               <Button
+                ref={addLabelButtonRef}
                 type="button"
                 size="sm"
                 variant="outline"

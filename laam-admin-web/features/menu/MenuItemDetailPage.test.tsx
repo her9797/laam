@@ -274,6 +274,23 @@ describe("MenuItemDetailPage customer description and labels", () => {
     return { ...FIXTURE, items: [{ ...FIXTURE.items[0], ...overrides }] };
   }
 
+  it("moves focus to the add button after a label row is removed so repeated Enter cannot delete more rows", () => {
+    mockBootstrap({
+      data: itemWith({
+        customLabels: [
+          { text: "6%", color: "blue" },
+          { text: "스무디", color: "pink" },
+        ],
+      }),
+    });
+
+    render(<MenuItemDetailPage menuItemId="menu-1" />);
+
+    fireEvent.click(within(contentForm()).getByRole("button", { name: "라벨 1 삭제" }));
+    expect(within(contentForm()).getByRole("button", { name: "라벨 추가" })).toHaveFocus();
+    expect(within(contentForm()).getByLabelText("라벨 1 글자")).toHaveValue("스무디");
+  });
+
   it("prefills the override and shows the POS description as the fallback hint", () => {
     mockBootstrap({ data: itemWith({ description: "직접 쓴 설명", descriptionOverride: "직접 쓴 설명" }) });
 
