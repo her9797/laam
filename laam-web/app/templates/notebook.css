@@ -60,6 +60,11 @@ html[data-template="notebook"] .notebook-spiral {
   pointer-events: none;
 }
 
+/* 관리자 미리보기 띠(약 60px)가 있을 때 스프링이 띠 밑에 가려지지 않게 종이 윗변에 다시 맞춘다 */
+html[data-template="notebook"] body:has(.template-preview-banner) .notebook-spiral {
+  top: 68px;
+}
+
 html[data-template="notebook"] .notebook-spiral span {
   width: 8px;
   height: 24px;
