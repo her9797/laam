@@ -197,8 +197,19 @@ html[data-template="notebook"] .request-category-pill-special {
 /* 종이 폭이 좁아 배지·가격은 설명 아래 줄로 내린다(시안 D) */
 html[data-template="notebook"] .menu-item {
   grid-template-columns: 62px minmax(0, 1fr);
+  /* 사진 칸이 두 줄(이름·설명 / 가격)에 걸치고 남는 높이는 가격 줄이 받는다. 설명이 없어도 가격이 이름 바로 아래 붙는다 */
+  grid-template-rows: auto 1fr;
   row-gap: 6px;
   align-items: start;
+}
+
+html[data-template="notebook"] .menu-item .menu-icon {
+  grid-row: 1 / span 2;
+}
+
+/* 설명이 비어 있으면 빈 줄을 남기지 않는다 */
+html[data-template="notebook"] .menu-copy p:empty {
+  display: none;
 }
 
 html[data-template="notebook"] .menu-side {

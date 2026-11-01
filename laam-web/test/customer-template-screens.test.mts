@@ -168,3 +168,20 @@ test("미리보기 띠는 좁은 화면에서 줄바꿈되어 종료 버튼이 �
   const css = await source("app/globals.css");
   assert.match(css, /\.template-preview-banner\s*\{[^}]*flex-wrap:\s*wrap/);
 });
+
+for (const [name, itemSelector] of [
+  ["notebook", 'html\\[data-template="notebook"\\] \\.menu-item'],
+  ["chalkboard", 'html\\[data-template="chalkboard"\\] \\.menu-item:has\\(\\.menu-icon-image\\)'],
+] as const) {
+  test(`${name}.css: 설명이 없는 메뉴도 가격이 이름 바로 아래 붙는다(사진 칸이 두 줄에 걸침, 빈 설명 숨김)`, async () => {
+    const css = await source(`app/templates/${name}.css`);
+    assert.match(css, new RegExp(`${itemSelector}\\s*\\{[^}]*grid-template-rows:\\s*auto 1fr`));
+    assert.match(css, new RegExp(`${itemSelector} \\.menu-icon\\s*\\{[^}]*grid-row:\\s*1 / span 2`));
+    assert.match(css, new RegExp(`html\\[data-template="${name}"\\] \\.menu-copy p:empty\\s*\\{[^}]*display:\\s*none`));
+  });
+}
+
+test("chalkboard.css: 빈 배지 자리를 없애 사진 없는 메뉴도 이름과 가격이 한 줄에 놓인다", async () => {
+  const css = await source("app/templates/chalkboard.css");
+  assert.match(css, /html\[data-template="chalkboard"\] \.menu-badge-placeholder\s*\{[^}]*display:\s*none/);
+});

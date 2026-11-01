@@ -159,8 +159,19 @@ html[data-template="chalkboard"] .menu-icon:has(.menu-icon-image) {
 /* 사진·설명·가격 3칸은 좁은 화면에서 설명 칸이 너무 좁아져 이름이 끊긴다. 가격은 설명 아래로 내린다. */
 html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) {
   grid-template-columns: 64px minmax(0, 1fr);
+  /* 사진 칸이 두 줄(이름·설명 / 가격)에 걸치고 남는 높이는 가격 줄이 받는다. 설명이 없어도 가격이 이름 바로 아래 붙는다 */
+  grid-template-rows: auto 1fr;
   row-gap: 6px;
   align-items: start;
+}
+
+html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) .menu-icon {
+  grid-row: 1 / span 2;
+}
+
+/* 설명이 비어 있으면 빈 줄을 남기지 않는다 */
+html[data-template="chalkboard"] .menu-copy p:empty {
+  display: none;
 }
 
 html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) .menu-side {
@@ -175,7 +186,8 @@ html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) .menu-side .me
   margin: 0;
 }
 
-html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) .menu-badge-placeholder {
+/* 빈 배지 자리(visibility: hidden)가 가격 위에 한 줄을 차지하지 않게 없앤다(사진 유무와 상관없이) */
+html[data-template="chalkboard"] .menu-badge-placeholder {
   display: none;
 }
 
