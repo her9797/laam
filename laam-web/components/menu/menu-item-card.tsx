@@ -6,6 +6,7 @@ import confetti from "canvas-confetti";
 
 import type { MenuItem } from "@/data/menu-data";
 import { SecretCouponModal } from "@/components/easter-egg/secret-coupon-hotspot";
+import { splitMenuDescription } from "@/lib/menu-description";
 import { getMenuItemDetail } from "@/lib/menu-item-detail";
 import { getMenuOrderTotal, parseWonPrice, validateMenuOptionSelection, type MenuOptionSelection } from "@/lib/menu-options";
 import { getStoredTableNumber } from "@/lib/table-session";
@@ -29,6 +30,7 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
   const titleId = useId();
   const descriptionId = useId();
   const detail = getMenuItemDetail(item);
+  const descriptionParts = splitMenuDescription(detail.description);
   const preferredImages = item.images?.filter((image) =>
     imageArea === "home" ? image.displayArea === "home" || image.displayArea === "both" : image.displayArea === "menu" || image.displayArea === "both",
   );
@@ -153,22 +155,20 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
     <>
       <button
         type="button"
-        className="menu-item menu-item-button"
+        className={displayImageURL ? "menu-item menu-item-button" : "menu-item menu-item-button menu-item-no-image"}
         aria-haspopup="dialog"
         onClick={openDetail}
       >
-        <div className="menu-icon">
-          {displayImageURL ? (
+        {displayImageURL ? (
+          <div className="menu-icon">
             <img
               src={displayImageURL}
               alt={item.name}
               className="menu-icon-image"
               style={displayImageStyle}
             />
-          ) : (
-            item.name.slice(0, 1)
-          )}
-        </div>
+          </div>
+        ) : null}
         <div className="menu-copy">
           <div className="menu-title-row">
             <h3>{item.name}</h3>
@@ -186,7 +186,12 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
               </div>
             ) : null}
           </div>
-          <p>{item.description}</p>
+          {descriptionParts.tags.length ? (
+            <div className="menu-taste-tags">
+              <DescriptionTagLabels tags={descriptionParts.tags} />
+            </div>
+          ) : null}
+          {descriptionParts.body ? <p>{descriptionParts.body}</p> : null}
         </div>
         <div className="menu-side">
           <span
@@ -219,9 +224,9 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
                 <p className="section-kicker">menu detail</p>
                 <div className="menu-title-row menu-detail-title-row">
                   <h2 id={titleId}>{detail.name}</h2>
-                  {item.labels?.length ? (
+                  {item.labels?.length || descriptionParts.tags.length ? (
                     <div className="menu-labels">
-                      {item.labels.map((label, index) => (
+                      {(item.labels ?? []).map((label, index) => (
                         <span
                           key={`${label.text}-${index}`}
                           className="menu-label-tag"
@@ -230,6 +235,7 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
                           {label.text}
                         </span>
                       ))}
+                      <DescriptionTagLabels tags={descriptionParts.tags} />
                     </div>
                   ) : null}
                 </div>
@@ -247,7 +253,7 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
               ) : null}
             </div>
             <p className="menu-detail-description" id={descriptionId}>
-              {detail.description || "메뉴 설명이 준비 중입니다."}
+              {descriptionParts.body || (descriptionParts.tags.length ? null : "메뉴 설명이 준비 중입니다.")}
             </p>
             {!isOrderComplete && options.length > 0 ? (
               <div className="menu-detail-options">
@@ -390,4 +396,12 @@ export function MenuItemCard({ item, imageArea = "menu" }: MenuItemCardProps) {
       ) : null}
     </>
   );
+}
+
+function DescriptionTagLabels({ tags }: { tags: string[] }) {
+  return tags.map((tag) => (
+    <span key={`tag-${tag}`} className="menu-label-tag" data-label-color="red">
+      {tag}
+    </span>
+  ));
 }

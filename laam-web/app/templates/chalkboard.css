@@ -121,22 +121,9 @@ html[data-template="chalkboard"] .hero-card ~ .content-card > .section-header + 
 
 /* 카테고리: 분필 동그라미 */
 /* 메뉴 줄 아래 여백을 없애 본문 카드 안쪽 여백만 남긴다(공책과 같은 간격) */
-html[data-template="chalkboard"] .floating-subnav-shell {
+html[data-template="chalkboard"] .category-nav-shell {
   margin-bottom: 0;
   padding: 4px 0;
-}
-
-html[data-template="chalkboard"] .category-strip {
-  justify-content: flex-start;
-}
-
-/* 카테고리 줄: 남는 공간이 있으면 가운데로 모으고, 넘치면 자동 여백이 0이 되어 처음부터 옆으로 밀어 본다 */
-html[data-template="chalkboard"] .category-pill:first-child {
-  margin-left: auto;
-}
-
-html[data-template="chalkboard"] .category-pill:last-child {
-  margin-right: auto;
 }
 
 html[data-template="chalkboard"] .category-pill,
@@ -211,6 +198,11 @@ html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) .menu-side {
 
 html[data-template="chalkboard"] .menu-item:has(.menu-icon-image) .menu-side .menu-badge {
   margin: 0;
+}
+
+/* 메뉴명 아래 맛 태그는 라벨(16px)보다 한 단계 작게 */
+html[data-template="chalkboard"] .menu-taste-tags .menu-label-tag[data-label-color] {
+  font-size: 14px;
 }
 
 /* 빈 배지 자리(visibility: hidden)가 가격 위에 한 줄을 차지하지 않게 없앤다(사진 유무와 상관없이) */
@@ -290,15 +282,7 @@ html[data-template="chalkboard"] .menu-label-tag[data-label-color="green"] { bor
 html[data-template="chalkboard"] .menu-label-tag[data-label-color="amber"] { border-color: var(--ch-yellow); color: var(--ch-yellow); }
 html[data-template="chalkboard"] .menu-label-tag[data-label-color="pink"] { border-color: var(--ch-pink); color: var(--ch-pink); }
 html[data-template="chalkboard"] .menu-label-tag[data-label-color="blue"] { border-color: var(--ch-blue); color: var(--ch-blue); }
-
-html[data-template="chalkboard"] .customer-menu-page-controls button {
-  min-height: 44px;
-  border: 2px solid var(--ch-chalk);
-  background: transparent;
-  color: var(--ch-chalk);
-  font-family: var(--ch-hand);
-  font-size: 20px;
-}
+html[data-template="chalkboard"] .menu-label-tag[data-label-color="red"] { border-color: #f2a3a3; color: #f2a3a3; }
 
 /* 모달: 작은 칠판 */
 html[data-template="chalkboard"] .table-session-modal-backdrop {

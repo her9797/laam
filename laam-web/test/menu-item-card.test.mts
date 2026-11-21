@@ -29,7 +29,7 @@ test("메뉴 목록 카드는 메뉴명 오른쪽에 라벨을 색상 태그로 
   const labelsIndex = source.indexOf('className="menu-labels"');
   const mapIndex = source.indexOf("item.labels.map(");
   const colorAttrIndex = source.indexOf("data-label-color");
-  const descriptionIndex = source.indexOf("<p>{item.description}</p>", copyIndex);
+  const descriptionIndex = source.indexOf("<p>{descriptionParts.body}</p>", copyIndex);
   const sideIndex = source.indexOf('className="menu-side"');
 
   assert.ok(copyIndex >= 0);
@@ -45,8 +45,10 @@ test("메뉴 목록 카드는 메뉴명 오른쪽에 라벨을 색상 태그로 
   assert.match(titleRowRule, /flex-wrap:\s*nowrap/);
   const titleRule = styles.match(/\.menu-title-row h3,\s*\.menu-title-row h2\s*\{([^}]*)\}/)?.[1] ?? "";
   assert.match(titleRule, /min-width:\s*0/);
+  // 라벨이 여러 개여도 메뉴명이 한 글자씩 꺾이지 않고, 칩이 다음 줄로 넘어간다
+  assert.match(titleRule, /word-break:\s*keep-all/);
   const labelsRule = styles.match(/\.menu-title-row \.menu-labels\s*\{([^}]*)\}/)?.[1] ?? "";
-  assert.match(labelsRule, /flex-shrink:\s*0/);
+  assert.match(labelsRule, /min-width:\s*0/);
 });
 
 test("메뉴 상세 모달은 기존 정보 오른쪽 위에 같은 메뉴 사진을 표시한다", async () => {
@@ -100,9 +102,26 @@ test("메뉴 상세 모달은 화면을 기준으로 가운데에 고정되도�
 test("메뉴 라벨은 # 없이 관리자가 정한 글자 그대로 보여준다(목록·상세)", async () => {
   const source = await readFile(new URL("../components/menu/menu-item-card.tsx", import.meta.url), "utf8");
   const tags = source.match(/className="menu-label-tag"[\s\S]*?<\/span>/g) ?? [];
-  assert.equal(tags.length, 2, "목록과 상세 두 곳에서 라벨을 그린다");
-  for (const tag of tags) {
+  const adminLabels = tags.filter((tag) => tag.includes("label.text"));
+  assert.equal(adminLabels.length, 2, "목록과 상세 두 곳에서 라벨을 그린다");
+  for (const tag of adminLabels) {
     assert.match(tag, />\s*\{label\.text\}\s*</);
-    assert.doesNotMatch(tag, /#\{label\.text\}/);
   }
+  for (const tag of tags) {
+    assert.doesNotMatch(tag, /#\{/, "설명 #태그 라벨도 # 없이 보여준다");
+  }
+});
+
+test("사진이 없는 메뉴는 사진 칸(첫 글자 아이콘)을 두지 않고 그 폭을 글자에 돌려준다", async () => {
+  const source = await readFile(new URL("../components/menu/menu-item-card.tsx", import.meta.url), "utf8");
+  assert.match(source, /className=\{displayImageURL \? "menu-item menu-item-button" : "menu-item menu-item-button menu-item-no-image"\}/);
+  assert.match(source, /\{displayImageURL \? \(\s*<div className="menu-icon">\s*<img/);
+  assert.doesNotMatch(source, /item\.name\.slice\(0, 1\)/);
+
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(styles, /\.menu-item\.menu-item-no-image\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto/);
+
+  const notebook = await readFile(new URL("../app/templates/notebook.css", import.meta.url), "utf8");
+  assert.match(notebook, /html\[data-template="notebook"\] \.menu-item\.menu-item-no-image\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/);
+  assert.match(notebook, /html\[data-template="notebook"\] \.menu-item-no-image \.menu-side\s*\{[^}]*grid-column:\s*1/);
 });
