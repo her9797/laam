@@ -93,8 +93,7 @@ for (const [name, minTextPx] of [["notebook", 12], ["chalkboard", 12]] as const)
     // 입력칸 안내 문구도 본문 대비(4.5:1)를 지키는 색을 쓴다.
     assert.match(css, /::placeholder\s*\{[^}]*color:/);
 
-    // 페이지 이동 버튼·선택칸도 44px 이상.
-    assert.match(css, /\.customer-menu-page-controls button[^{]*\{[^}]*min-height:\s*44px/);
+    // 선택칸도 44px 이상.
     assert.match(css, /\.request-compose-field select[^{]*\{[^}]*min-height:\s*44px/);
 
     // 12px 미만 글자가 없어야 한다.
@@ -204,18 +203,9 @@ test("카테고리 화면 설명 '…전체 메뉴'는 클래식에만 보이고
   assert.match(screen, /<p className="hero-copy">\{store\.name\}의 \{category\.label\} 전체 메뉴<\/p>/);
 });
 
-for (const name of ["notebook", "chalkboard"]) {
-  test(`${name}.css: 카테고리 줄은 남는 공간이 있으면 가운데 정렬하고, 넘치면 처음부터 옆으로 밀어 본다`, async () => {
-    const css = await source(`app/templates/${name}.css`);
-    const scope = `html\\[data-template="${name}"\\]`;
-    assert.match(css, new RegExp(`${scope} \\.category-pill:first-child\\s*\\{\\s*margin-left:\\s*auto`));
-    assert.match(css, new RegExp(`${scope} \\.category-pill:last-child\\s*\\{\\s*margin-right:\\s*auto`));
-  });
-}
-
 test("chalkboard.css: 카테고리 줄과 메뉴 목록 사이 간격을 공책과 같게 줄인다", async () => {
   const css = await source("app/templates/chalkboard.css");
-  assert.match(css, /html\[data-template="chalkboard"\] \.floating-subnav-shell\s*\{[^}]*margin-bottom:\s*0/);
+  assert.match(css, /html\[data-template="chalkboard"\] \.category-nav-shell\s*\{[^}]*margin-bottom:\s*0/);
 });
 
 test("모바일에서 누른 자리에 브라우저 기본 탭 하이라이트(잔상)를 그리지 않는다", async () => {
@@ -258,12 +248,6 @@ test("공책·칠판 홈은 인스타·네이버를 이름이 붙은 아이콘 �
   assert.doesNotMatch(notebook, /notebook-links/);
   const chalkboard = await source("components/templates/chalkboard-home-screen.tsx");
   assert.match(chalkboard, /<SocialLinks className="chalk-social" \/>/);
-});
-
-test("notebook.css: 스크롤해서 위에 붙는 카테고리 바가 고정 인덱스 탭(58px) 밑에 가려지지 않는다", async () => {
-  const css = await source("app/templates/notebook.css");
-  assert.match(css, /html\[data-template="notebook"\] \.floating-subnav-shell\s*\{[^}]*top:\s*58px/);
-  assert.match(css, /body:has\(\.template-preview-banner\) \.floating-subnav-shell\s*\{[^}]*top:\s*118px/, "미리보기 띠(60px)만큼 더 내린다");
 });
 
 test("공책·칠판 홈의 네이버 아이콘은 클래식 홈과 같은 네이버 지도 주소로 간다", async () => {

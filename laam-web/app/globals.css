@@ -221,14 +221,20 @@ a {
   min-width: 0;
 }
 
+/* 메뉴명은 단어 단위로만 줄바꿈해서 "사/랑"처럼 한 글자씩 꺾이지 않게 한다 */
 .menu-title-row h3,
 .menu-title-row h2 {
+  flex-shrink: 0;
+  max-width: 60%;
   min-width: 0;
+  word-break: keep-all;
   overflow-wrap: anywhere;
 }
 
+/* ABV 라벨 옆에 #태그 라벨까지 붙으면 칩끼리 다음 줄로 넘긴다 */
 .menu-title-row .menu-labels {
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .menu-label-tag {
@@ -267,6 +273,13 @@ a {
   border-color: rgba(96, 165, 250, 0.28);
   background: rgba(96, 165, 250, 0.08);
   color: #93c5fd;
+}
+
+/* 메뉴 설명의 #태그를 뽑아낸 라벨 */
+.menu-label-tag[data-label-color="red"] {
+  border-color: rgba(248, 113, 113, 0.3);
+  background: rgba(248, 113, 113, 0.1);
+  color: #fca5a5;
 }
 
 .hero-card h1 {
@@ -682,7 +695,12 @@ a {
   display: none;
 }
 
+/* 메뉴 카테고리는 옆으로 밀지 않고 여러 줄로 감싸 한눈에 다 보이게 한다 */
 .subcategory-strip {
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 6px;
+  overflow-x: visible;
   margin: 0;
   padding: 0;
 }
@@ -698,45 +716,10 @@ a {
   white-space: nowrap;
 }
 
-.floating-subnav-shell {
-  position: sticky;
-  top: 0;
-  z-index: 14;
+/* 카테고리 줄은 제목 아래 제자리에 둔다(스크롤해도 화면 위에 붙지 않는다) */
+.category-nav-shell {
   margin: 14px 0 18px;
   padding: 8px 10px;
-  background: transparent;
-  border: 1px solid transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-  isolation: isolate;
-  transition:
-    background 180ms ease,
-    border-color 180ms ease,
-    box-shadow 180ms ease,
-    backdrop-filter 180ms ease;
-}
-
-.floating-subnav-shell::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  opacity: 0;
-  transition: opacity 180ms ease;
-}
-
-.floating-subnav-shell.stuck {
-  border-color: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-}
-
-.floating-subnav-shell.stuck::before {
-  top: -14px;
-  left: -14px;
-  right: -14px;
-  background: var(--page-background);
-  opacity: 1;
 }
 
 .subcategory-pill {
@@ -745,14 +728,6 @@ a {
   background: rgba(255, 255, 255, 0.025);
   color: rgba(255, 255, 255, 0.72);
   font-size: 0.82rem;
-}
-
-@media (min-width: 768px) {
-  .floating-subnav-shell.stuck::before {
-    top: -20px;
-    left: -20px;
-    right: -20px;
-  }
 }
 
 .category-pill.active {
@@ -822,46 +797,17 @@ a {
   display: grid;
 }
 
-.customer-menu-pagination {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 18px 0 10px;
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 0.84rem;
-}
-
-.customer-menu-page-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.customer-menu-page-controls button {
-  min-height: 36px;
-  padding: 0 13px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
-}
-
-.customer-menu-page-controls button:disabled {
-  cursor: not-allowed;
-  opacity: 0.35;
-}
-
 .menu-item {
   display: grid;
   grid-template-columns: 56px minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
   padding: 16px 0;
+}
+
+/* 사진이 없는 메뉴는 사진 칸 없이 이름·설명이 그 폭까지 쓴다 */
+.menu-item.menu-item-no-image {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .menu-item-button {
@@ -926,6 +872,21 @@ a {
 
 .menu-badge-placeholder {
   visibility: hidden;
+}
+
+/* 설명의 #맛 태그는 메뉴명 바로 아래 줄에 둔다 */
+.menu-taste-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 5px;
+}
+
+/* ABV 라벨(10px·높이 20px)보다 한 단계 작게 */
+.menu-taste-tags .menu-label-tag {
+  min-height: 17px;
+  padding: 0 6px;
+  font-size: 9px;
 }
 
 .menu-price {

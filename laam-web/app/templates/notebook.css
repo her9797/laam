@@ -178,23 +178,8 @@ html[data-template="notebook"] .primary-strip {
 }
 
 /* 카테고리: 손으로 친 동그라미 */
-/* 스크롤해서 위에 붙을 때 고정 인덱스 탭(높이 58px) 바로 아래에 붙는다 */
-html[data-template="notebook"] .floating-subnav-shell {
-  top: 58px;
+html[data-template="notebook"] .category-nav-shell {
   padding: 4px 0;
-}
-
-html[data-template="notebook"] body:has(.template-preview-banner) .floating-subnav-shell {
-  top: 118px;
-}
-
-/* 카테고리 줄: 남는 공간이 있으면 가운데로 모으고, 넘치면 자동 여백이 0이 되어 처음부터 옆으로 밀어 본다 */
-html[data-template="notebook"] .category-pill:first-child {
-  margin-left: auto;
-}
-
-html[data-template="notebook"] .category-pill:last-child {
-  margin-right: auto;
 }
 
 html[data-template="notebook"] .category-pill,
@@ -235,6 +220,15 @@ html[data-template="notebook"] .menu-item .menu-icon {
   grid-row: 1 / span 2;
 }
 
+/* 사진이 없는 메뉴는 폴라로이드 칸 없이 한 칸으로 쓰고, 배지·가격 줄도 첫 칸으로 당긴다 */
+html[data-template="notebook"] .menu-item.menu-item-no-image {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+html[data-template="notebook"] .menu-item-no-image .menu-side {
+  grid-column: 1;
+}
+
 /* 설명이 비어 있으면 빈 줄을 남기지 않는다 */
 html[data-template="notebook"] .menu-copy p:empty {
   display: none;
@@ -255,6 +249,11 @@ html[data-template="notebook"] .menu-side .menu-badge {
 
 html[data-template="notebook"] .menu-side .menu-badge-placeholder {
   display: none;
+}
+
+/* 메뉴명 아래 맛 태그는 라벨(13px)보다 한 단계 작게(템플릿 최소 글자 12px) */
+html[data-template="notebook"] .menu-taste-tags .menu-label-tag[data-label-color] {
+  font-size: 12px;
 }
 
 html[data-template="notebook"] .menu-item + .menu-item,
@@ -345,15 +344,7 @@ html[data-template="notebook"] .menu-label-tag[data-label-color="green"] { borde
 html[data-template="notebook"] .menu-label-tag[data-label-color="amber"] { border-color: #8a5a00; color: #8a5a00; }
 html[data-template="notebook"] .menu-label-tag[data-label-color="pink"] { border-color: #b0336e; color: #b0336e; }
 html[data-template="notebook"] .menu-label-tag[data-label-color="blue"] { border-color: #2756a8; color: #2756a8; }
-
-html[data-template="notebook"] .customer-menu-page-controls button {
-  min-height: 44px;
-  border-color: var(--nb-ink);
-  background: transparent;
-  color: var(--nb-ink);
-  font-family: var(--nb-hand);
-  font-size: 16px;
-}
+html[data-template="notebook"] .menu-label-tag[data-label-color="red"] { border-color: #c95454; color: #c95454; }
 
 /* 모달: 테이프로 붙인 메모지 */
 html[data-template="notebook"] .table-session-modal-backdrop {
